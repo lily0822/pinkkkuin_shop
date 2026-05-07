@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+  <rect width="800" height="800" fill="#e6f6f3"/>
+  <path d="M260 250h280l-35 345H295z" fill="#fff" stroke="#2c2525" stroke-width="16" stroke-linejoin="round"/>
+  <path d="M285 345h230" stroke="#f69ab8" stroke-width="28" stroke-linecap="round"/>
+  <circle cx="400" cy="480" r="70" fill="#f8dc82" stroke="#2c2525" stroke-width="14"/>
+  <text x="400" y="705" text-anchor="middle" font-family="Arial" font-size="54" font-weight="800" fill="#2c2525">Glass</text>
+</svg>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+  <rect width="800" height="800" fill="#f7fbdf"/>
+  <rect x="210" y="170" width="380" height="470" rx="32" fill="#fff" stroke="#2c2525" stroke-width="16"/>
+  <rect x="250" y="230" width="300" height="70" rx="12" fill="#f69ab8"/>
+  <rect x="250" y="345" width="300" height="45" rx="12" fill="#bfe2ce"/>
+  <rect x="250" y="425" width="240" height="45" rx="12" fill="#f8dc82"/>
+  <circle cx="510" cy="530" r="38" fill="#9fd8e5"/>
+  <text x="400" y="705" text-anchor="middle" font-family="Arial" font-size="54" font-weight="800" fill="#2c2525">Memo</text>
+</svg>
