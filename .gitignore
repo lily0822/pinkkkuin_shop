@@ -1,4 +1,14 @@
+# Visual Studio Code
+.vscode/
+
+# Node
+node_modules/
+.next/
+
+# Python
 __pycache__/
-allure-results/
-.pytest_cache/
-*.pyc
+*.py[cod]
+
+# Logs
+*.log
+.vercel
