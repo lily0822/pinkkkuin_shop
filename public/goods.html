@@ -1,0 +1,1233 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>現貨選物專區 | 小企鵝選物 - 日本可愛雜貨代購</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        penguin: {
+                            pink: '#FFD3E1',
+                            'pink-dark': '#FF94B8',
+                            'pink-light': '#FFEBF1',
+                            peach: '#FFE5D9',         /* 超療癒的日系蜜桃粉橘 */
+                            'peach-dark': '#FFA895',    /* 帶有微糖感的高質感蜜桃橘 */
+                            'peach-light': '#FFF5F0',   /* 輕透的蜜桃粉底色 */
+                            yellow: '#FFF4C3',         /* 溫暖檸檬黃 */
+                            cream: '#FCF8EE',
+                            gray: '#4A5568'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['"Comic Sans MS"', '"Chalkboard SE"', '"Microsoft JhengHei"', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome for cute icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts for cute aesthetic -->
+    <link href="https://fonts.googleapis.com/css2?family=Kosugi+Maru&family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Kosugi Maru', 'Noto Sans TC', sans-serif;
+            background-color: #FCF8EE; /* Warm cream base */
+            /* 淺粉紅與嫩黃色相間的小雛菊微型小花重複背景圖案 */
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Cg fill='%23FFD3E1' fill-opacity='0.35'%3E%3Ccircle cx='25' cy='19' r='4' /%3E%3Ccircle cx='25' cy='31' r='4' /%3E%3Ccircle cx='19' cy='25' r='4' /%3E%3Ccircle cx='31' cy='25' r='4' /%3E%3C/g%3E%3Ccircle cx='25' cy='25' r='3.5' fill='%23FFF4C3' fill-opacity='0.6' /%3E%3Cg fill='%23FFD3E1' fill-opacity='0.35'%3E%3Ccircle cx='75' cy='69' r='4' /%3E%3Ccircle cx='75' cy='81' r='4' /%3E%3Ccircle cx='69' cy='75' r='4' /%3E%3Ccircle cx='81' cy='75' r='4' /%3E%3C/g%3E%3Ccircle cx='75' cy='75' r='3.5' fill='%23FFF4C3' fill-opacity='0.6' /%3E%3C/svg%3E");
+            background-repeat: repeat;
+        }
+        /* Custom scrollbar to match pink theme */
+        ::-webkit-scrollbar {
+            width: 10px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #FFEBF1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #FF94B8;
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #FF73A1;
+        }
+        /* Heartbeat animations */
+        @keyframes mini-bounce {
+            0%, 100% { transform: translateY(0) scale(1); }
+            50% { transform: translateY(-5px) scale(1.02); }
+        }
+        .cute-bounce {
+            animation: mini-bounce 3s infinite ease-in-out;
+        }
+
+        body.embed-mode > div:first-of-type,
+        body.embed-mode > header {
+            display: none;
+        }
+
+        body.embed-mode {
+            background-color: #FCF8EE;
+        }
+
+        body.embed-mode main {
+            padding-top: 1rem;
+        }
+    </style>
+</head>
+<body class="text-penguin-gray overflow-x-hidden">
+
+    <!-- Web Audio SFX Helper -->
+    <script>
+        if (new URLSearchParams(window.location.search).get('embed') === '1') {
+            document.body.classList.add('embed-mode');
+        }
+
+        function notifyParentHeight() {
+            if (!document.body.classList.contains('embed-mode')) return;
+
+            const height = Math.max(
+                document.body.scrollHeight,
+                document.documentElement.scrollHeight
+            );
+            window.parent.postMessage({ type: 'embedded-page-height', height }, '*');
+        }
+
+        function playCuteSound(type) {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+
+                if (type === 'pop') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(450, ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(1300, ctx.currentTime + 0.12);
+                    gain.gain.setValueAtTime(0.08, ctx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.01, ctx.currentTime + 0.12);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.12);
+                } else if (type === 'chime') {
+                    const now = ctx.currentTime;
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(523.25, now); // C5
+                    osc.frequency.setValueAtTime(659.25, now + 0.1); // E5
+                    osc.frequency.setValueAtTime(783.99, now + 0.2); // G5
+                    osc.frequency.setValueAtTime(1046.50, now + 0.3); // C6
+                    gain.gain.setValueAtTime(0.1, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.5);
+                    osc.start();
+                    osc.stop(now + 0.5);
+                } else if (type === 'remove') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(800, ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.2);
+                    gain.gain.setValueAtTime(0.08, ctx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.2);
+                }
+            } catch (e) {
+                console.log("Audio not allowed or supported yet.");
+            }
+        }
+    </script>
+
+    <!-- Top Announcement Bar -->
+    <div class="bg-gradient-to-r from-penguin-pink to-penguin-yellow text-xs md:text-sm text-center py-2 px-4 font-bold tracking-wider relative overflow-hidden flex items-center justify-center gap-2">
+        <span class="inline-block animate-bounce">🇯🇵</span>
+        <span>【東京夏日限定連線中】全館滿 ¥5000（台幣約$1100）即享超商免運費！企鵝在日本現場幫你搶貨！</span>
+        <span class="inline-block animate-bounce">🛒</span>
+    </div>
+
+    <!-- Navigation Header -->
+    <header class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b-4 border-penguin-pink shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+            
+            <!-- Logo & Brand (點擊可回首頁) -->
+            <a href="first.html" onclick="playCuteSound('pop');" class="flex items-center gap-2 group">
+                <div class="w-12 h-12 bg-penguin-yellow rounded-full flex items-center justify-center border-2 border-penguin-pink-dark overflow-hidden shadow-inner transform group-hover:scale-110 transition-transform">
+                    <svg viewBox="0 0 100 100" class="w-10 h-10">
+                        <ellipse cx="50" cy="55" rx="35" ry="38" fill="#4B5563" />
+                        <ellipse cx="50" cy="58" rx="23" ry="28" fill="#FFFFFF" />
+                        <circle cx="28" cy="50" r="6" fill="#F472B6" opacity="0.6"/>
+                        <circle cx="72" cy="50" r="6" fill="#F472B6" opacity="0.6"/>
+                        <circle cx="38" cy="45" r="4.5" fill="#1F2937" />
+                        <circle cx="62" cy="45" r="4.5" fill="#1F2937" />
+                        <circle cx="36" cy="43" r="1.5" fill="#FFFFFF" />
+                        <circle cx="60" cy="43" r="1.5" fill="#FFFFFF" />
+                        <polygon points="50,46 44,52 56,52" fill="#FBBF24" />
+                        <path d="M 42,65 Q 50,68 58,65 Q 55,72 50,68 Q 45,72 42,65 Z" fill="#EF4444" />
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-xl md:text-2xl font-black text-penguin-pink-dark tracking-tight flex items-center gap-1">
+                        小企鵝選物 <span class="text-xs bg-penguin-yellow px-2 py-0.5 rounded-full text-penguin-gray border border-yellow-400">日本代購</span>
+                    </h1>
+                    <p class="text-[10px] text-gray-400 tracking-wider">KOPENGUIN SELECT SHOP</p>
+                </div>
+            </a>
+
+            <!-- Search Bar -->
+            <div class="flex-1 max-w-md min-w-[200px] relative">
+                <input type="text" id="searchInput" oninput="handleSearch()" placeholder="在賣場中搜尋特定商品..." class="w-full bg-penguin-cream border-2 border-penguin-pink rounded-full py-1.5 px-4 pr-10 text-sm focus:outline-none focus:border-penguin-pink-dark transition-all placeholder-gray-400">
+                <span class="absolute right-3.5 top-2.5 text-penguin-pink-dark"><i class="fa-solid fa-magnifying-glass"></i></span>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex items-center gap-3">
+                <a href="first.html" class="text-penguin-gray hover:text-penguin-pink-dark font-bold text-xs md:text-sm px-3.5 py-1.5 rounded-full border-2 border-transparent hover:border-penguin-pink transition-all">
+                    <i class="fa-solid fa-house mr-1"></i> 返回首頁
+                </a>
+                
+                <button onclick="toggleCart(); playCuteSound('pop');" class="bg-penguin-pink hover:bg-penguin-pink-dark/30 text-penguin-gray font-bold text-xs md:text-sm px-4 py-2 rounded-full border-2 border-penguin-pink-dark flex items-center gap-2 shadow-sm relative transition-all transform hover:scale-105">
+                    <i class="fa-solid fa-basket-shopping text-penguin-pink-dark text-base"></i>
+                    <span>選物箱</span>
+                    <span id="cartCount" class="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full absolute -top-2 -right-1 font-mono">0</span>
+                </button>
+            </div>
+
+        </div>
+    </header>
+
+    <!-- Breadcrumb & Header Title -->
+    <div class="max-w-7xl mx-auto px-4 pt-6">
+        <nav class="text-xs text-gray-400 font-bold flex items-center gap-1.5 mb-2">
+            <a href="first.html" class="hover:text-penguin-pink-dark transition-colors">首頁</a>
+            <span>/</span>
+            <span class="text-penguin-peach-dark">現貨商品專區</span>
+        </nav>
+        <div class="bg-white rounded-3xl p-6 border-4 border-penguin-peach shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div class="space-y-1">
+                <h2 class="text-2xl md:text-3xl font-black text-penguin-gray flex items-center gap-2">
+                    🐧 小企鵝現貨選物館
+                </h2>
+                <p class="text-xs md:text-sm text-gray-500">
+                    東京現場直運、台灣現貨秒發！不用等預購，最萌的商品今天下單最快明天出貨！
+                </p>
+            </div>
+            <div class="flex gap-2">
+                <span class="bg-penguin-pink-light text-penguin-pink-dark text-xs font-bold px-3 py-1.5 rounded-full border border-penguin-pink">
+                    ✨ 100% 日本正品
+                </span>
+                <span class="bg-penguin-yellow text-penguin-gray text-xs font-bold px-3 py-1.5 rounded-full border border-yellow-300">
+                    🚚 滿額免運優惠中
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content Area with Sidebar Filters -->
+    <main class="max-w-7xl mx-auto px-4 py-6">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            
+            <!-- LEFT COLUMN: Advanced Search Filters (3 cols) -->
+            <aside class="lg:col-span-3 space-y-4">
+                
+                <!-- Mobile Filter Trigger -->
+                <button onclick="toggleMobileFilters(); playCuteSound('pop');" class="w-full lg:hidden bg-penguin-peach-dark text-white font-black text-sm py-2.5 rounded-2xl flex items-center justify-center gap-2 shadow transition-all">
+                    <i class="fa-solid fa-sliders"></i>
+                    <span id="filterToggleText">展開商品篩選條件</span>
+                </button>
+
+                <!-- Main Filter Panel -->
+                <div id="filterPanel" class="hidden lg:block bg-white rounded-3xl p-5 border-4 border-penguin-peach shadow-sm space-y-6">
+                    
+                    <!-- Header -->
+                    <div class="flex items-center justify-between border-b-2 border-dashed border-penguin-peach-dark pb-3">
+                        <h4 class="font-black text-sm text-penguin-gray flex items-center gap-1.5">
+                            <i class="fa-solid fa-filter text-penguin-peach-dark"></i> 智慧篩選
+                        </h4>
+                        <button onclick="resetFilters(); playCuteSound('remove');" class="text-[10px] text-gray-400 hover:text-penguin-pink-dark font-bold transition-colors">
+                            重設條件
+                        </button>
+                    </div>
+
+                    <!-- Price Filter -->
+                    <div class="space-y-2">
+                        <h5 class="text-xs font-black text-gray-600 flex items-center gap-1">
+                            <span>💰</span> 價格預算 (NTD)
+                        </h5>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <span class="text-[9px] text-gray-400 font-bold">最低價格</span>
+                                <input type="number" id="priceMin" oninput="applyFilters()" placeholder="0" class="w-full bg-penguin-cream border-2 border-penguin-peach rounded-xl py-1.5 px-2 text-xs focus:outline-none focus:border-penguin-pink-dark font-mono font-bold">
+                            </div>
+                            <div>
+                                <span class="text-[9px] text-gray-400 font-bold">最高價格</span>
+                                <input type="number" id="priceMax" oninput="applyFilters()" placeholder="2000" class="w-full bg-penguin-cream border-2 border-penguin-peach rounded-xl py-1.5 px-2 text-xs focus:outline-none focus:border-penguin-pink-dark font-mono font-bold">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- IP Brand Checkboxes (複選) -->
+                    <div class="space-y-2.5">
+                        <h5 class="text-xs font-black text-gray-600 flex items-center gap-1">
+                            <span>🏷️</span> IP 品牌選物
+                        </h5>
+                        <div class="flex flex-col gap-2" id="ipFilterContainer">
+                            <!-- Populated dynamically via JS -->
+                        </div>
+                    </div>
+
+                    <!-- Category Checkboxes (複選 - 支援複數標籤) -->
+                    <div class="space-y-2.5">
+                        <h5 class="text-xs font-black text-gray-600 flex items-center gap-1">
+                            <span>🌸</span> 商品分類標籤
+                        </h5>
+                        <div class="flex flex-col gap-2" id="catFilterContainer">
+                            <!-- Populated dynamically via JS -->
+                        </div>
+                    </div>
+
+                </div>
+            </aside>
+
+            <!-- RIGHT COLUMN: Products Grid & Sorts (9 cols) -->
+            <section class="lg:col-span-9 space-y-6">
+                
+                <!-- Sort & Count Header -->
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b-4 border-dashed border-penguin-peach pb-3 gap-3">
+                    <div class="flex items-center gap-2">
+                        <span class="text-lg font-black text-penguin-gray">
+                            商品清單
+                        </span>
+                        <span class="bg-penguin-peach-light text-penguin-peach-dark text-xs font-black px-2.5 py-0.5 rounded-full border border-penguin-peach">
+                            找到 <span id="resultsCount" class="font-mono">0</span> 件現貨
+                        </span>
+                    </div>
+                    
+                    <div class="flex items-center gap-2 self-end sm:self-auto">
+                        <span class="text-xs text-gray-400 font-bold">排序方式:</span>
+                        <select id="sortBy" onchange="sortProducts()" class="bg-white border-2 border-penguin-peach rounded-xl px-3 py-1.5 text-xs font-black focus:outline-none focus:border-penguin-pink-dark cursor-pointer shadow-sm">
+                            <option value="recommend">小企鵝私心推薦</option>
+                            <option value="priceLow">價格：由低到高</option>
+                            <option value="priceHigh">價格：由高到低</option>
+                            <option value="sales">人氣銷量排行</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Active Filter Badges -->
+                <div id="activeFilterTags" class="flex flex-wrap gap-1.5 text-xs font-bold">
+                    <!-- Populated via JS -->
+                </div>
+
+                <!-- Products Grid -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6" id="productGrid">
+                    <!-- Cards populated by JS -->
+                </div>
+
+            </section>
+
+        </div>
+    </main>
+
+    <!-- Shopping Cart Slide-out Drawer Overlay -->
+    <div id="cartDrawer" class="fixed inset-0 z-50 bg-black/50 opacity-0 pointer-events-none transition-all duration-300">
+        <div class="absolute top-0 right-0 h-full w-full max-w-md bg-white border-l-4 border-penguin-pink flex flex-col transform translate-x-full transition-transform duration-300 shadow-2xl" id="cartDrawerContent">
+            
+            <div class="p-4 border-b border-penguin-pink flex items-center justify-between bg-penguin-pink-light">
+                <h3 class="font-black text-lg text-penguin-pink-dark flex items-center gap-2">
+                    <i class="fa-solid fa-basket-shopping"></i> 我的企鵝選物箱 (<span id="drawerCartCount" class="font-mono">0</span>)
+                </h3>
+                <button onclick="toggleCart(); playCuteSound('remove');" class="text-penguin-gray hover:text-red-500 text-xl font-bold p-1"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <!-- Drawer Items (Scrollable) -->
+            <div class="flex-1 overflow-y-auto p-4 space-y-4" id="cartItemsContainer">
+                <div class="text-center py-20 text-gray-400 space-y-2">
+                    <span class="text-5xl">🛒</span>
+                    <p class="font-bold">您的購物車是空的喔！</p>
+                    <p class="text-xs">快去選購好物放進箱子吧！</p>
+                </div>
+            </div>
+
+            <!-- Drawer Footer -->
+            <div class="p-4 border-t border-penguin-pink bg-penguin-cream space-y-4">
+                <div class="space-y-1.5 text-sm font-bold">
+                    <div class="flex justify-between text-gray-500">
+                        <span>商品總額：</span>
+                        <span id="cartSubtotal" class="font-mono text-penguin-gray">NT$ 0</span>
+                    </div>
+                    <div class="flex justify-between text-lg text-penguin-gray font-black border-t border-dashed border-gray-300 pt-2">
+                        <span>結帳總計：</span>
+                        <span id="cartTotal" class="font-mono text-penguin-pink-dark">NT$ 0</span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <button onclick="clearCart(); playCuteSound('remove');" class="bg-gray-200 hover:bg-gray-300 text-penguin-gray font-bold py-2.5 rounded-xl text-xs transition-all">
+                        清空購物車
+                    </button>
+                    <button onclick="openCheckoutModal(); playCuteSound('chime');" class="bg-penguin-pink-dark hover:bg-penguin-pink text-white font-black py-2.5 rounded-xl text-xs shadow-md transition-all">
+                        前往企鵝結帳 ➔
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Checkout Modal -->
+    <div id="checkoutModal" class="fixed inset-0 z-50 bg-black/60 opacity-0 pointer-events-none transition-all duration-300 flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-2xl rounded-3xl border-4 border-penguin-peach-dark overflow-hidden shadow-2xl transform scale-95 transition-all duration-300 max-h-[90vh] flex flex-col">
+            
+            <div class="bg-gradient-to-r from-penguin-peach to-penguin-pink p-4 text-center relative border-b-2 border-penguin-peach">
+                <h3 class="font-black text-xl text-penguin-gray">🛒 小企鵝快速安全結帳</h3>
+                <p class="text-xs text-penguin-pink-dark font-bold mt-1">感謝您支持日台連線代購！</p>
+                <button onclick="closeCheckoutModal()" class="absolute right-4 top-4 text-penguin-peach-dark hover:text-red-500 text-xl font-bold"><i class="fa-solid fa-circle-xmark"></i></button>
+            </div>
+
+            <!-- Modal Content (Scrollable) -->
+            <div class="p-6 overflow-y-auto space-y-6 flex-1">
+                <div class="flex items-center justify-center gap-2 text-xs font-bold text-gray-400">
+                    <span class="text-penguin-pink-dark">1. 確認清單</span>
+                    <span>➔</span>
+                    <span class="text-penguin-peach-dark">2. 填寫物流/金流</span>
+                    <span>➔</span>
+                    <span>3. 完成訂單</span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="space-y-3 bg-penguin-cream p-4 rounded-2xl border border-penguin-peach/40">
+                        <h4 class="font-bold text-sm text-penguin-pink-dark"><i class="fa-solid fa-clipboard-list"></i> 訂購商品明細</h4>
+                        <div id="checkoutItemsList" class="space-y-2 max-h-48 overflow-y-auto">
+                            <!-- Populated with items -->
+                        </div>
+                        <div class="border-t border-dashed border-gray-300 pt-2 text-right">
+                            <span class="text-xs text-gray-500">應付總額：</span>
+                            <span id="checkoutTotalText" class="font-mono font-black text-penguin-pink-dark">NT$ 0</span>
+                        </div>
+                    </div>
+
+                    <form id="checkoutForm" onsubmit="submitOrder(event)" class="space-y-3">
+                        <h4 class="font-bold text-sm text-penguin-peach-dark"><i class="fa-solid fa-truck"></i> 收件人資訊與付款</h4>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-600 mb-1">真實姓名 *</label>
+                            <input type="text" required id="shipName" placeholder="請填寫收件人姓名" class="w-full bg-penguin-cream border-2 border-penguin-peach rounded-xl py-1.5 px-3 text-xs focus:outline-none focus:border-penguin-pink-dark">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-600 mb-1">手機號碼 *</label>
+                            <input type="tel" required id="shipPhone" placeholder="如：0912345678" class="w-full bg-penguin-cream border-2 border-penguin-peach rounded-xl py-1.5 px-3 text-xs focus:outline-none focus:border-penguin-pink-dark">
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-600 mb-1">物流方式 *</label>
+                                <select required id="shipMethod" class="w-full bg-penguin-cream border-2 border-penguin-peach rounded-xl py-1.5 px-2 text-xs focus:outline-none focus:border-penguin-pink-dark">
+                                    <option value="7-11">7-11 超商取貨</option>
+                                    <option value="Family">全家超商取貨</option>
+                                    <option value="Home">黑貓宅配到府</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-600 mb-1">門市名稱/地址 *</label>
+                                <input type="text" required id="shipAddr" placeholder="例：企鵝門市 / 新北市..." class="w-full bg-penguin-cream border-2 border-penguin-peach rounded-xl py-1.5 px-2 text-xs focus:outline-none focus:border-penguin-pink-dark">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-600 mb-1">付款方式 *</label>
+                            <select required id="payMethod" class="w-full bg-penguin-cream border-2 border-penguin-peach rounded-xl py-1.5 px-2 text-xs focus:outline-none focus:border-penguin-pink-dark">
+                                <option value="LINEPay">📲 LINE Pay (推薦・免手續費)</option>
+                                <option value="CreditCard">💳 信用卡付款</option>
+                                <option value="ATM">🏦 虛擬ATM轉帳</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black text-sm py-2.5 rounded-xl transition-all shadow-md mt-2">
+                            🚀 確認並送出代購訂單
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Success Toast Notification -->
+    <div id="toastNotification" class="fixed bottom-6 right-6 z-50 transform translate-y-20 opacity-0 pointer-events-none transition-all duration-300">
+        <div class="bg-white border-4 border-emerald-400 p-4 rounded-2xl shadow-xl flex items-center gap-3">
+            <span class="text-3xl animate-bounce">🎉</span>
+            <div>
+                <h5 class="font-black text-sm text-emerald-600" id="toastTitle">成功！</h5>
+                <p class="text-xs text-penguin-gray" id="toastMsg">已加入商品。</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick View Product Modal (簡約設計：移除大圖、直接顯示規格與加入購物車) -->
+    <div id="productModal" class="fixed inset-0 z-50 bg-black/50 opacity-0 pointer-events-none transition-all duration-300 flex items-center justify-center p-4">
+        <!-- Filled by JS -->
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-penguin-pink-light border-t-4 border-penguin-pink mt-16 py-12 px-4 text-center space-y-6">
+        <div class="max-w-xl mx-auto space-y-3">
+            <h4 class="font-black text-lg text-penguin-pink-dark flex items-center justify-center gap-2">
+                🐧 小企鵝選物 - 日本可愛商品賣場
+            </h4>
+            <p class="text-xs text-gray-500 leading-relaxed">
+                我們是一群熱愛蒐集療癒、可愛小物的專業代購！所有商品皆為 100% 日本正品實拍與現場購入，提供你最安心、最開心的日式連線與現貨購物體驗！
+            </p>
+        </div>
+        <p class="text-[10px] text-gray-400">© 2026 小企鵝選物 CoPenguin Selects. All Rights Reserved. Made with 💖 and 🐧.</p>
+    </footer>
+
+    <!-- Database and Application Controller Script -->
+    <script>
+        // 豐富商品資料庫：包含 12 款精選日系超人氣可愛商品
+        const initialProducts = [
+            {
+                id: 1,
+                name: "大耳狗喜拿軟綿綿絨毛中型玩偶",
+                ip: "三麗鷗",
+                categories: ["可愛雜貨"],
+                price: 499,
+                jpyPrice: 2200,
+                desc: "經典三麗鷗日本限定，極致柔軟的大耳狗，抱著睡覺超級療癒！",
+                tag: "HOT",
+                sales: 98,
+                spec: "經典款",
+                svgType: "sumikko"
+            },
+            {
+                id: 2,
+                name: "角落生物日本晴雨兩用輕量折傘",
+                ip: "角落生物",
+                categories: ["可愛雜貨", "生活實用"],
+                price: 690,
+                jpyPrice: 2980,
+                desc: "口袋尺寸！超強防曬、全遮光抗UV，角落生物多款人氣角色圖案，抗風防曬首選。",
+                tag: "NEW",
+                sales: 47,
+                spec: "貓咪款/恐龍款/白熊款",
+                svgType: "sumikko"
+            },
+            {
+                id: 3,
+                name: "星之卡比超柔抱枕玩偶靠墊",
+                ip: "星之卡比",
+                categories: ["可愛雜貨"],
+                price: 640,
+                jpyPrice: 2800,
+                desc: "超柔手感靠枕，辦公室靠墊或午睡枕最佳伴侶，可當沙發上的卡比裝飾！",
+                tag: "NEW",
+                sales: 64,
+                spec: "眨眼款/微笑款",
+                svgType: "makeup"
+            },
+            {
+                id: 4,
+                name: "美少女戰士復刻月光權杖防水眼線筆",
+                ip: "日本限定",
+                categories: ["美妝生活", "生活實用"],
+                price: 450,
+                jpyPrice: 1980,
+                desc: "美少女戰士極致精緻權杖筆蓋設計！超強防水不暈染，少女心必備單品。",
+                tag: "HOT",
+                sales: 120,
+                spec: "經典黑/深棕色",
+                svgType: "makeup"
+            },
+            {
+                id: 5,
+                name: "龍貓限定超輕量真空不鏽鋼保溫瓶",
+                ip: "吉卜力",
+                categories: ["可愛雜貨", "生活實用"],
+                price: 790,
+                jpyPrice: 3500,
+                desc: "吉卜力專櫃限量款！雙層真空設計，高效保溫保冷，輕量瓶身便於隨身攜帶。",
+                tag: "LIMIT",
+                sales: 38,
+                spec: "350ml綠色",
+                svgType: "sootsprite"
+            },
+            {
+                id: 6,
+                name: "日本森永夏日限定蜜桃爆漿夾心軟糖",
+                ip: "日本限定",
+                categories: ["限時特產", "零食限定"],
+                price: 180,
+                jpyPrice: 790,
+                desc: "100% 採用山梨縣產極上水蜜桃原汁！雙層爆漿夾心，果香極度濃郁！",
+                tag: "HOT",
+                sales: 145,
+                spec: "單包/三包組",
+                svgType: "candy"
+            },
+            {
+                id: 7,
+                name: "Canmake夏日櫻花防水極細眼線膠筆",
+                ip: "日本限定",
+                categories: ["美妝生活", "生活實用"],
+                price: 320,
+                jpyPrice: 1320,
+                desc: "日本 Cosme 大賞常客！1.5mm 超極細筆芯，防水耐汗抗摩擦，畫出自然深邃眼妝。",
+                tag: "NEW",
+                sales: 84,
+                spec: "草莓紅/經典黑",
+                svgType: "makeup"
+            },
+            {
+                id: 8,
+                name: "吉卜力橡子共和國 經典煤炭球蓬鬆零錢包",
+                ip: "吉卜力",
+                categories: ["可愛雜貨", "生活實用"],
+                price: 490,
+                jpyPrice: 2100,
+                desc: "宮崎駿影迷必收！煤炭球大眼睛拉鍊零錢包，絨毛手感超蓬鬆，還能掛在背包上當吊飾。",
+                tag: "NEW",
+                sales: 52,
+                spec: "煤炭球經典款",
+                svgType: "sootsprite"
+            },
+            {
+                id: 9,
+                name: "三麗鷗庫洛米暗黑蕾絲透氣居家睡衣",
+                ip: "三麗鷗",
+                categories: ["可愛雜貨", "美妝生活"],
+                price: 1280,
+                jpyPrice: 5500,
+                desc: "日本專櫃款，蕾絲滾邊設計，柔軟透氣的棉質面料，展現庫洛米大人感可愛風。",
+                tag: "LIMIT",
+                sales: 29,
+                spec: "M碼/L碼",
+                svgType: "kuromi"
+            },
+            {
+                id: 10,
+                name: "森永宇治抹茶極致限定法式千層酥",
+                ip: "日本限定",
+                categories: ["限時特產", "零食限定"],
+                price: 250,
+                jpyPrice: 1100,
+                desc: "京都宇治抹茶奢華融入！64層酥脆千層法式餅乾，入口即化的苦甜大人滋味。",
+                tag: "NEW",
+                sales: 92,
+                spec: "一盒裝",
+                svgType: "matcha"
+            },
+            {
+                id: 11,
+                name: "大耳狗喜拿軟綿綿迷你掛飾玩偶",
+                ip: "三麗鷗",
+                categories: ["可愛雜貨"],
+                price: 390,
+                jpyPrice: 1700,
+                desc: "精緻小巧的掌心吊飾，大耳狗掛在包包上陪你上學上班，治癒一整天！",
+                tag: "NEW",
+                sales: 113,
+                spec: "均碼",
+                svgType: "sumikko"
+            },
+            {
+                id: 12,
+                name: "星之卡比趴睡表情掌心午睡小睡枕",
+                ip: "星之卡比",
+                categories: ["可愛雜貨", "生活實用"],
+                price: 520,
+                jpyPrice: 2200,
+                desc: "辦公桌、教室課桌午睡神器！中央微弧凹槽設計，不壓迫手臂。",
+                tag: "NEW",
+                sales: 41,
+                spec: "趴睡款",
+                svgType: "makeup"
+            }
+        ];
+
+        // 篩選與排序作用狀態
+        let currentProducts = [...initialProducts];
+        let cart = [];
+        let selectedIPs = [];
+        let selectedCategories = [];
+        let showMobileFilters = false;
+
+        // Renders Custom SVGs for products depending on Type
+        function renderProductSVG(type) {
+            switch(type) {
+                case 'sumikko':
+                    return `<svg viewBox="0 0 100 100" class="w-24 h-24">
+                        <ellipse cx="50" cy="55" rx="25" ry="25" fill="#A7F3D0" stroke="#047857" stroke-width="1.5"/>
+                        <circle cx="38" cy="50" r="2" fill="#1F2937"/>
+                        <circle cx="62" cy="50" r="2" fill="#1F2937"/>
+                        <ellipse cx="33" cy="53" rx="3" ry="1.5" fill="#F472B6" opacity="0.6"/>
+                        <ellipse cx="67" cy="53" rx="3" ry="1.5" fill="#F472B6" opacity="0.6"/>
+                        <rect x="49" y="15" width="2" height="40" fill="#6B7280"/>
+                        <path d="M 30,25 Q 50,10 70,25 Z" fill="#F472B6"/>
+                    </svg>`;
+                case 'candy':
+                    return `<svg viewBox="0 0 100 100" class="w-24 h-24">
+                        <rect x="25" y="35" width="50" height="30" rx="10" fill="#FCA5A5" stroke="#DC2626" stroke-width="2"/>
+                        <polygon points="15,30 25,48 15,66" fill="#FCA5A5" stroke="#DC2626" stroke-width="1.5"/>
+                        <polygon points="85,30 75,48 85,66" fill="#FCA5A5" stroke="#DC2626" stroke-width="1.5"/>
+                        <circle cx="50" cy="50" r="8" fill="#F472B6"/>
+                        <path d="M 46,44 Q 50,40 54,44" stroke="#047857" stroke-width="2" fill="none"/>
+                    </svg>`;
+                case 'makeup':
+                    return `<svg viewBox="0 0 100 100" class="w-24 h-24">
+                        <rect x="42" y="25" width="16" height="55" rx="3" fill="#000000" stroke="#F472B6" stroke-width="2"/>
+                        <rect x="44" y="28" width="12" height="20" fill="#F472B6"/>
+                        <path d="M 50,65 L 53,60 A 3,3 0 0,0 47,60 Z" fill="#EF4444"/>
+                    </svg>`;
+                case 'sootsprite':
+                    return `<svg viewBox="0 0 100 100" class="w-24 h-24">
+                        <circle cx="50" cy="50" r="24" fill="#1F2937" stroke="#000" stroke-width="1"/>
+                        <circle cx="42" cy="48" r="7" fill="#FFFFFF"/>
+                        <circle cx="42" cy="48" r="2.5" fill="#000000"/>
+                        <circle cx="58" cy="48" r="7" fill="#FFFFFF"/>
+                        <circle cx="58" cy="48" r="2.5" fill="#000000"/>
+                        <circle cx="30" cy="40" r="4" fill="#1F2937"/>
+                        <circle cx="70" cy="40" r="4" fill="#1F2937"/>
+                        <circle cx="50" cy="24" r="4" fill="#1F2937"/>
+                        <circle cx="50" cy="76" r="4" fill="#1F2937"/>
+                    </svg>`;
+                case 'kuromi':
+                    return `<svg viewBox="0 0 100 100" class="w-24 h-24">
+                        <ellipse cx="50" cy="55" rx="22" ry="18" fill="#FFFFFF" stroke="#4A0E4E" stroke-width="2"/>
+                        <path d="M 28,45 C 28,25 35,20 38,32 C 44,20 56,20 62,32 Q 65,20 72,25 C 72,45 28,55 28,45 Z" fill="#312E81"/>
+                        <circle cx="50" cy="38" r="3" fill="#F472B6"/>
+                        <ellipse cx="42" cy="53" rx="2" ry="4" fill="#312E81" transform="rotate(-10 42 53)"/>
+                        <ellipse cx="58" cy="53" rx="2" ry="4" fill="#312E81" transform="rotate(10 58 53)"/>
+                    </svg>`;
+                case 'matcha':
+                    return `<svg viewBox="0 0 100 100" class="w-24 h-24">
+                        <rect x="30" y="30" width="40" height="40" rx="4" fill="#047857" stroke="#FFF" stroke-width="1.5"/>
+                        <path d="M 44,52 C 40,42 50,42 50,52 C 50,62 60,62 56,52" fill="none" stroke="#FBBF24" stroke-width="2"/>
+                    </svg>`;
+                default:
+                    return `<svg viewBox="0 0 100 100" class="w-24 h-24">
+                        <circle cx="50" cy="50" r="25" fill="#F3F4F6"/>
+                    </svg>`;
+            }
+        }
+
+        // 動態生成側邊欄核取方塊過濾選項
+        function renderFilters() {
+            // 提取所有不重複的 IP 品牌
+            const ips = [...new Set(initialProducts.map(p => p.ip))];
+            const ipContainer = document.getElementById('ipFilterContainer');
+            ipContainer.innerHTML = '';
+            ips.forEach(ip => {
+                const checked = selectedIPs.includes(ip) ? 'checked' : '';
+                ipContainer.innerHTML += `
+                    <label class="flex items-center gap-2 cursor-pointer py-1 select-none text-xs font-bold hover:text-penguin-pink-dark transition-colors">
+                        <input type="checkbox" value="${ip}" ${checked} onchange="toggleIPFilter('${ip}')" class="w-4 h-4 rounded accent-penguin-pink-dark border-gray-300">
+                        <span>${ip}</span>
+                    </label>
+                `;
+            });
+
+            // 提取所有不重複的商品類別 (包含複數標籤)
+            const categories = [...new Set(initialProducts.flatMap(p => p.categories))];
+            const catContainer = document.getElementById('catFilterContainer');
+            catContainer.innerHTML = '';
+            categories.forEach(cat => {
+                const checked = selectedCategories.includes(cat) ? 'checked' : '';
+                catContainer.innerHTML += `
+                    <label class="flex items-center gap-2 cursor-pointer py-1 select-none text-xs font-bold hover:text-penguin-pink-dark transition-colors">
+                        <input type="checkbox" value="${cat}" ${checked} onchange="toggleCatFilter('${cat}')" class="w-4 h-4 rounded accent-penguin-pink-dark border-gray-300">
+                        <span>${cat}</span>
+                    </label>
+                `;
+            });
+
+            renderActiveFilterTags();
+        }
+
+        // 切換 IP 篩選狀態
+        function toggleIPFilter(ip) {
+            const index = selectedIPs.indexOf(ip);
+            if (index > -1) {
+                selectedIPs.splice(index, 1);
+            } else {
+                selectedIPs.push(ip);
+            }
+            applyFilters();
+            renderFilters();
+        }
+
+        // 切換類別篩選狀態
+        function toggleCatFilter(cat) {
+            const index = selectedCategories.indexOf(cat);
+            if (index > -1) {
+                selectedCategories.splice(index, 1);
+            } else {
+                selectedCategories.push(cat);
+            }
+            applyFilters();
+            renderFilters();
+        }
+
+        // 手機版篩選面板折疊
+        function toggleMobileFilters() {
+            const panel = document.getElementById('filterPanel');
+            const btnText = document.getElementById('filterToggleText');
+            showMobileFilters = !showMobileFilters;
+            if (showMobileFilters) {
+                panel.classList.remove('hidden');
+                btnText.innerText = "收合商品篩選條件";
+            } else {
+                panel.classList.add('hidden');
+                btnText.innerText = "展開商品篩選條件";
+            }
+        }
+
+        // 重置所有篩選
+        function resetFilters() {
+            selectedIPs = [];
+            selectedCategories = [];
+            document.getElementById('priceMin').value = '';
+            document.getElementById('priceMax').value = '';
+            document.getElementById('searchInput').value = '';
+            applyFilters();
+            renderFilters();
+        }
+
+        // 執行複數篩選條件邏輯
+        function applyFilters() {
+            const query = document.getElementById('searchInput').value.trim().toLowerCase();
+            const minPrice = parseFloat(document.getElementById('priceMin').value) || 0;
+            const maxPrice = parseFloat(document.getElementById('priceMax').value) || Infinity;
+
+            currentProducts = initialProducts.filter(p => {
+                // 1. 文字關鍵字過濾
+                const matchesSearch = query === '' || 
+                    p.name.toLowerCase().includes(query) || 
+                    p.desc.toLowerCase().includes(query);
+
+                // 2. IP 品牌過濾
+                const matchesIP = selectedIPs.length === 0 || selectedIPs.includes(p.ip);
+
+                // 3. 複數商品標籤過濾 (任一符合即可)
+                const matchesCategory = selectedCategories.length === 0 || 
+                    p.categories.some(cat => selectedCategories.includes(cat));
+
+                // 4. 價格範圍過濾
+                const matchesPrice = p.price >= minPrice && p.price <= maxPrice;
+
+                return matchesSearch && matchesIP && matchesCategory && matchesPrice;
+            });
+
+            sortProducts();
+            document.getElementById('resultsCount').innerText = currentProducts.length;
+            renderActiveFilterTags();
+        }
+
+        // 渲染目前作用中篩選條件的快速刪除按鈕
+        function renderActiveFilterTags() {
+            const container = document.getElementById('activeFilterTags');
+            container.innerHTML = '';
+
+            const activeFilters = [
+                ...selectedIPs.map(ip => ({ type: 'ip', val: ip })),
+                ...selectedCategories.map(cat => ({ type: 'cat', val: cat }))
+            ];
+
+            const minPrice = document.getElementById('priceMin').value;
+            const maxPrice = document.getElementById('priceMax').value;
+            if (minPrice) activeFilters.push({ type: 'minP', val: `最低 > $${minPrice}` });
+            if (maxPrice) activeFilters.push({ type: 'maxP', val: `最高 < $${maxPrice}` });
+
+            if (activeFilters.length === 0) {
+                container.innerHTML = `<span class="text-gray-400 italic font-medium">顯示全部現貨商品中，無特殊篩選。</span>`;
+                return;
+            }
+
+            activeFilters.forEach(f => {
+                container.innerHTML += `
+                    <span class="bg-penguin-peach text-penguin-peach-dark px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm">
+                        ${f.val}
+                        <button onclick="removeSingleFilter('${f.type}', '${f.val}'); playCuteSound('remove');" class="hover:text-red-500 font-bold ml-1 font-mono">×</button>
+                    </span>
+                `;
+            });
+        }
+
+        // 移除單個過濾標籤
+        function removeSingleFilter(type, val) {
+            if (type === 'ip') {
+                selectedIPs = selectedIPs.filter(i => i !== val);
+            } else if (type === 'cat') {
+                selectedCategories = selectedCategories.filter(c => c !== val);
+            } else if (type === 'minP') {
+                document.getElementById('priceMin').value = '';
+            } else if (type === 'maxP') {
+                document.getElementById('priceMax').value = '';
+            }
+            applyFilters();
+            renderFilters();
+        }
+
+        // 渲染商品網格卡片區
+        function renderProducts() {
+            const grid = document.getElementById('productGrid');
+            grid.innerHTML = '';
+
+            if (currentProducts.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-full text-center py-20 bg-white rounded-3xl border-2 border-dashed border-penguin-peach p-6">
+                        <span class="text-5xl">😿</span>
+                        <p class="font-black text-penguin-gray mt-3 text-sm">找不到符合條件的現貨好物！</p>
+                        <p class="text-xs text-gray-400 mt-1">您可以試著調整篩選條件或重設過濾器喔！</p>
+                        <button onclick="resetFilters(); playCuteSound('pop');" class="mt-4 bg-penguin-pink-dark hover:bg-penguin-pink text-white font-bold text-xs px-5 py-2.5 rounded-xl transition-all shadow-sm">
+                            重設篩選條件
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+
+            currentProducts.forEach(product => {
+                const badgeColor = product.tag === 'NEW' ? 'bg-emerald-500' : product.tag === 'HOT' ? 'bg-red-500' : 'bg-penguin-peach-dark';
+                
+                // 動態組裝複數的類別標籤 HTML
+                const categoryTagsHTML = product.categories.map(cat => 
+                    `<span class="bg-penguin-pink-light text-penguin-pink-dark text-[9px] font-bold px-1.5 py-0.5 rounded-md">#${cat}</span>`
+                ).join(' ');
+
+                const card = document.createElement('div');
+                card.className = "bg-white rounded-2xl border-2 border-penguin-pink-light overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-1 transition-all flex flex-col justify-between";
+                card.innerHTML = `
+                    <div class="bg-penguin-pink-light/30 h-44 flex items-center justify-center relative cursor-pointer group" onclick="openQuickView(${product.id})">
+                        <span class="absolute top-2 left-2 ${badgeColor} text-white font-mono text-[9px] font-bold px-1.5 py-0.5 rounded">${product.tag}</span>
+                        <div class="transform group-hover:scale-110 transition-transform">
+                            ${renderProductSVG(product.svgType)}
+                        </div>
+                    </div>
+                    <div class="p-4 flex-1 flex flex-col justify-between space-y-3">
+                        <div>
+                            <!-- 頂部標籤區：IP品牌(橘色)與類別(複數粉色) -->
+                            <div class="flex flex-wrap gap-1 items-center mb-1.5">
+                                <span class="bg-penguin-peach-dark/20 text-penguin-peach-dark text-[10px] font-black px-2 py-0.5 rounded-full">
+                                    ${product.ip}
+                                </span>
+                                ${categoryTagsHTML}
+                            </div>
+                            <h4 class="font-bold text-xs text-penguin-gray hover:text-penguin-pink-dark transition-all line-clamp-2 cursor-pointer" onclick="openQuickView(${product.id})">
+                                ${product.name}
+                            </h4>
+                        </div>
+                        <div>
+                            <div class="flex items-baseline justify-between mt-1 text-[10px] text-gray-400">
+                                <span>已代購：${product.sales} 件</span>
+                                <span>規格: ${product.spec.split('/')[0]}等</span>
+                            </div>
+                            <div class="flex items-baseline gap-1.5 mt-1">
+                                <span class="text-sm font-black text-penguin-pink-dark">NT$ ${product.price}</span>
+                                <span class="text-[9px] text-gray-400">約 ¥${product.jpyPrice}</span>
+                            </div>
+                            <button onclick="addToCart(${product.id}, '${product.name}', ${product.price}, '即時現貨', '${product.spec.split('/')[0]}', '${product.svgType}'); playCuteSound('pop');" class="w-full mt-2.5 bg-penguin-peach hover:bg-penguin-peach-dark hover:text-white text-penguin-gray font-bold text-[11px] py-1.5 rounded-xl transition-all border border-penguin-peach-dark">
+                                <i class="fa-solid fa-cart-plus mr-1"></i> 加入購物車
+                            </button>
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        // 商品即時搜尋
+        function handleSearch() {
+            applyFilters();
+        }
+
+        // 排序商品
+        function sortProducts() {
+            const sortBy = document.getElementById('sortBy').value;
+            if (sortBy === 'priceLow') {
+                currentProducts.sort((a, b) => a.price - b.price);
+            } else if (sortBy === 'priceHigh') {
+                currentProducts.sort((a, b) => b.price - a.price);
+            } else if (sortBy === 'sales') {
+                currentProducts.sort((a, b) => b.sales - a.sales);
+            } else {
+                currentProducts.sort((a, b) => a.id - b.id);
+            }
+            renderProducts();
+        }
+
+        // 購物車側滑欄控制
+        function toggleCart() {
+            const drawer = document.getElementById('cartDrawer');
+            const content = document.getElementById('cartDrawerContent');
+
+            if (drawer.classList.contains('opacity-0')) {
+                drawer.classList.remove('opacity-0', 'pointer-events-none');
+                content.classList.remove('translate-x-full');
+            } else {
+                drawer.classList.add('opacity-0', 'pointer-events-none');
+                content.classList.add('translate-x-full');
+            }
+        }
+
+        // 將商品放入購物車
+        function addToCart(id, name, price, type = '即時現貨', selectedSpec = '預設款', svgType = 'sumikko') {
+            const existing = cart.find(item => item.id === id && item.spec === selectedSpec);
+            if (existing) {
+                existing.quantity++;
+            } else {
+                cart.push({
+                    id,
+                    name,
+                    price,
+                    type,
+                    spec: selectedSpec,
+                    quantity: 1,
+                    svgType
+                });
+            }
+            updateCartUI();
+            showToast("成功加入選物箱！", `「${name}」已成功放進箱中。`);
+        }
+
+        // 重新整理購物車介面
+        function updateCartUI() {
+            const totalItems = cart.reduce((acc, item) => acc + item.quantity, 0);
+            document.getElementById('cartCount').innerText = totalItems;
+            document.getElementById('drawerCartCount').innerText = totalItems;
+
+            const container = document.getElementById('cartItemsContainer');
+            if (cart.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-20 text-gray-400 space-y-2">
+                        <span class="text-5xl">🛒</span>
+                        <p class="font-bold">您的購物車是空的喔！</p>
+                        <p class="text-xs">快去選購好物放進箱子吧！</p>
+                    </div>
+                `;
+                document.getElementById('cartSubtotal').innerText = "NT$ 0";
+                document.getElementById('cartTotal').innerText = "NT$ 0";
+                return;
+            }
+
+            container.innerHTML = '';
+            let total = 0;
+
+            cart.forEach((item, index) => {
+                const subtotal = item.price * item.quantity;
+                total += subtotal;
+
+                const itemDiv = document.createElement('div');
+                itemDiv.className = "bg-penguin-cream/50 p-3 rounded-2xl border border-penguin-pink flex gap-3 items-center justify-between";
+                itemDiv.innerHTML = `
+                    <div class="w-14 h-14 bg-white rounded-xl border border-penguin-pink flex items-center justify-center shrink-0">
+                        ${renderProductSVG(item.svgType)}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <h5 class="font-bold text-xs text-penguin-gray truncate">${item.name}</h5>
+                        <p class="text-[10px] text-gray-400">規格: ${item.spec} | ${item.type}</p>
+                        <div class="flex items-center gap-1.5 mt-1">
+                            <button onclick="changeQty(${index}, -1); playCuteSound('pop');" class="bg-white border border-gray-300 w-5 h-5 flex items-center justify-center rounded-md text-[10px]">-</button>
+                            <span class="text-xs font-bold font-mono px-2">${item.quantity}</span>
+                            <button onclick="changeQty(${index}, 1); playCuteSound('pop');" class="bg-white border border-gray-300 w-5 h-5 flex items-center justify-center rounded-md text-[10px]">+</button>
+                        </div>
+                    </div>
+                    <div class="text-right flex flex-col justify-between h-full">
+                        <button onclick="removeCartItem(${index}); playCuteSound('remove');" class="text-red-400 hover:text-red-500 text-xs p-1"><i class="fa-solid fa-trash-can"></i></button>
+                        <span class="text-xs font-black text-penguin-pink-dark font-mono">NT$ ${subtotal}</span>
+                    </div>
+                `;
+                container.appendChild(itemDiv);
+            });
+
+            document.getElementById('cartSubtotal').innerText = `NT$ ${total}`;
+            document.getElementById('cartTotal').innerText = `NT$ ${total}`;
+        }
+
+        // 修改購物車內單一商品數量
+        function changeQty(index, dir) {
+            cart[index].quantity += dir;
+            if (cart[index].quantity <= 0) {
+                cart.splice(index, 1);
+            }
+            updateCartUI();
+        }
+
+        // 移除購物車項目
+        function removeCartItem(index) {
+            cart.splice(index, 1);
+            updateCartUI();
+        }
+
+        // 清空購物車
+        function clearCart() {
+            cart = [];
+            updateCartUI();
+            showToast("購物車已清空", "期待下次為您代購尋寶喔！");
+        }
+
+        // 開啟快速結帳面板
+        function openCheckoutModal() {
+            if (cart.length === 0) {
+                showToast("購物車空空的", "請先選購日本好物再前往結帳喔！");
+                return;
+            }
+            
+            const listContainer = document.getElementById('checkoutItemsList');
+            listContainer.innerHTML = '';
+            let total = 0;
+
+            cart.forEach(item => {
+                const sub = item.price * item.quantity;
+                total += sub;
+
+                const row = document.createElement('div');
+                row.className = "flex justify-between items-center text-xs py-1 border-b border-dashed border-gray-200";
+                row.innerHTML = `
+                    <span class="text-penguin-gray truncate max-w-[200px]">${item.name} (${item.spec}) x${item.quantity}</span>
+                    <span class="font-mono text-penguin-pink-dark font-bold">NT$ ${sub}</span>
+                `;
+                listContainer.appendChild(row);
+            });
+
+            document.getElementById('checkoutTotalText').innerText = `NT$ ${total}`;
+            toggleCart(); // 關閉側邊欄
+            
+            const modal = document.getElementById('checkoutModal');
+            modal.classList.remove('opacity-0', 'pointer-events-none');
+            modal.querySelector('.max-w-2xl').classList.remove('scale-95');
+        }
+
+        // 關閉快速結帳面板
+        function closeCheckoutModal() {
+            const modal = document.getElementById('checkoutModal');
+            modal.classList.add('opacity-0', 'pointer-events-none');
+            modal.querySelector('.max-w-2xl').classList.add('scale-95');
+        }
+
+        // 模擬送出代購訂單
+        function submitOrder(event) {
+            event.preventDefault();
+            
+            const name = document.getElementById('shipName').value;
+            const phone = document.getElementById('shipPhone').value;
+            const method = document.getElementById('shipMethod').value;
+            const addr = document.getElementById('shipAddr').value;
+            const pay = document.getElementById('payMethod').value;
+
+            const orderId = "KP" + Math.floor(100000 + Math.random() * 900000);
+
+            closeCheckoutModal();
+            cart = [];
+            updateCartUI();
+
+            playCuteSound('chime');
+            
+            const successOverlay = document.createElement('div');
+            successOverlay.className = "fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4";
+            successOverlay.innerHTML = `
+                <div class="bg-white p-6 rounded-3xl border-4 border-penguin-peach-dark max-w-sm text-center space-y-4 shadow-2xl animate-fade-in">
+                    <div class="w-20 h-20 bg-penguin-peach rounded-full mx-auto flex items-center justify-center border-4 border-white shadow">
+                        <span class="text-4xl">🐧🎉</span>
+                    </div>
+                    <div class="space-y-1">
+                        <h4 class="font-black text-xl text-penguin-peach-dark">代購訂單建立成功！</h4>
+                        <p class="text-xs text-gray-500">訂單編號: <span class="font-mono font-bold">${orderId}</span></p>
+                    </div>
+                    <div class="bg-penguin-cream p-4 rounded-2xl text-left text-xs space-y-1.5 text-penguin-gray border border-penguin-peach/40">
+                        <p><strong>收件人:</strong> ${name}</p>
+                        <p><strong>收件方式:</strong> ${method} (${addr})</p>
+                        <p><strong>付款方式:</strong> ${pay}</p>
+                        <p class="text-[10px] text-emerald-600 font-bold mt-2"><i class="fa-solid fa-circle-check"></i> 小幫手正在日本現場為您排單採購！訂單進度會同步發送至您的手機簡訊。</p>
+                    </div>
+                    <button onclick="this.closest('.fixed').remove(); playCuteSound('pop');" class="w-full bg-penguin-peach-dark hover:bg-penguin-pink-dark text-white font-black py-2 rounded-xl text-xs transition-all">
+                        太棒了！繼續逛逛
+                    </button>
+                </div>
+            `;
+            document.body.appendChild(successOverlay);
+        }
+
+        // 開啟快速預覽懸浮窗 (簡約無大圖設計)
+        function openQuickView(id) {
+            const product = initialProducts.find(p => p.id === id);
+            if (!product) return;
+
+            playCuteSound('pop');
+            
+            const categoryLabels = product.categories.map(cat => 
+                `<span class="bg-penguin-pink text-penguin-pink-dark text-[10px] font-bold px-2 py-0.5 rounded-full">#${cat}</span>`
+            ).join(' ');
+
+            const modal = document.getElementById('productModal');
+            modal.innerHTML = `
+                <div class="bg-white w-full max-w-md rounded-3xl border-4 border-penguin-peach-dark overflow-hidden shadow-2xl p-6 relative max-h-[90vh] overflow-y-auto space-y-4 animate-fade-in">
+                    <button onclick="closeQuickView()" class="absolute right-4 top-4 text-penguin-peach-dark hover:text-red-500 text-xl font-bold"><i class="fa-solid fa-circle-xmark"></i></button>
+                    
+                    <div class="space-y-2 pt-2">
+                        <div class="flex flex-wrap gap-1.5 items-center">
+                            <span class="bg-penguin-peach-dark text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full">${product.ip}</span>
+                            ${categoryLabels}
+                        </div>
+                        <h4 class="font-black text-lg text-penguin-gray">${product.name}</h4>
+                        <p class="text-xs text-gray-500 leading-relaxed">${product.desc}</p>
+                    </div>
+
+                    <div class="flex items-center justify-between border-t border-dashed border-gray-200 pt-3">
+                        <div class="flex items-baseline gap-2">
+                            <span class="text-xl font-black text-penguin-peach-dark">NT$ ${product.price}</span>
+                            <span class="text-xs text-gray-400">約 ¥${product.jpyPrice}</span>
+                        </div>
+                        <div class="text-xs text-gray-400">已代購銷量：${product.sales} 件</div>
+                    </div>
+
+                    <div class="space-y-2">
+                        <label class="block text-xs font-bold text-gray-600">選擇款式規格：</label>
+                        <select id="quickSpec" class="w-full bg-penguin-peach/20 border-2 border-penguin-peach-dark rounded-xl py-1.5 px-3 text-xs focus:outline-none">
+                            ${product.spec.split('/').map(s => `<option value="${s}">${s}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <button onclick="handleQuickAdd(${product.id}, '${product.name}', ${product.price}, '${product.svgType}'); closeQuickView();" class="w-full bg-penguin-peach-dark hover:bg-penguin-pink-dark text-white font-black py-2.5 rounded-xl text-xs shadow-md transition-all">
+                        🛒 放進小企鵝選物箱
+                    </button>
+                </div>
+            `;
+            modal.classList.remove('opacity-0', 'pointer-events-none');
+        }
+
+        // 關閉快速預覽
+        function closeQuickView() {
+            const modal = document.getElementById('productModal');
+            modal.classList.add('opacity-0', 'pointer-events-none');
+        }
+
+        // 預覽快速加入購物車
+        function handleQuickAdd(id, name, price, svgType) {
+            const spec = document.getElementById('quickSpec').value;
+            addToCart(id, name, price, '即時現貨', spec, svgType);
+            playCuteSound('chime');
+        }
+
+        // 顯示通知訊息
+        function showToast(title, msg) {
+            const toast = document.getElementById('toastNotification');
+            document.getElementById('toastTitle').innerText = title;
+            document.getElementById('toastMsg').innerText = msg;
+
+            toast.classList.remove('translate-y-20', 'opacity-0', 'pointer-events-none');
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0', 'pointer-events-none');
+            }, 4000);
+        }
+
+        // 網頁載入初始化
+        window.onload = function() {
+            renderFilters();
+            applyFilters();
+            notifyParentHeight();
+            window.addEventListener('resize', notifyParentHeight);
+            new MutationObserver(notifyParentHeight).observe(document.body, {
+                childList: true,
+                subtree: true,
+                attributes: true
+            });
+        }
+    </script>
+
+</body>
+</html>
