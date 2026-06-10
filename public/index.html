@@ -886,6 +886,8 @@
         let cart = [];
         let selectedIPs = [];
         let selectedCategories = [];
+        const SHOP_BACKEND_API_URL = 'https://script.google.com/macros/s/AKfycbyC48NPyP1ookWXtJAiV9TAUO05rLcroNAF_Bd9GrNDHWCaTF4YrbKmKzT-mHpI-a7Fgw/exec';
+        const SHOP_BACKEND_WEBSITE_ID = 2026061001;
         
         let wishes = [
             { id: 1, title: "想要星之卡比限定提袋", desc: "上個月在澀谷任天堂看到的那個刺繡手提袋", budget: 600, name: "蜜桃醬", upvotes: 21, status: "已開單預購" },
@@ -1489,20 +1491,77 @@
             modal.querySelector('.max-w-2xl').classList.add('scale-95');
         }
 
-        // Submit checkout form (Simulation)
-        function submitOrder(event) {
+        function getTodayDateString() {
+            const now = new Date();
+            return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        }
+
+        async function saveShopOrderToBackend(orderId, customer) {
+            const orderItems = cart.map((item, index) => ({
+                itemId: Date.now() + index + Math.random(),
+                name: `[${item.type}] ${item.name}（${item.spec}）`,
+                link: `前台訂單 ${orderId}`,
+                price: item.price,
+                qty: item.quantity,
+                tracking: `顧客：${customer.name}｜手機：${customer.phone}｜物流：${customer.method}｜地址/門市：${customer.addr}｜付款：${customer.pay}`
+            }));
+
+            const orderData = {
+                id: Date.now(),
+                date: getTodayDateString(),
+                vendorId: SHOP_BACKEND_WEBSITE_ID,
+                orderNo: orderId,
+                trackingNo: '',
+                shipped: '未出貨',
+                shippedDate: '',
+                items: [
+                    { isMeta: true, orderNo: orderId, trackingNo: '', shipped: '未出貨', shippedDate: '' },
+                    ...orderItems
+                ]
+            };
+
+            const response = await fetch(SHOP_BACKEND_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'saveOrder', payload: orderData })
+            });
+            const result = await response.json();
+            if (result.status !== 'success') {
+                throw new Error(result.message || '後台訂單建立失敗');
+            }
+        }
+
+        // Submit checkout form and sync order to backend
+        async function submitOrder(event) {
             event.preventDefault();
+            if (cart.length === 0) return alert('購物車是空的喔！');
             
             const name = document.getElementById('shipName').value;
             const phone = document.getElementById('shipPhone').value;
             const method = document.getElementById('shipMethod').value;
             const addr = document.getElementById('shipAddr').value;
             const pay = document.getElementById('payMethod').value;
+            const submitButton = event.submitter;
 
             // Generate an order ID
             const orderId = "KP" + Math.floor(100000 + Math.random() * 900000);
+            if (submitButton) {
+                submitButton.disabled = true;
+                submitButton.innerHTML = '⏳ 正在送出訂單...';
+            }
 
-            // Simulation Process Complete
+            try {
+                await saveShopOrderToBackend(orderId, { name, phone, method, addr, pay });
+            } catch (error) {
+                console.error(error);
+                alert('訂單尚未送出成功，請稍後再試或私訊小企鵝。購物車內容已保留。');
+                if (submitButton) {
+                    submitButton.disabled = false;
+                    submitButton.innerHTML = '🚀 確認並送出代購訂單';
+                }
+                return;
+            }
+
             closeCheckoutModal();
             cart = [];
             updateCartUI();
