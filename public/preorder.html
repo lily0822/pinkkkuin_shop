@@ -647,6 +647,58 @@
         let showMobileFilters = false;
         const SHOP_BACKEND_API_URL = 'https://script.google.com/macros/s/AKfycbyC48NPyP1ookWXtJAiV9TAUO05rLcroNAF_Bd9GrNDHWCaTF4YrbKmKzT-mHpI-a7Fgw/exec';
         const SHOP_BACKEND_CUSTOMER_SOURCE_ID = 2026061002;
+        const SHOP_BACKEND_PRODUCT_SOURCE_ID = 2026062002;
+
+        function quoteJs(value) {
+            return JSON.stringify(String(value ?? '')).replace(/</g, '\\u003c');
+        }
+
+        function parseCatalogMeta(item) {
+            try {
+                return item.tracking ? JSON.parse(item.tracking) : {};
+            } catch (error) {
+                return {};
+            }
+        }
+
+        function catalogItemToFrontendProduct(item, index) {
+            const meta = parseCatalogMeta(item);
+            const listPrice = Number(meta.listPrice ?? item.price ?? 0);
+            const tagNames = Array.isArray(meta.tagNames) && meta.tagNames.length ? meta.tagNames : ['後台商品'];
+            return {
+                id: Number(item.itemId) || Date.now() + index,
+                name: item.name || '未命名商品',
+                ip: '預購商品',
+                categories: tagNames,
+                price: listPrice,
+                jpyPrice: Math.round(listPrice * 4.5),
+                desc: meta.description || '後台新增商品',
+                tag: '預購',
+                sales: 0,
+                spec: meta.deadline ? `結單 ${meta.deadline}` : '預設款',
+                svgType: 'sumikko',
+                image: meta.image || '',
+                deadline: meta.deadline || ''
+            };
+        }
+
+        async function loadBackendProducts() {
+            try {
+                const response = await fetch(SHOP_BACKEND_API_URL);
+                const data = await response.json();
+                const catalog = (data.orders || []).find(order => Number(order.vendorId) === SHOP_BACKEND_PRODUCT_SOURCE_ID);
+                const backendProducts = (catalog?.items || [])
+                    .filter(item => !item.isMeta)
+                    .map(catalogItemToFrontendProduct);
+
+                if (backendProducts.length > 0) {
+                    initialProducts.splice(0, initialProducts.length, ...backendProducts);
+                    currentProducts = [...initialProducts];
+                }
+            } catch (error) {
+                console.warn('後台商品讀取失敗，先顯示頁面預設商品。', error);
+            }
+        }
 
         // Renders Custom SVGs for products depending on Type
         function renderProductSVG(type) {
@@ -896,8 +948,8 @@
                 card.innerHTML = `
                     <div class="bg-penguin-pink-light/30 h-44 flex items-center justify-center relative cursor-pointer group" onclick="openQuickView(${product.id})">
                         <span class="absolute top-2 left-2 ${badgeColor} text-white font-mono text-[9px] font-bold px-1.5 py-0.5 rounded">${product.tag}</span>
-                        <div class="transform group-hover:scale-110 transition-transform">
-                            ${renderProductSVG(product.svgType)}
+                        <div class="transform group-hover:scale-110 transition-transform w-full h-full flex items-center justify-center">
+                            ${product.image ? `<img src="${product.image}" alt="${product.name}" class="w-full h-full object-cover">` : renderProductSVG(product.svgType)}
                         </div>
                     </div>
                     <div class="p-4 flex-1 flex flex-col justify-between space-y-3">
@@ -922,7 +974,7 @@
                                 <span class="text-sm font-black text-penguin-pink-dark">NT$ ${product.price}</span>
                                 <span class="text-[9px] text-gray-400">約 ¥${product.jpyPrice}</span>
                             </div>
-                            <button onclick="addToCart(${product.id}, '${product.name}', ${product.price}, '預購商品', '${product.spec.split('/')[0]}', '${product.svgType}'); playCuteSound('pop');" class="w-full mt-2.5 bg-penguin-peach hover:bg-penguin-peach-dark hover:text-white text-penguin-gray font-bold text-[11px] py-1.5 rounded-xl transition-all border border-penguin-peach-dark">
+                            <button onclick="addToCart(${product.id}, ${quoteJs(product.name)}, ${product.price}, '預購商品', ${quoteJs(product.spec.split('/')[0])}, '${product.svgType}', ${quoteJs(product.image || '')}); playCuteSound('pop');" class="w-full mt-2.5 bg-penguin-peach hover:bg-penguin-peach-dark hover:text-white text-penguin-gray font-bold text-[11px] py-1.5 rounded-xl transition-all border border-penguin-peach-dark">
                                 <i class="fa-solid fa-cart-plus mr-1"></i> 加入預購
                             </button>
                         </div>
@@ -967,7 +1019,7 @@
         }
 
         // 將商品放入購物車
-        function addToCart(id, name, price, type = '預購商品', selectedSpec = '預設款', svgType = 'sumikko') {
+        function addToCart(id, name, price, type = '預購商品', selectedSpec = '預設款', svgType = 'sumikko', image = '') {
             const existing = cart.find(item => item.id === id && item.spec === selectedSpec);
             if (existing) {
                 existing.quantity++;
@@ -979,7 +1031,8 @@
                     type,
                     spec: selectedSpec,
                     quantity: 1,
-                    svgType
+                    svgType,
+                    image
                 });
             }
             updateCartUI();
@@ -1017,7 +1070,7 @@
                 itemDiv.className = "bg-penguin-cream/50 p-3 rounded-2xl border border-penguin-pink flex gap-3 items-center justify-between";
                 itemDiv.innerHTML = `
                     <div class="w-14 h-14 bg-white rounded-xl border border-penguin-pink flex items-center justify-center shrink-0">
-                        ${renderProductSVG(item.svgType)}
+                        ${item.image ? `<img src="${item.image}" alt="${item.name}" class="w-full h-full object-cover rounded-xl">` : renderProductSVG(item.svgType)}
                     </div>
                     <div class="flex-1 min-w-0">
                         <h5 class="font-bold text-xs text-penguin-gray truncate">${item.name}</h5>
@@ -1242,7 +1295,7 @@
                         </select>
                     </div>
 
-                    <button onclick="handleQuickAdd(${product.id}, '${product.name}', ${product.price}, '${product.svgType}'); closeQuickView();" class="w-full bg-penguin-peach-dark hover:bg-penguin-pink-dark text-white font-black py-2.5 rounded-xl text-xs shadow-md transition-all">
+                    <button onclick="handleQuickAdd(${product.id}, ${quoteJs(product.name)}, ${product.price}, '${product.svgType}', ${quoteJs(product.image || '')}); closeQuickView();" class="w-full bg-penguin-peach-dark hover:bg-penguin-pink-dark text-white font-black py-2.5 rounded-xl text-xs shadow-md transition-all">
                         🛒 放進小企鵝選物箱
                     </button>
                 </div>
@@ -1257,9 +1310,9 @@
         }
 
         // 預覽快速加入購物車
-        function handleQuickAdd(id, name, price, svgType) {
+        function handleQuickAdd(id, name, price, svgType, image = '') {
             const spec = document.getElementById('quickSpec').value;
-            addToCart(id, name, price, '預購商品', spec, svgType);
+            addToCart(id, name, price, '預購商品', spec, svgType, image);
             playCuteSound('chime');
         }
 
@@ -1276,7 +1329,8 @@
         }
 
         // 網頁載入初始化
-        window.onload = function() {
+        window.onload = async function() {
+            await loadBackendProducts();
             renderFilters();
             applyFilters();
             notifyParentHeight();
