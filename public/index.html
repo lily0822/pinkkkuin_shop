@@ -887,7 +887,7 @@
         let selectedIPs = [];
         let selectedCategories = [];
         const SHOP_BACKEND_API_URL = 'https://script.google.com/macros/s/AKfycbyC48NPyP1ookWXtJAiV9TAUO05rLcroNAF_Bd9GrNDHWCaTF4YrbKmKzT-mHpI-a7Fgw/exec';
-        const SHOP_BACKEND_WEBSITE_ID = 2026061001;
+        const SHOP_BACKEND_CUSTOMER_SOURCE_ID = 2026061002;
         
         let wishes = [
             { id: 1, title: "想要星之卡比限定提袋", desc: "上個月在澀谷任天堂看到的那個刺繡手提袋", budget: 600, name: "蜜桃醬", upvotes: 21, status: "已開單預購" },
@@ -1509,7 +1509,7 @@
             const orderData = {
                 id: Date.now(),
                 date: getTodayDateString(),
-                vendorId: SHOP_BACKEND_WEBSITE_ID,
+                vendorId: SHOP_BACKEND_CUSTOMER_SOURCE_ID,
                 orderNo: orderId,
                 trackingNo: '',
                 shipped: '未出貨',
