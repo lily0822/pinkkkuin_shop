@@ -688,6 +688,7 @@
                 const catalog = (data.orders || []).find(order => Number(order.vendorId) === SHOP_BACKEND_PRODUCT_SOURCE_ID);
                 const backendProducts = (catalog?.items || [])
                     .filter(item => !item.isMeta)
+                    .filter(item => parseCatalogMeta(item).active !== false)
                     .map(catalogItemToFrontendProduct);
 
                 if (backendProducts.length > 0) {
