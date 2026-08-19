@@ -39,8 +39,8 @@ export type ProductDetailData = {
 };
 
 function supabaseHeaders() {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
-  if (!process.env.SUPABASE_URL || !key) return null;
+  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "").trim();
+  if (!process.env.SUPABASE_URL?.trim() || !key) return null;
   return {
     apikey: key,
     Authorization: `Bearer ${key}`,
@@ -49,7 +49,7 @@ function supabaseHeaders() {
 
 async function supabaseFetch<T>(path: string): Promise<T | null> {
   const headers = supabaseHeaders();
-  const baseUrl = process.env.SUPABASE_URL?.replace(/\/+$/, "");
+  const baseUrl = process.env.SUPABASE_URL?.trim().replace(/\/+$/, "");
   if (!headers || !baseUrl) return null;
 
   const response = await fetch(`${baseUrl}/rest/v1/${path}`, {
