@@ -1,0 +1,25 @@
+# Visual Studio Code
+.vscode/
+
+# Node
+node_modules/
+.next/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Logs
+*.log
+.vercel
+.backend-product-publish/
+.wrangler/
+.tmp-*.png
+import/*.csv
+
+# Local environment / generated public config
+.env
+.env.*
+!.env.example
+public/shop-env.js
+shop-env.js

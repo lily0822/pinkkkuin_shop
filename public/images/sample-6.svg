@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+  <rect width="800" height="800" fill="#f1e8ff"/>
+  <circle cx="285" cy="275" r="75" fill="#d8b08a" stroke="#2c2525" stroke-width="16"/>
+  <circle cx="515" cy="275" r="75" fill="#d8b08a" stroke="#2c2525" stroke-width="16"/>
+  <circle cx="400" cy="420" r="190" fill="#d8b08a" stroke="#2c2525" stroke-width="16"/>
+  <circle cx="335" cy="405" r="18" fill="#2c2525"/>
+  <circle cx="465" cy="405" r="18" fill="#2c2525"/>
+  <ellipse cx="400" cy="485" rx="58" ry="42" fill="#fff4e8" stroke="#2c2525" stroke-width="12"/>
+  <text x="400" y="705" text-anchor="middle" font-family="Arial" font-size="54" font-weight="800" fill="#6a4d91">Bear</text>
+</svg>

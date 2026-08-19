@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+  <rect width="800" height="800" fill="#eaf7ec"/>
+  <rect x="180" y="245" width="440" height="330" rx="56" fill="#fff" stroke="#2c2525" stroke-width="16"/>
+  <path d="M235 255c30-80 95-95 130-35M565 255c-30-80-95-95-130-35" fill="none" stroke="#2c2525" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="325" cy="405" r="18" fill="#2c2525"/>
+  <circle cx="475" cy="405" r="18" fill="#2c2525"/>
+  <path d="M360 465h80" stroke="#2c2525" stroke-width="16" stroke-linecap="round"/>
+  <text x="400" y="690" text-anchor="middle" font-family="Arial" font-size="54" font-weight="800" fill="#407f5d">Pouch</text>
+</svg>

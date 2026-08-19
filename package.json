@@ -1,0 +1,33 @@
+{
+  "name": "pinkkkuin-shop",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "generate:public-env": "node scripts/generate-public-env.js",
+    "export:google-products": "node scripts/export-google-products-to-csv.js",
+    "import:products": "node scripts/import-products.js",
+    "validate:local-images": "node scripts/import-products.js --validate-local-images",
+    "import:backend-data": "node scripts/import-backend-data.js",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "cloudinary": "^2.10.0",
+    "lucide-react": "latest",
+    "next": "^16.1.6",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "eslint": "latest",
+    "eslint-config-next": "latest",
+    "tailwindcss": "latest",
+    "typescript": "latest"
+  }
+}
