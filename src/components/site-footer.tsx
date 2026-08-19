@@ -4,28 +4,28 @@ import { contactLinks } from "@/lib/site";
 
 export function SiteFooter() {
   return (
-    <footer className="mt-16 border-t border-border bg-white pb-20 sm:pb-0">
-      <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 md:grid-cols-[1.2fr_0.8fr] lg:px-8">
-        <div>
-          <p className="text-lg font-black">Pinkkkuin / 小企鵝選物</p>
-          <p className="mt-2 max-w-xl text-sm leading-7 text-muted">
-            日本可愛雜貨與角色商品代購，商品狀態與庫存以私訊確認為準。
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-3 md:justify-end">
+    <footer className="mt-16 border-t-4 border-penguin-pink bg-penguin-pink-light px-4 py-12 pb-24 text-center sm:pb-12">
+      <div className="mx-auto max-w-xl space-y-4">
+        <h2 className="flex items-center justify-center gap-2 text-lg font-black text-penguin-pink-dark">
+          🐧 小企鵝選物 - 日本限定連線代購
+        </h2>
+        <p className="text-xs leading-7 text-gray-500">
+          專門收集日本限定、可愛雜貨、角色周邊與現貨選物。下單前歡迎透過 LINE 或 Instagram 確認庫存與代購細節。
+        </p>
+        <div className="flex justify-center gap-3">
           <Link
             href={contactLinks.instagram}
-            className="inline-flex items-center gap-2 rounded-full border border-border bg-white px-4 py-2 text-sm font-bold"
+            className="inline-flex items-center gap-2 rounded-full border-2 border-penguin-pink bg-white px-4 py-2 text-sm font-bold text-penguin-gray shadow-sm"
           >
             <Camera size={17} />
             Instagram
           </Link>
           <Link
             href={contactLinks.line}
-            className="inline-flex items-center gap-2 rounded-full bg-brand-mint px-4 py-2 text-sm font-bold"
+            className="inline-flex items-center gap-2 rounded-full bg-[#06C755] px-4 py-2 text-sm font-bold text-white shadow-sm"
           >
             <MessageCircle size={17} />
-            LINE 下單
+            LINE
           </Link>
         </div>
       </div>

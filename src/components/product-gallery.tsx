@@ -31,28 +31,6 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
     setSelectedIndex(primaryIndex(galleryImages));
   }, [galleryImages]);
 
-  useEffect(() => {
-    if (!lightboxOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setLightboxOpen(false);
-      if (event.key === "ArrowLeft") goToPrevious();
-      if (event.key === "ArrowRight") goToNext();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  });
-
-  if (!galleryImages.length) {
-    return (
-      <div className="grid aspect-square place-items-center rounded-[8px] border border-border bg-white text-sm font-bold text-muted">
-        No image
-      </div>
-    );
-  }
-
-  const selectedImage = galleryImages[selectedIndex] || galleryImages[0];
-  const largeImage = cloudinaryImageUrl(selectedImage.url, 1200);
-
   function selectImage(index: number) {
     setSelectedIndex((index + galleryImages.length) % galleryImages.length);
   }
@@ -67,6 +45,17 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
     selectImage(selectedIndex + 1);
   }
 
+  useEffect(() => {
+    if (!lightboxOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setLightboxOpen(false);
+      if (event.key === "ArrowLeft") goToPrevious();
+      if (event.key === "ArrowRight") goToNext();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
+
   function handleTouchEnd(clientX: number) {
     if (touchStartX.current == null || !hasMultipleImages) return;
     const delta = clientX - touchStartX.current;
@@ -76,10 +65,21 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
     else goToNext();
   }
 
+  if (!galleryImages.length) {
+    return (
+      <div className="grid aspect-square place-items-center rounded-3xl border-2 border-penguin-peach bg-white text-sm font-bold text-gray-400">
+        No image
+      </div>
+    );
+  }
+
+  const selectedImage = galleryImages[selectedIndex] || galleryImages[0];
+  const largeImage = cloudinaryImageUrl(selectedImage.url, 1200);
+
   return (
     <div className="space-y-3">
       <div
-        className="group relative aspect-square overflow-hidden rounded-[8px] border border-border bg-white shadow-sm"
+        className="group relative aspect-square overflow-hidden rounded-3xl border-4 border-white bg-white shadow-xl"
         onTouchStart={(event) => {
           touchStartX.current = event.touches[0]?.clientX ?? null;
         }}
@@ -101,14 +101,14 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
           sizes="(max-width: 1024px) 100vw, 48vw"
           className="object-cover"
         />
-        <div className="pointer-events-none absolute right-3 top-3 z-20 rounded-full bg-white/90 p-2 text-brand-pink-dark shadow-sm">
+        <div className="pointer-events-none absolute right-3 top-3 z-20 rounded-full bg-white/90 p-2 text-penguin-pink-dark shadow-sm">
           <Maximize2 size={16} />
         </div>
         {hasMultipleImages ? (
           <>
             <button
               type="button"
-              className="absolute left-3 top-1/2 z-20 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-brand-pink-dark shadow-sm transition hover:bg-white"
+              className="absolute left-3 top-1/2 z-20 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-penguin-pink-dark shadow-sm transition hover:bg-white"
               aria-label="上一張商品圖片"
               onClick={goToPrevious}
             >
@@ -116,13 +116,13 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
             </button>
             <button
               type="button"
-              className="absolute right-3 top-1/2 z-20 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-brand-pink-dark shadow-sm transition hover:bg-white"
+              className="absolute right-3 top-1/2 z-20 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-penguin-pink-dark shadow-sm transition hover:bg-white"
               aria-label="下一張商品圖片"
               onClick={goToNext}
             >
               <ChevronRight size={20} />
             </button>
-            <div className="absolute bottom-3 right-3 z-20 rounded-full bg-white/90 px-3 py-1 text-xs font-black text-muted shadow-sm">
+            <div className="absolute bottom-3 right-3 z-20 rounded-full bg-white/90 px-3 py-1 text-xs font-black text-gray-500 shadow-sm">
               {selectedIndex + 1} / {galleryImages.length}
             </div>
           </>
@@ -130,15 +130,15 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
       </div>
 
       {hasMultipleImages ? (
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="nav-scrollbar flex gap-2 overflow-x-auto pb-1">
           {galleryImages.map((image, index) => {
             const isSelected = index === selectedIndex;
             return (
               <button
                 key={`${image.publicId || image.url}-${index}`}
                 type="button"
-                className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-[8px] border-2 bg-white transition sm:h-24 sm:w-24 ${
-                  isSelected ? "border-brand-pink-dark shadow-md shadow-pink-100" : "border-border hover:border-brand-pink"
+                className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl border-2 bg-white transition sm:h-24 sm:w-24 ${
+                  isSelected ? "border-penguin-pink-dark shadow-md shadow-pink-100" : "border-penguin-peach hover:border-penguin-pink"
                 }`}
                 aria-label={`切換到第 ${index + 1} 張商品圖片`}
                 onClick={() => selectImage(index)}
@@ -166,14 +166,14 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
         >
           <button
             type="button"
-            className="absolute right-4 top-4 z-10 grid h-11 w-11 place-items-center rounded-full bg-white text-brand-pink-dark shadow-lg"
-            aria-label="關閉圖片檢視"
+            className="absolute right-4 top-4 z-10 grid h-11 w-11 place-items-center rounded-full bg-white text-penguin-pink-dark shadow-lg"
+            aria-label="關閉放大檢視"
             onClick={() => setLightboxOpen(false)}
           >
             <X size={22} />
           </button>
           <div
-            className="relative h-[82vh] w-full max-w-5xl overflow-hidden rounded-[8px] bg-white"
+            className="relative h-[82vh] w-full max-w-5xl overflow-hidden rounded-3xl bg-white"
             onClick={(event) => event.stopPropagation()}
             onTouchStart={(event) => {
               touchStartX.current = event.touches[0]?.clientX ?? null;
@@ -193,21 +193,21 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
               <>
                 <button
                   type="button"
-                  className="absolute left-3 top-1/2 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-brand-pink-dark shadow"
-                  aria-label="上一張放大圖片"
+                  className="absolute left-3 top-1/2 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-penguin-pink-dark shadow"
+                  aria-label="放大檢視上一張"
                   onClick={goToPrevious}
                 >
                   <ChevronLeft size={22} />
                 </button>
                 <button
                   type="button"
-                  className="absolute right-3 top-1/2 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-brand-pink-dark shadow"
-                  aria-label="下一張放大圖片"
+                  className="absolute right-3 top-1/2 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-penguin-pink-dark shadow"
+                  aria-label="放大檢視下一張"
                   onClick={goToNext}
                 >
                   <ChevronRight size={22} />
                 </button>
-                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-white/90 px-3 py-1 text-xs font-black text-muted shadow">
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-white/90 px-3 py-1 text-xs font-black text-gray-500 shadow">
                   {selectedIndex + 1} / {galleryImages.length}
                 </div>
               </>

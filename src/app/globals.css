@@ -1,14 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --background: #fffaf7;
-  --foreground: #2c2525;
-  --muted: #756869;
-  --border: #eadfdb;
-  --pink: #f69ab8;
-  --pink-dark: #d84f7c;
-  --blue: #9fd8e5;
-  --yellow: #f8dc82;
+  --background: #fcf8ee;
+  --foreground: #4a5568;
+  --muted: #718096;
+  --border: #ffd3e1;
+  --pink: #ffd3e1;
+  --pink-dark: #ff94b8;
+  --pink-light: #ffebf1;
+  --peach: #ffe5d9;
+  --peach-dark: #ffa895;
+  --peach-light: #fff5f0;
+  --yellow: #fff4c3;
+  --cream: #fcf8ee;
   --mint: #bfe2ce;
 }
 
@@ -19,10 +23,19 @@
   --color-border: var(--border);
   --color-brand-pink: var(--pink);
   --color-brand-pink-dark: var(--pink-dark);
-  --color-brand-blue: var(--blue);
+  --color-brand-blue: #9fd8e5;
   --color-brand-yellow: var(--yellow);
   --color-brand-mint: var(--mint);
-  --font-sans: "Geist", "Geist Fallback", "Microsoft JhengHei", ui-sans-serif, system-ui, sans-serif;
+  --color-penguin-pink: var(--pink);
+  --color-penguin-pink-dark: var(--pink-dark);
+  --color-penguin-pink-light: var(--pink-light);
+  --color-penguin-peach: var(--peach);
+  --color-penguin-peach-dark: var(--peach-dark);
+  --color-penguin-peach-light: var(--peach-light);
+  --color-penguin-yellow: var(--yellow);
+  --color-penguin-cream: var(--cream);
+  --color-penguin-gray: var(--foreground);
+  --font-sans: var(--font-noto-tc), "Microsoft JhengHei", ui-sans-serif, system-ui, sans-serif;
 }
 
 * {
@@ -36,9 +49,9 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
-  background:
-    radial-gradient(circle at top left, rgba(246, 154, 184, 0.22), transparent 30%),
-    linear-gradient(180deg, #fffaf7 0%, #fff 48%, #f8fcfd 100%);
+  background-color: var(--background);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Cg fill='%23FFD3E1' fill-opacity='0.35'%3E%3Ccircle cx='25' cy='19' r='4'/%3E%3Ccircle cx='25' cy='31' r='4'/%3E%3Ccircle cx='19' cy='25' r='4'/%3E%3Ccircle cx='31' cy='25' r='4'/%3E%3C/g%3E%3Cg fill='%23FFF4C3' fill-opacity='0.45'%3E%3Ccircle cx='72' cy='67' r='4'/%3E%3Ccircle cx='72' cy='79' r='4'/%3E%3Ccircle cx='66' cy='73' r='4'/%3E%3Ccircle cx='78' cy='73' r='4'/%3E%3C/g%3E%3Ccircle cx='25' cy='25' r='3' fill='%23FF94B8' fill-opacity='0.45'/%3E%3Ccircle cx='72' cy='73' r='3' fill='%23FFA895' fill-opacity='0.45'/%3E%3C/svg%3E");
   color: var(--foreground);
 }
 
@@ -49,8 +62,35 @@ a {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+::selection {
+  background: var(--pink);
+}
+
+::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #fff7fb;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--pink);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--pink-dark);
 }
 
 .line-clamp-2 {
@@ -58,4 +98,56 @@ select {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
+}
+
+@keyframes mini-bounce {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-5px) scale(1.02); }
+}
+
+@keyframes float-cloud {
+  0% { transform: translateX(-10%); }
+  50% { transform: translateX(10%); }
+  100% { transform: translateX(-10%); }
+}
+
+.cute-bounce {
+  animation: mini-bounce 3s infinite ease-in-out;
+}
+
+.cloud-animate {
+  animation: float-cloud 12s infinite ease-in-out;
+}
+
+.nav-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.nav-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.category-tab {
+  display: inline-flex;
+  min-height: 2.1rem;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  padding: 0.35rem 0.9rem;
+  color: var(--foreground);
+  transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.category-tab:hover,
+.category-tab.active {
+  border-color: var(--pink);
+  background: #fff;
+  color: var(--pink-dark);
+  box-shadow: 0 6px 14px rgba(255, 148, 184, 0.18);
+}
+
+.category-tab:hover {
+  transform: translateY(-1px);
 }

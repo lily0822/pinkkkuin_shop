@@ -90,20 +90,25 @@ function normalizeGalleryImages(productName: string, imageUrl: string | null, ro
 
   if (gallery.length) {
     const primaryIndex = gallery.findIndex((image) => image.isPrimary);
-    if (primaryIndex < 0) gallery[0].isPrimary = true;
-    else gallery.forEach((image, index) => {
-      image.isPrimary = index === primaryIndex;
-    });
+    if (primaryIndex < 0) {
+      gallery[0].isPrimary = true;
+    } else {
+      gallery.forEach((image, index) => {
+        image.isPrimary = index === primaryIndex;
+      });
+    }
     return gallery.map((image, index) => ({ ...image, sortOrder: index }));
   }
 
   if (!imageUrl) return [];
-  return [{
-    url: imageUrl,
-    sortOrder: 0,
-    isPrimary: true,
-    altText: productName,
-  }];
+  return [
+    {
+      url: imageUrl,
+      sortOrder: 0,
+      isPrimary: true,
+      altText: productName,
+    },
+  ];
 }
 
 function mapSupabaseProduct(row: SupabaseProductRow, galleryImages: ProductGalleryImage[]): Product {
@@ -133,11 +138,21 @@ function mapSupabaseProduct(row: SupabaseProductRow, galleryImages: ProductGalle
   };
 }
 
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 async function getSupabaseProductById(id: string) {
-  const products = await supabaseFetch<SupabaseProductRow[]>(
+  const byLegacyId = await supabaseFetch<SupabaseProductRow[]>(
     `products?select=id,legacy_id,product_type,name,description,image_url,cost_price,base_price,stock_quantity,preorder_quota,deadline,status,created_at,updated_at&legacy_id=eq.${encodeURIComponent(id)}&limit=1`,
   );
-  return products?.[0] || null;
+  if (byLegacyId?.[0]) return byLegacyId[0];
+
+  if (!isUuid(id)) return null;
+  const byId = await supabaseFetch<SupabaseProductRow[]>(
+    `products?select=id,legacy_id,product_type,name,description,image_url,cost_price,base_price,stock_quantity,preorder_quota,deadline,status,created_at,updated_at&id=eq.${encodeURIComponent(id)}&limit=1`,
+  );
+  return byId?.[0] || null;
 }
 
 export async function getProductDetailById(id: string): Promise<ProductDetailData | null> {

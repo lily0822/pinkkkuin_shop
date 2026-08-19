@@ -1,28 +1,33 @@
 import Image from "next/image";
 
 type ProductArtProps = {
-  image: string;
+  image?: string;
   name: string;
-  variant?: "card" | "detail";
+  width?: number;
 };
 
-function cloudinaryImageUrl(image: string, variant: "card" | "detail") {
+function optimizeCloudinary(image: string, width: number) {
   if (!image.includes("/res.cloudinary.com/") || !image.includes("/upload/")) return image;
-  const width = variant === "detail" ? 1200 : 600;
-  return image.replace("/upload/", `/upload/c_limit,w_${width}/f_auto/q_auto/`);
+  return image.replace("/upload/", `/upload/f_auto,q_auto,c_limit,w_${width}/`);
 }
 
-export function ProductArt({ image, name, variant = "card" }: ProductArtProps) {
-  const optimizedImage = cloudinaryImageUrl(image, variant);
+export function ProductArt({ image, name, width = 600 }: ProductArtProps) {
+  if (!image) {
+    return (
+      <div className="grid aspect-square place-items-center rounded-2xl bg-gradient-to-br from-penguin-pink-light to-penguin-yellow text-5xl">
+        🐧
+      </div>
+    );
+  }
 
   return (
-    <div className="relative aspect-square overflow-hidden rounded-[8px] bg-white">
+    <div className="relative aspect-square overflow-hidden rounded-2xl bg-gradient-to-br from-penguin-pink-light to-penguin-yellow">
       <Image
-        src={optimizedImage}
+        src={optimizeCloudinary(image, width)}
         alt={name}
         fill
-        sizes={variant === "detail" ? "(max-width: 768px) 100vw, 50vw" : "(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"}
-        className="object-cover"
+        sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+        className="object-cover transition duration-300 group-hover:scale-105"
       />
     </div>
   );
