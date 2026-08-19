@@ -44,6 +44,16 @@ function productFolder(productId: string) {
   return `products/${safeId || "draft"}`;
 }
 
+function uploadFolder(formData: FormData, productId: string) {
+  const folder = String(formData.get("folder") || "").trim().replace(/\/+$/, "");
+  if (folder === "site/logo") return folder;
+  return productFolder(productId);
+}
+
+function isAllowedPublicId(publicId: string) {
+  return publicId.startsWith("products/") || publicId.startsWith("site/logo/");
+}
+
 function uploadBuffer(buffer: Buffer, folder: string) {
   return new Promise<UploadApiResponse>((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
@@ -87,7 +97,7 @@ export async function POST(request: Request) {
       return json({ error: "No image files were uploaded." }, { status: 400 });
     }
 
-    const folder = productFolder(productId);
+    const folder = uploadFolder(formData, productId);
     const uploaded = [];
 
     for (const file of files) {
@@ -119,7 +129,7 @@ export async function DELETE(request: Request) {
     const publicIds = Array.isArray(body.publicIds)
       ? body.publicIds
         .map((id: unknown) => String(id || "").trim())
-        .filter((id: string) => id.startsWith("products/"))
+        .filter(isAllowedPublicId)
       : [];
 
     if (!publicIds.length) {

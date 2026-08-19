@@ -5,6 +5,8 @@ import { CartProvider } from "@/components/cart-provider";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 
+export const dynamic = "force-dynamic";
+
 const notoSansTc = Noto_Sans_TC({
   variable: "--font-noto-tc",
   subsets: ["latin"],
