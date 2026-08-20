@@ -1,11 +1,13 @@
 export type BrandSettings = {
   storeName: string;
+  storeNameEn: string;
   logoUrl: string;
   logoPublicId?: string;
   updatedAt?: string;
 };
 
 export const DEFAULT_STORE_NAME = "小企鵝選物";
+export const DEFAULT_STORE_NAME_EN = "KOPENGUIN SELECT SHOP";
 export const DEFAULT_LOGO_URL = "https://res.cloudinary.com/dhrfwtarc/image/upload/v1782899951/pinkkkuin_logo_q1y5jr.png";
 
 type ScheduleSettingRow = {
@@ -17,6 +19,7 @@ type ScheduleSettingRow = {
 function fallbackBrandSettings(): BrandSettings {
   return {
     storeName: DEFAULT_STORE_NAME,
+    storeNameEn: DEFAULT_STORE_NAME_EN,
     logoUrl: DEFAULT_LOGO_URL,
   };
 }
@@ -36,6 +39,7 @@ function parseBrandJson(value: string | null): Partial<BrandSettings> {
     const parsed = JSON.parse(value);
     return {
       storeName: String(parsed.store_name || parsed.storeName || "").trim() || undefined,
+      storeNameEn: String(parsed.store_name_en || parsed.storeNameEn || "").trim() || undefined,
       logoUrl: String(parsed.logo_url || parsed.logoUrl || "").trim() || undefined,
       logoPublicId: String(parsed.logo_public_id || parsed.logoPublicId || "").trim() || undefined,
     };
@@ -52,6 +56,7 @@ function normalizeBrandSettings(rows: ScheduleSettingRow[] = []): BrandSettings 
 
   return {
     storeName: parsed.storeName || fallback.storeName,
+    storeNameEn: parsed.storeNameEn || fallback.storeNameEn,
     logoUrl: parsed.logoUrl || legacyLogoRow?.image || fallback.logoUrl,
     logoPublicId: parsed.logoPublicId,
     updatedAt: brandRow?.updated_at || legacyLogoRow?.updated_at || undefined,

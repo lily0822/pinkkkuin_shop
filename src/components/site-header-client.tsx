@@ -17,7 +17,14 @@ export function SiteHeaderClient({ brand }: SiteHeaderClientProps) {
   const [query, setQuery] = useState("");
   const router = useRouter();
   const cart = useCart();
-  const logoUrl = brand.logoUrl ? cloudinaryTransform(brand.logoUrl, "f_auto,q_auto,w_160,c_limit") : "";
+  const logoUrl = brand.logoUrl ? cloudinaryTransform(brand.logoUrl, "f_auto,q_auto,w_240,c_limit") : "";
+  const headerActionButtonBase = "relative h-9 min-h-9 w-[92px] min-w-[92px] shrink-0 items-center justify-center gap-1.5 rounded-full border-2 p-0 font-sans text-xs font-bold leading-none tracking-normal shadow-sm transition";
+  const headerActionTextClass = "block text-[12px] font-bold leading-none tracking-normal";
+  const headerActionTextStyle = {
+    fontFamily: "var(--font-noto-tc), 'Microsoft JhengHei', ui-sans-serif, system-ui, sans-serif",
+  };
+  const helpButtonVariant = "border-yellow-400 bg-penguin-yellow text-penguin-gray hover:bg-yellow-200";
+  const cartButtonVariant = "border-penguin-pink-dark bg-penguin-pink text-penguin-gray hover:-translate-y-0.5 hover:bg-penguin-pink-light";
 
   function submitSearch(event: FormEvent) {
     event.preventDefault();
@@ -37,9 +44,9 @@ export function SiteHeaderClient({ brand }: SiteHeaderClientProps) {
       <header className="sticky top-0 z-40 border-b-4 border-penguin-pink bg-white/95 shadow-sm backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <Link href="/" className="group flex items-center gap-2" onClick={() => setIsOpen(false)}>
-            <span className="grid h-12 w-12 place-items-center overflow-hidden rounded-full bg-penguin-yellow text-2xl shadow-sm transition-transform group-hover:scale-110">
+            <span className="grid h-14 w-14 place-items-center overflow-hidden bg-transparent text-2xl transition-transform group-hover:scale-105">
               {logoUrl ? (
-                <img src={logoUrl} alt={`${brand.storeName} LOGO`} className="h-full w-full object-cover" />
+                <img src={logoUrl} alt={`${brand.storeName} LOGO`} className="h-full w-full scale-125 object-contain object-center" />
               ) : (
                 "🐧"
               )}
@@ -51,7 +58,7 @@ export function SiteHeaderClient({ brand }: SiteHeaderClientProps) {
                   日本代購
                 </span>
               </span>
-              <span className="block text-[10px] tracking-wider text-gray-400">KOPENGUIN SELECT SHOP</span>
+              <span className="block text-[10px] tracking-wider text-gray-400">{brand.storeNameEn}</span>
             </span>
           </Link>
 
@@ -76,18 +83,22 @@ export function SiteHeaderClient({ brand }: SiteHeaderClientProps) {
           <div className="flex items-center gap-2">
             <Link
               href="/contact"
-              className="hidden items-center gap-1 rounded-full border-2 border-yellow-400 bg-penguin-yellow px-3.5 py-1.5 text-xs font-bold text-penguin-gray shadow-sm transition hover:bg-yellow-200 md:flex"
+              className={`hidden md:flex ${headerActionButtonBase} ${helpButtonVariant}`}
             >
-              <Heart size={15} />
-              幫我找
+              <Heart size={15} strokeWidth={2} />
+              <span className={headerActionTextClass} style={headerActionTextStyle}>
+                幫我找
+              </span>
             </Link>
             <button
               type="button"
               onClick={cart.openCart}
-              className="relative flex items-center gap-2 rounded-full border-2 border-penguin-pink-dark bg-penguin-pink px-4 py-2 text-xs font-bold text-penguin-gray shadow-sm transition hover:-translate-y-0.5 hover:bg-penguin-pink-light md:text-sm"
+              className={`flex ${headerActionButtonBase} ${cartButtonVariant}`}
             >
-              <ShoppingBasket size={17} />
-              選物箱
+              <ShoppingBasket size={15} strokeWidth={2} />
+              <span className={headerActionTextClass} style={headerActionTextStyle}>
+                購物車
+              </span>
               <span className="absolute -right-2 -top-2 grid h-5 min-w-5 place-items-center rounded-full bg-red-500 px-1 text-[10px] text-white">
                 {cart.count}
               </span>
