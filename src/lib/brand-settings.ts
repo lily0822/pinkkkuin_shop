@@ -16,6 +16,18 @@ type ScheduleSettingRow = {
   updated_at: string | null;
 };
 
+type LogoLibraryImage = {
+  secure_url?: string;
+  secureUrl?: string;
+  url?: string;
+  public_id?: string;
+  publicId?: string;
+  is_active?: boolean;
+  isActive?: boolean;
+  sort_order?: number;
+  sortOrder?: number;
+};
+
 function fallbackBrandSettings(): BrandSettings {
   return {
     storeName: DEFAULT_STORE_NAME,
@@ -48,18 +60,40 @@ function parseBrandJson(value: string | null): Partial<BrandSettings> {
   }
 }
 
+function parseLogoLibrary(value: string | null): LogoLibraryImage[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    const images = Array.isArray(parsed) ? parsed : parsed.images;
+    return Array.isArray(images) ? images : [];
+  } catch {
+    return [];
+  }
+}
+
 function normalizeBrandSettings(rows: ScheduleSettingRow[] = []): BrandSettings {
   const fallback = fallbackBrandSettings();
   const brandRow = rows.find((row) => row.type === "brand");
+  const logoLibraryRow = rows.find((row) => row.type === "brand-logo-library");
   const legacyLogoRow = rows.find((row) => row.type === "brand-logo");
   const parsed = parseBrandJson(brandRow?.image || null);
+  const logoLibrary = parseLogoLibrary(logoLibraryRow?.image || null)
+    .map((image, index) => ({
+      url: String(image.secure_url || image.secureUrl || image.url || "").trim(),
+      publicId: String(image.public_id || image.publicId || "").trim(),
+      isActive: image.is_active === true || image.isActive === true,
+      sortOrder: Number(image.sort_order ?? image.sortOrder ?? index),
+    }))
+    .filter((image) => image.url)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  const activeLogo = logoLibrary.find((image) => image.isActive) || null;
 
   return {
     storeName: parsed.storeName || fallback.storeName,
     storeNameEn: parsed.storeNameEn || fallback.storeNameEn,
-    logoUrl: parsed.logoUrl || legacyLogoRow?.image || fallback.logoUrl,
-    logoPublicId: parsed.logoPublicId,
-    updatedAt: brandRow?.updated_at || legacyLogoRow?.updated_at || undefined,
+    logoUrl: activeLogo?.url || parsed.logoUrl || legacyLogoRow?.image || fallback.logoUrl,
+    logoPublicId: activeLogo?.publicId || parsed.logoPublicId,
+    updatedAt: logoLibraryRow?.updated_at || brandRow?.updated_at || legacyLogoRow?.updated_at || undefined,
   };
 }
 
@@ -75,7 +109,7 @@ export async function getBrandSettings(): Promise<BrandSettings> {
 
   try {
     const response = await fetch(
-      `${baseUrl}/rest/v1/schedule_settings?select=type,image,updated_at&type=in.(brand,brand-logo)&order=updated_at.desc`,
+      `${baseUrl}/rest/v1/schedule_settings?select=type,image,updated_at&type=in.(brand,brand-logo,brand-logo-library)&order=updated_at.desc`,
       {
         headers,
         cache: "no-store",
