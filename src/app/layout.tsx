@@ -4,6 +4,7 @@ import "./globals.css";
 import { CartProvider } from "@/components/cart-provider";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
+import { getAppearanceSettings } from "@/lib/appearance-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -13,10 +14,33 @@ const notoSansTc = Noto_Sans_TC({
   weight: ["400", "500", "700", "900"],
 });
 
-export const metadata: Metadata = {
+const fallbackMetadata: Metadata = {
   title: "小企鵝選物 | 日本限定・可愛雜貨代購",
   description: "日本限定、現貨、預購與連線代購選物商城。",
 };
+
+export async function generateMetadata(): Promise<Metadata> {
+  const { siteInfo } = await getAppearanceSettings();
+  const description = siteInfo.description || fallbackMetadata.description || "";
+  const ogImage = siteInfo.ogImageUrl ? [{ url: siteInfo.ogImageUrl }] : undefined;
+
+  return {
+    ...fallbackMetadata,
+    description,
+    icons: siteInfo.faviconUrl ? { icon: siteInfo.faviconUrl, shortcut: siteInfo.faviconUrl } : undefined,
+    openGraph: {
+      title: String(fallbackMetadata.title || ""),
+      description,
+      images: ogImage,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: String(fallbackMetadata.title || ""),
+      description,
+      images: siteInfo.ogImageUrl ? [siteInfo.ogImageUrl] : undefined,
+    },
+  };
+}
 
 export default function RootLayout({
   children,

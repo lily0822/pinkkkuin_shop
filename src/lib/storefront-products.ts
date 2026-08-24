@@ -1,4 +1,4 @@
-import { categories as fallbackCategories, products as fallbackProducts, Product } from "@/lib/products";
+import { categories as fallbackCategories, products as fallbackProducts, Product, ProductTag } from "@/lib/products";
 
 type SupabaseProductRow = {
   id: string;
@@ -17,6 +17,12 @@ type SupabaseProductRow = {
   product_categories?: Array<{
     categories?: {
       name?: string | null;
+      id?: string | null;
+      legacy_id?: string | null;
+      type?: "ip" | "category" | null;
+      enabled?: boolean | null;
+      sort_order?: number | null;
+      color?: string | null;
     } | null;
   }> | null;
 };
@@ -57,6 +63,25 @@ function categoryFromRow(row: SupabaseProductRow) {
   return row.product_type === "preorder" ? "預購商品" : "現貨商品";
 }
 
+function tagsFromRow(row: SupabaseProductRow): ProductTag[] {
+  return (row.product_categories || [])
+    .map((link, index): ProductTag | null => {
+      const category = link.categories;
+      if (!category?.name) return null;
+      const type = category.type === "ip" ? "ip" : "category";
+      return {
+        id: String(category.legacy_id || category.id || category.name),
+        name: category.name,
+        type,
+        enabled: category.enabled !== false,
+        sortOrder: Number(category.sort_order ?? index),
+        color: category.color || undefined,
+      };
+    })
+    .filter((tag): tag is ProductTag => Boolean(tag))
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
 export function mapStorefrontProduct(row: SupabaseProductRow): Product {
   const isPreorder = row.product_type === "preorder";
   const status = row.status === "sold_out"
@@ -73,7 +98,9 @@ export function mapStorefrontProduct(row: SupabaseProductRow): Product {
     sku: row.legacy_id || row.id,
     price: Number(row.base_price || 0),
     status,
-    category: categoryFromRow(row),
+    category: tagsFromRow(row).find((tag) => tag.type === "category")?.name || categoryFromRow(row),
+    brand: tagsFromRow(row).find((tag) => tag.type === "ip")?.name,
+    tags: tagsFromRow(row),
     stock_quantity: isPreorder ? row.preorder_quota : row.stock_quantity,
     images: row.image_url ? [row.image_url] : [],
     description: row.description || "",
@@ -99,12 +126,33 @@ export async function getStorefrontProducts() {
     "status",
     "created_at",
     "updated_at",
-    "product_categories(categories(name))",
+    "product_categories(categories(id,legacy_id,name,type,enabled,sort_order,color))",
+  ].join(",");
+  const legacySelect = [
+    "id",
+    "legacy_id",
+    "product_type",
+    "name",
+    "description",
+    "image_url",
+    "base_price",
+    "stock_quantity",
+    "preorder_quota",
+    "deadline",
+    "status",
+    "created_at",
+    "updated_at",
+    "product_categories(categories(id,legacy_id,name,color))",
   ].join(",");
 
-  const rows = await supabaseFetch<SupabaseProductRow[]>(
+  let rows = await supabaseFetch<SupabaseProductRow[]>(
     `products?select=${encodeURIComponent(select)}&status=in.(active,sold_out)&order=created_at.desc`,
   );
+  if (!rows) {
+    rows = await supabaseFetch<SupabaseProductRow[]>(
+      `products?select=${encodeURIComponent(legacySelect)}&status=in.(active,sold_out)&order=created_at.desc`,
+    );
+  }
 
   if (!rows) return fallbackProducts;
   return rows.map(mapStorefrontProduct).filter((product) => product.status !== "hidden");

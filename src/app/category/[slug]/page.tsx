@@ -12,24 +12,22 @@ export default async function CategoryPage({ params }: { params: Promise<{ slug:
   const categories = await getStorefrontCategories();
   const isStatus = statusSlugs.includes(decodedSlug as ProductStatus);
   const isCategory = categories.includes(decodedSlug);
+  const useDenseCategoryLayout = decodedSlug === "preorder" || decodedSlug === "in_stock";
   const title = isStatus ? `${statusLabels[decodedSlug as ProductStatus]}商品` : decodedSlug;
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <SectionHeading
         eyebrow="Category"
         title={title}
-        description={
-          isCategory
-            ? "依分類整理目前可詢問與購買的日本選物。"
-            : "依商品狀態快速查看現貨、預購、連線與補貨商品。"
-        }
+        description={isCategory ? "依分類快速瀏覽目前可選購的商品。" : "依商品狀態瀏覽目前上架的選物。"}
       />
-      <div className="mt-7">
+      <div className="mt-6">
         <ProductCatalog
           products={products}
           initialStatus={isStatus ? (decodedSlug as ProductStatus) : "all"}
           initialCategory={isCategory ? decodedSlug : "all"}
+          denseCategoryLayout={useDenseCategoryLayout}
         />
       </div>
     </main>

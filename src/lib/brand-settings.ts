@@ -3,6 +3,9 @@ export type BrandSettings = {
   storeNameEn: string;
   logoUrl: string;
   logoPublicId?: string;
+  logoScale?: number;
+  logoPositionX?: number;
+  logoPositionY?: number;
   updatedAt?: string;
 };
 
@@ -26,7 +29,18 @@ type LogoLibraryImage = {
   isActive?: boolean;
   sort_order?: number;
   sortOrder?: number;
+  scale?: number;
+  position_x?: number;
+  positionX?: number;
+  position_y?: number;
+  positionY?: number;
 };
+
+function clampNumber(value: unknown, min: number, max: number, fallback: number) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, number));
+}
 
 function fallbackBrandSettings(): BrandSettings {
   return {
@@ -83,6 +97,9 @@ function normalizeBrandSettings(rows: ScheduleSettingRow[] = []): BrandSettings 
       publicId: String(image.public_id || image.publicId || "").trim(),
       isActive: image.is_active === true || image.isActive === true,
       sortOrder: Number(image.sort_order ?? image.sortOrder ?? index),
+      scale: clampNumber(image.scale, 1, 3, 1),
+      positionX: clampNumber(image.position_x ?? image.positionX, -100, 100, 0),
+      positionY: clampNumber(image.position_y ?? image.positionY, -100, 100, 0),
     }))
     .filter((image) => image.url)
     .sort((a, b) => a.sortOrder - b.sortOrder);
@@ -93,6 +110,9 @@ function normalizeBrandSettings(rows: ScheduleSettingRow[] = []): BrandSettings 
     storeNameEn: parsed.storeNameEn || fallback.storeNameEn,
     logoUrl: activeLogo?.url || parsed.logoUrl || legacyLogoRow?.image || fallback.logoUrl,
     logoPublicId: activeLogo?.publicId || parsed.logoPublicId,
+    logoScale: activeLogo?.scale || 1,
+    logoPositionX: activeLogo?.positionX || 0,
+    logoPositionY: activeLogo?.positionY || 0,
     updatedAt: logoLibraryRow?.updated_at || brandRow?.updated_at || legacyLogoRow?.updated_at || undefined,
   };
 }

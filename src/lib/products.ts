@@ -16,6 +16,7 @@ export type Product = {
   status: ProductStatus;
   category: string;
   brand?: string;
+  tags?: ProductTag[];
   stock_quantity?: number | null;
   images: string[];
   description?: string;
@@ -28,6 +29,15 @@ export type Product = {
   sort_order?: number;
   created_at: string;
   updated_at: string;
+};
+
+export type ProductTag = {
+  id: string;
+  name: string;
+  type: "ip" | "category";
+  enabled: boolean;
+  sortOrder: number;
+  color?: string;
 };
 
 export const statusLabels: Record<ProductStatus, string> = {

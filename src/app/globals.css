@@ -111,12 +111,30 @@ button {
   100% { transform: translateX(-10%); }
 }
 
+@keyframes announcement-marquee {
+  0% { transform: translateX(100vw); }
+  100% { transform: translateX(-50%); }
+}
+
 .cute-bounce {
   animation: mini-bounce 3s infinite ease-in-out;
 }
 
 .cloud-animate {
   animation: float-cloud 12s infinite ease-in-out;
+}
+
+.announcement-marquee {
+  animation: announcement-marquee 28s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .announcement-marquee {
+    animation: none;
+    transform: none;
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 .nav-scrollbar {
@@ -150,4 +168,52 @@ button {
 
 .category-tab:hover {
   transform: translateY(-1px);
+}
+
+.price-range-input {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  height: 2rem;
+  width: 100%;
+  appearance: none;
+  background: transparent;
+}
+
+.price-range-input::-webkit-slider-runnable-track {
+  height: 0.375rem;
+  background: transparent;
+}
+
+.price-range-input::-webkit-slider-thumb {
+  pointer-events: auto;
+  height: 1.15rem;
+  width: 1.15rem;
+  margin-top: -0.4rem;
+  appearance: none;
+  cursor: grab;
+  border-radius: 9999px;
+  border: 3px solid #fff;
+  background: var(--pink-dark);
+  box-shadow: 0 2px 8px rgba(236, 72, 153, 0.32);
+}
+
+.price-range-input::-webkit-slider-thumb:active {
+  cursor: grabbing;
+}
+
+.price-range-input::-moz-range-track {
+  height: 0.375rem;
+  background: transparent;
+}
+
+.price-range-input::-moz-range-thumb {
+  pointer-events: auto;
+  height: 1.15rem;
+  width: 1.15rem;
+  cursor: grab;
+  border-radius: 9999px;
+  border: 3px solid #fff;
+  background: var(--pink-dark);
+  box-shadow: 0 2px 8px rgba(236, 72, 153, 0.32);
 }

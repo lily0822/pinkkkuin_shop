@@ -1,8 +1,13 @@
 import Link from "next/link";
 import { Camera, MessageCircle } from "lucide-react";
+import { getAppearanceSettings } from "@/lib/appearance-settings";
 import { contactLinks } from "@/lib/site";
 
-export function SiteFooter() {
+export async function SiteFooter() {
+  const { siteInfo } = await getAppearanceSettings();
+  const instagramUrl = siteInfo.instagramUrl || contactLinks.instagram;
+  const lineUrl = siteInfo.lineUrl || contactLinks.line;
+
   return (
     <footer className="mt-16 border-t-4 border-penguin-pink bg-penguin-pink-light px-4 py-12 pb-24 text-center sm:pb-12">
       <div className="mx-auto max-w-xl space-y-4">
@@ -14,14 +19,14 @@ export function SiteFooter() {
         </p>
         <div className="flex justify-center gap-3">
           <Link
-            href={contactLinks.instagram}
+            href={instagramUrl}
             className="inline-flex items-center gap-2 rounded-full border-2 border-penguin-pink bg-white px-4 py-2 text-sm font-bold text-penguin-gray shadow-sm"
           >
             <Camera size={17} />
             Instagram
           </Link>
           <Link
-            href={contactLinks.line}
+            href={lineUrl}
             className="inline-flex items-center gap-2 rounded-full bg-[#06C755] px-4 py-2 text-sm font-bold text-white shadow-sm"
           >
             <MessageCircle size={17} />

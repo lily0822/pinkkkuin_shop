@@ -5,10 +5,20 @@ export const runtime = "nodejs";
 
 const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const ALLOWED_SITE_FOLDERS = new Set([
+  "site/logo",
+  "site/banners",
+  "site/watermark",
+  "site/brand-text",
+  "site/favicon",
+  "site/og",
+]);
 
 function corsHeaders() {
+  const configuredOrigin = process.env.UPLOAD_ALLOWED_ORIGIN?.trim();
+  const devOrigin = process.env.NODE_ENV !== "production" ? "*" : "";
   return {
-    "Access-Control-Allow-Origin": process.env.UPLOAD_ALLOWED_ORIGIN?.trim() || "*",
+    "Access-Control-Allow-Origin": devOrigin || configuredOrigin || "*",
     "Access-Control-Allow-Methods": "POST, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
   };
@@ -46,12 +56,12 @@ function productFolder(productId: string) {
 
 function uploadFolder(formData: FormData, productId: string) {
   const folder = String(formData.get("folder") || "").trim().replace(/\/+$/, "");
-  if (folder === "site/logo") return folder;
+  if (ALLOWED_SITE_FOLDERS.has(folder)) return folder;
   return productFolder(productId);
 }
 
 function isAllowedPublicId(publicId: string) {
-  return publicId.startsWith("products/") || publicId.startsWith("site/logo/");
+  return publicId.startsWith("products/") || Array.from(ALLOWED_SITE_FOLDERS).some((folder) => publicId.startsWith(`${folder}/`));
 }
 
 function uploadBuffer(buffer: Buffer, folder: string) {
