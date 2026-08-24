@@ -16,21 +16,12 @@ function normalizeTagColor(color?: string) {
   return /^#[0-9a-fA-F]{6}$/.test(color || "") ? (color as string) : "#ec4899";
 }
 
-function readableTagText(color?: string) {
-  const hex = normalizeTagColor(color).slice(1);
-  const r = parseInt(hex.slice(0, 2), 16);
-  const g = parseInt(hex.slice(2, 4), 16);
-  const b = parseInt(hex.slice(4, 6), 16);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.72 ? "#334155" : normalizeTagColor(color);
-}
-
 function tagStyle(color?: string) {
   const safeColor = normalizeTagColor(color);
   return {
     backgroundColor: `${safeColor}22`,
     borderColor: `${safeColor}66`,
-    color: readableTagText(safeColor),
+    color: "#4B5563",
   };
 }
 
@@ -38,9 +29,11 @@ export function ProductCard({ product, onQuickView, compact = false }: ProductCa
   const cart = useCart();
   const canOrder = product.status !== "sold_out" && product.status !== "hidden";
   const allTags = (product.tags || []).filter((tag) => tag.enabled !== false);
-  const categoryTags = allTags.filter((tag) => tag.type === "category");
+  const ipTags = allTags.filter((tag) => tag.type === "ip").sort((a, b) => a.sortOrder - b.sortOrder);
+  const categoryTags = allTags.filter((tag) => tag.type === "category").sort((a, b) => a.sortOrder - b.sortOrder);
+  const typedTags = [...ipTags, ...categoryTags];
   const visibleTags = allTags.length
-    ? allTags
+    ? typedTags
     : product.category
       ? [{ id: `category:${product.category}`, name: product.category, type: "category" as const, enabled: true, sortOrder: 0, color: "#facc15" }]
       : [];
@@ -53,13 +46,13 @@ export function ProductCard({ product, onQuickView, compact = false }: ProductCa
         </Link>
         <div className="flex flex-1 flex-col gap-2 px-1.5 py-2">
           <div className="flex flex-wrap gap-1">
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${statusStyles[product.status]}`}>
+            <span className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-black leading-none ${statusStyles[product.status]}`}>
               {statusLabels[product.status]}
             </span>
             {visibleTags.map((tag) => (
               <span
                 key={`${tag.type}:${tag.id}`}
-                className="rounded-full border px-1.5 py-0.5 text-[9px] font-black leading-none"
+                className="inline-flex min-h-[20px] items-center justify-center rounded-full border px-2 py-1 text-[9px] font-black leading-none"
                 style={tagStyle(tag.color)}
               >
                 {tag.name}
@@ -106,13 +99,13 @@ export function ProductCard({ product, onQuickView, compact = false }: ProductCa
       </Link>
       <div className="space-y-2.5 px-2 py-3">
         <div className="flex flex-wrap gap-1.5">
-          <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${statusStyles[product.status]}`}>
+          <span className={`inline-flex items-center justify-center rounded-full px-2.5 py-1 text-[11px] font-black leading-none ${statusStyles[product.status]}`}>
             {statusLabels[product.status]}
           </span>
-          {(categoryTags.length ? allTags : visibleTags).map((tag) => (
+          {visibleTags.map((tag) => (
             <span
               key={`${tag.type}:${tag.id}`}
-              className="rounded-full border px-2.5 py-1 text-[11px] font-black"
+              className="inline-flex min-h-[24px] items-center justify-center rounded-full border px-3 py-1 text-[11px] font-black leading-none"
               style={tagStyle(tag.color)}
             >
               {tag.name}

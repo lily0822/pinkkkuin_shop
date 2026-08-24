@@ -108,7 +108,10 @@ async function main() {
     legacy_id: String(tag.id),
     name: tag.name || '',
     slug: slugify(tag.name),
-    color: tag.color || '#ec4899'
+    color: tag.color || '#ec4899',
+    type: tag.type === 'ip' ? 'ip' : 'category',
+    enabled: tag.enabled !== false,
+    sort_order: num(tag.sortOrder ?? tag.sort_order)
   })));
 
   await upsert('stall_schedules', (data.stallSchedules || []).map(schedule => ({
