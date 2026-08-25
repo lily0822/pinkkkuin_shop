@@ -14,7 +14,7 @@ function loadDotEnv(filePath) {
     if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
     }
-    if (!process.env[key]) process.env[key] = value;
+    process.env[key] = value;
   }
 }
 
@@ -252,6 +252,8 @@ async function replaceProductLinks(productId, categories, variants) {
 
 async function main() {
   loadDotEnv(path.join(process.cwd(), '.env'));
+  loadDotEnv(path.join(process.cwd(), '.env.local'));
+  assertSafeSupabaseTarget('import-products');
 
   const validateOnly = process.argv.includes('--validate-local-images');
   const csvArg = process.argv.find(arg => arg.endsWith('.csv'));
@@ -313,6 +315,29 @@ async function main() {
   }
 
   console.log(`Imported ${imported} products into Supabase.`);
+}
+
+function assertSafeSupabaseTarget(scriptName) {
+  const allowProduction = process.argv.includes('--allow-production');
+  const target = String(process.env.SUPABASE_ENV || process.env.APP_ENV || '').trim().toLowerCase();
+
+  if (allowProduction) {
+    if (target !== 'production') {
+      throw new Error(`${scriptName}: --allow-production also requires SUPABASE_ENV=production or APP_ENV=production.`);
+    }
+    console.warn(`${scriptName}: PRODUCTION import explicitly enabled.`);
+    return;
+  }
+
+  if (target !== 'staging' && target !== 'development') {
+    throw new Error(`${scriptName}: refusing to write Supabase. Set SUPABASE_ENV=staging for local/staging imports. Production requires SUPABASE_ENV=production and --allow-production.`);
+  }
+
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error(`${scriptName}: missing staging SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.`);
+  }
+
+  console.log(`${scriptName}: Supabase target ${target.toUpperCase()}.`);
 }
 
 main().catch(error => {

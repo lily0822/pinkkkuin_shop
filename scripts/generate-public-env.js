@@ -14,20 +14,41 @@ function loadDotEnv(filePath) {
     if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
     }
-    if (value || process.env[key] === undefined) process.env[key] = value;
+    process.env[key] = value;
   }
 }
 
+function currentEnvironmentLabel() {
+  const target = String(process.env.SUPABASE_ENV || process.env.APP_ENV || '').trim().toLowerCase();
+  if (target === 'production') return 'PRODUCTION';
+  if (target === 'staging' || target === 'development') return 'STAGING';
+  return 'UNKNOWN';
+}
+
 loadDotEnv(path.join(process.cwd(), '.env'));
+loadDotEnv(path.join(process.cwd(), '.env.local'));
+
+const environmentLabel = currentEnvironmentLabel();
+const allowProduction = process.argv.includes('--allow-production');
+
+console.log(`Supabase public env target: ${environmentLabel}`);
+
+if (environmentLabel === 'PRODUCTION' && !allowProduction) {
+  throw new Error('Refusing to generate production public Supabase config without --allow-production.');
+}
+
+if (environmentLabel !== 'STAGING' && environmentLabel !== 'PRODUCTION') {
+  throw new Error('Refusing to generate public Supabase config. Set SUPABASE_ENV=staging for local development.');
+}
 
 const url = process.env.SUPABASE_URL || '';
 const anonKey = process.env.SUPABASE_ANON_KEY || '';
 
 if (!url || !anonKey) {
-  console.warn('SUPABASE_URL or SUPABASE_ANON_KEY is missing. Generated disabled Supabase config.');
+  throw new Error('SUPABASE_URL or SUPABASE_ANON_KEY is missing.');
 }
 
 const content = `window.SHOP_SUPABASE_CONFIG = ${JSON.stringify({ url, anonKey }, null, 2)};\n`;
 fs.writeFileSync(path.join(process.cwd(), 'public', 'shop-env.js'), content);
 fs.writeFileSync(path.join(process.cwd(), 'shop-env.js'), content);
-console.log('Generated shop-env.js from environment variables.');
+console.log('Generated shop-env.js from public Supabase environment variables.');

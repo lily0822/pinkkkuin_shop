@@ -16,7 +16,7 @@ function loadDotEnv(filePath) {
     if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
     }
-    if (value || process.env[key] === undefined) process.env[key] = value;
+    process.env[key] = value;
   }
 }
 
@@ -68,8 +68,33 @@ function num(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function assertSafeSupabaseTarget(scriptName) {
+  const allowProduction = process.argv.includes('--allow-production');
+  const target = String(process.env.SUPABASE_ENV || process.env.APP_ENV || '').trim().toLowerCase();
+
+  if (allowProduction) {
+    if (target !== 'production') {
+      throw new Error(`${scriptName}: --allow-production also requires SUPABASE_ENV=production or APP_ENV=production.`);
+    }
+    console.warn(`${scriptName}: PRODUCTION import explicitly enabled.`);
+    return;
+  }
+
+  if (target !== 'staging' && target !== 'development') {
+    throw new Error(`${scriptName}: refusing to write Supabase. Set SUPABASE_ENV=staging for local/staging imports. Production requires SUPABASE_ENV=production and --allow-production.`);
+  }
+
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error(`${scriptName}: missing staging SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.`);
+  }
+
+  console.log(`${scriptName}: Supabase target ${target.toUpperCase()}.`);
+}
+
 async function main() {
   loadDotEnv(path.join(process.cwd(), '.env'));
+  loadDotEnv(path.join(process.cwd(), '.env.local'));
+  assertSafeSupabaseTarget('import-backend-data');
   const response = await fetch(GOOGLE_API_URL);
   if (!response.ok) throw new Error(`Google API failed: ${response.status}`);
   const data = await response.json();

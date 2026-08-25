@@ -4,6 +4,7 @@ import "./globals.css";
 import { CartProvider } from "@/components/cart-provider";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
+import { StagingBadge } from "@/components/staging-badge";
 import { getAppearanceSettings } from "@/lib/appearance-settings";
 
 export const dynamic = "force-dynamic";
@@ -51,6 +52,7 @@ export default function RootLayout({
     <html lang="zh-Hant" className={notoSansTc.variable}>
       <body className="font-sans antialiased">
         <CartProvider>
+          <StagingBadge />
           <SiteHeader />
           {children}
           <SiteFooter />
