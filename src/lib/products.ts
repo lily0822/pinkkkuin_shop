@@ -27,8 +27,20 @@ export type Product = {
   notice?: string;
   is_featured?: boolean;
   sort_order?: number;
+  variants?: ProductVariant[];
   created_at: string;
   updated_at: string;
+};
+
+export type ProductVariant = {
+  id: string;
+  legacyId?: string;
+  spec: string;
+  price?: number | null;
+  stockQuantity?: number | null;
+  productUrl?: string;
+  status: "active" | "sold_out" | "draft";
+  sortOrder: number;
 };
 
 export type ProductTag = {

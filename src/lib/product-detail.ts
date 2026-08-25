@@ -1,4 +1,4 @@
-import { getProductById, Product } from "@/lib/products";
+import { getProductById, Product, ProductVariant } from "@/lib/products";
 
 export type ProductGalleryImage = {
   url: string;
@@ -6,6 +6,17 @@ export type ProductGalleryImage = {
   sortOrder: number;
   isPrimary: boolean;
   altText?: string;
+};
+
+type SupabaseVariantRow = {
+  id: string;
+  legacy_id: string | null;
+  spec: string | null;
+  price: number | null;
+  stock_quantity: number | null;
+  product_url: string | null;
+  status: "active" | "sold_out" | "draft" | null;
+  sort_order: number | null;
 };
 
 type SupabaseProductRow = {
@@ -23,6 +34,7 @@ type SupabaseProductRow = {
   status: "active" | "sold_out" | "draft";
   created_at: string;
   updated_at: string;
+  product_variants?: SupabaseVariantRow[] | null;
 };
 
 type SupabaseImageRow = {
@@ -111,7 +123,26 @@ function normalizeGalleryImages(productName: string, imageUrl: string | null, ro
   ];
 }
 
-function mapSupabaseProduct(row: SupabaseProductRow, galleryImages: ProductGalleryImage[]): Product {
+function normalizeVariants(rows: SupabaseVariantRow[] = []): ProductVariant[] {
+  const normalizeStatus = (status: SupabaseVariantRow["status"]): ProductVariant["status"] => (
+    status === "sold_out" || status === "draft" ? status : "active"
+  );
+  return rows
+    .filter((row) => row.spec)
+    .map((row, index) => ({
+      id: row.id,
+      legacyId: row.legacy_id || undefined,
+      spec: row.spec || "",
+      price: row.price,
+      stockQuantity: row.stock_quantity,
+      productUrl: row.product_url || undefined,
+      status: normalizeStatus(row.status),
+      sortOrder: Number(row.sort_order ?? index),
+    }))
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+function mapSupabaseProduct(row: SupabaseProductRow, galleryImages: ProductGalleryImage[], variants: ProductVariant[]): Product {
   const isPreorder = row.product_type === "preorder";
   const status = row.status === "sold_out"
     ? "sold_out"
@@ -133,24 +164,26 @@ function mapSupabaseProduct(row: SupabaseProductRow, galleryImages: ProductGalle
     description: row.description || "",
     source: "Pinkkkuin",
     preorder_note: isPreorder && row.deadline ? `預購截止：${row.deadline}` : undefined,
+    variants,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
 }
 
 function isUuid(value: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(value);
 }
 
 async function getSupabaseProductById(id: string) {
+  const select = "id,legacy_id,product_type,name,description,image_url,cost_price,base_price,stock_quantity,preorder_quota,deadline,status,created_at,updated_at,product_variants(id,legacy_id,spec,price,stock_quantity,product_url,status,sort_order)";
   const byLegacyId = await supabaseFetch<SupabaseProductRow[]>(
-    `products?select=id,legacy_id,product_type,name,description,image_url,cost_price,base_price,stock_quantity,preorder_quota,deadline,status,created_at,updated_at&legacy_id=eq.${encodeURIComponent(id)}&limit=1`,
+    `products?select=${encodeURIComponent(select)}&legacy_id=eq.${encodeURIComponent(id)}&limit=1`,
   );
   if (byLegacyId?.[0]) return byLegacyId[0];
 
   if (!isUuid(id)) return null;
   const byId = await supabaseFetch<SupabaseProductRow[]>(
-    `products?select=id,legacy_id,product_type,name,description,image_url,cost_price,base_price,stock_quantity,preorder_quota,deadline,status,created_at,updated_at&id=eq.${encodeURIComponent(id)}&limit=1`,
+    `products?select=${encodeURIComponent(select)}&id=eq.${encodeURIComponent(id)}&limit=1`,
   );
   return byId?.[0] || null;
 }
@@ -176,7 +209,8 @@ export async function getProductDetailById(id: string): Promise<ProductDetailDat
         galleryImages: staticGalleryImages(staticProduct),
       };
     }
-    const product = mapSupabaseProduct(supabaseProduct, galleryImages);
+    const variants = normalizeVariants(supabaseProduct.product_variants || []);
+    const product = mapSupabaseProduct(supabaseProduct, galleryImages, variants);
     return {
       product,
       galleryImages,

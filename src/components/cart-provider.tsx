@@ -2,25 +2,76 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { ShoppingBasket, Trash2, X } from "lucide-react";
-import { formatPrice, Product, statusLabels } from "@/lib/products";
+import { formatPrice, Product, ProductVariant, statusLabels } from "@/lib/products";
+
+export type AddToCartVariant = ProductVariant | null;
 
 type CartItem = {
   id: string;
-  name: string;
-  price: number;
-  type: string;
-  image?: string;
+  productId: string;
+  productName: string;
+  variantId: string | null;
+  variantSpec: string | null;
+  unitPrice: number;
   quantity: number;
+  image?: string;
+  productType: string;
+  maxQuantity?: number | null;
+  name?: string;
+  price?: number;
+  type?: string;
 };
 
 type CartContextValue = {
   count: number;
-  addProduct: (product: Product) => void;
+  addProduct: (product: Product, variant?: AddToCartVariant) => boolean;
   openCart: () => void;
 };
 
 const CartContext = createContext<CartContextValue | null>(null);
 const CART_STORAGE_KEY = "pinkkkuin_cart_items";
+
+function lineItemId(productId: string, variantId?: string | null) {
+  return `${productId}::${variantId || "base"}`;
+}
+
+function variantPrice(product: Product, variant?: AddToCartVariant) {
+  return Number(variant?.price ?? product.price ?? 0);
+}
+
+function variantStock(product: Product, variant?: AddToCartVariant) {
+  const value = variant ? variant.stockQuantity : product.stock_quantity;
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : null;
+}
+
+function normalizeSavedItems(value: unknown): CartItem[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item): CartItem | null => {
+      if (!item || typeof item !== "object") return null;
+      const source = item as Partial<CartItem>;
+      const productId = String(source.productId || source.id || "").trim();
+      const productName = String(source.productName || source.name || "").trim();
+      if (!productId || !productName) return null;
+      const variantId = source.variantId ? String(source.variantId) : null;
+      const unitPrice = Number(source.unitPrice ?? source.price ?? 0);
+      const quantity = Math.max(1, Math.floor(Number(source.quantity || 1)));
+      const maxQuantity = typeof source.maxQuantity === "number" && Number.isFinite(source.maxQuantity) ? source.maxQuantity : null;
+      return {
+        id: lineItemId(productId, variantId),
+        productId,
+        productName,
+        variantId,
+        variantSpec: source.variantSpec ? String(source.variantSpec) : null,
+        unitPrice,
+        quantity: maxQuantity ? Math.min(quantity, maxQuantity) : quantity,
+        image: source.image,
+        productType: String(source.productType || source.type || ""),
+        maxQuantity,
+      };
+    })
+    .filter((item): item is CartItem => Boolean(item));
+}
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
@@ -29,7 +80,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(CART_STORAGE_KEY);
-      if (saved) setItems(JSON.parse(saved));
+      if (saved) setItems(normalizeSavedItems(JSON.parse(saved)));
     } catch {
       setItems([]);
     }
@@ -42,27 +93,38 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, [items]);
 
   const count = items.reduce((sum, item) => sum + item.quantity, 0);
-  const total = items.reduce((sum, item) => sum + item.quantity * item.price, 0);
+  const total = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
 
-  function addProduct(product: Product) {
+  function addProduct(product: Product, variant: AddToCartVariant = null) {
+    const maxQuantity = variantStock(product, variant);
+    if (maxQuantity !== null && maxQuantity <= 0) return false;
+    const itemId = lineItemId(product.id, variant?.id || null);
+
     setItems((current) => {
-      const existing = current.find((item) => item.id === product.id);
+      const existing = current.find((item) => item.id === itemId);
       if (existing) {
-        return current.map((item) => (item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item));
+        const nextQuantity = existing.quantity + 1;
+        if (existing.maxQuantity !== null && existing.maxQuantity !== undefined && nextQuantity > existing.maxQuantity) return current;
+        return current.map((item) => (item.id === itemId ? { ...item, quantity: nextQuantity } : item));
       }
       return [
         ...current,
         {
-          id: product.id,
-          name: product.name_zh,
-          price: product.price,
-          type: statusLabels[product.status],
+          id: itemId,
+          productId: product.id,
+          productName: product.name_zh,
+          variantId: variant?.id || null,
+          variantSpec: variant?.spec || null,
+          unitPrice: variantPrice(product, variant),
+          productType: statusLabels[product.status],
           image: product.images[0],
           quantity: 1,
+          maxQuantity,
         },
       ];
     });
     setIsOpen(true);
+    return true;
   }
 
   function updateQuantity(id: string, quantity: number) {
@@ -70,7 +132,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       removeItem(id);
       return;
     }
-    setItems((current) => current.map((item) => (item.id === id ? { ...item, quantity } : item)));
+    setItems((current) => current.map((item) => {
+      if (item.id !== id) return item;
+      const nextQuantity = item.maxQuantity !== null && item.maxQuantity !== undefined ? Math.min(quantity, item.maxQuantity) : quantity;
+      return { ...item, quantity: nextQuantity };
+    }));
   }
 
   function removeItem(id: string) {
@@ -91,7 +157,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           <div className="flex items-center justify-between border-b border-penguin-pink bg-penguin-pink-light p-4">
             <h2 className="flex items-center gap-2 text-lg font-black text-penguin-pink-dark">
               <ShoppingBasket size={20} />
-              我的企鵝選物箱 ({count})
+              購物車 ({count})
             </h2>
             <button
               type="button"
@@ -110,19 +176,20 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                   <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-xl bg-white text-2xl">
                     {item.image ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
-                    ) : "🐧"}
+                      <img src={item.image} alt={item.productName} className="h-full w-full object-cover" />
+                    ) : "P"}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="line-clamp-2 text-sm font-black text-penguin-gray">{item.name}</p>
-                    <p className="mt-1 text-xs font-bold text-gray-500">{item.type}</p>
-                    <p className="mt-2 text-sm font-black text-penguin-pink-dark">{formatPrice(item.price)}</p>
+                    <p className="line-clamp-2 text-sm font-black text-penguin-gray">{item.productName}</p>
+                    <p className="mt-1 text-xs font-bold text-gray-500">{item.productType}</p>
+                    {item.variantSpec ? <p className="mt-1 text-xs font-black text-penguin-pink-dark">規格：{item.variantSpec}</p> : null}
+                    <p className="mt-2 text-sm font-black text-penguin-pink-dark">{formatPrice(item.unitPrice)}</p>
                   </div>
                   <button
                     type="button"
                     className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white text-gray-400 hover:text-red-500"
                     onClick={() => removeItem(item.id)}
-                    aria-label={`移除 ${item.name}`}
+                    aria-label={`移除 ${item.productName}`}
                   >
                     <Trash2 size={15} />
                   </button>
@@ -131,16 +198,26 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                   <div className="inline-flex items-center overflow-hidden rounded-full border-2 border-penguin-pink bg-white">
                     <button className="px-3 py-1 font-black" onClick={() => updateQuantity(item.id, item.quantity - 1)} type="button">-</button>
                     <span className="min-w-8 text-center text-sm font-black">{item.quantity}</span>
-                    <button className="px-3 py-1 font-black" onClick={() => updateQuantity(item.id, item.quantity + 1)} type="button">+</button>
+                    <button
+                      className="px-3 py-1 font-black disabled:cursor-not-allowed disabled:text-gray-300"
+                      disabled={item.maxQuantity !== null && item.maxQuantity !== undefined && item.quantity >= item.maxQuantity}
+                      onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                      type="button"
+                    >
+                      +
+                    </button>
                   </div>
-                  <p className="text-sm font-black text-penguin-gray">{formatPrice(item.price * item.quantity)}</p>
+                  <p className="text-sm font-black text-penguin-gray">{formatPrice(item.unitPrice * item.quantity)}</p>
                 </div>
+                {item.maxQuantity !== null && item.maxQuantity !== undefined ? (
+                  <p className="mt-2 text-right text-[11px] font-bold text-gray-400">最多 {item.maxQuantity} 件</p>
+                ) : null}
               </div>
             )) : (
               <div className="space-y-2 py-20 text-center text-gray-400">
-                <span className="text-5xl">🛒</span>
-                <p className="font-bold">您的購物車是空的喔！</p>
-                <p className="text-xs">看到喜歡的日本選物，就先加入選物箱吧。</p>
+                <span className="text-5xl">P</span>
+                <p className="font-bold">購物車目前是空的</p>
+                <p className="text-xs">先挑一個喜歡的商品放進來吧。</p>
               </div>
             )}
           </div>
@@ -154,7 +231,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               href="https://line.me/R/ti/p/@pinkkkuin"
               className="block rounded-2xl bg-penguin-pink-dark py-3 text-center text-sm font-black text-white shadow-md hover:bg-penguin-pink"
             >
-              傳給小企鵝確認訂單
+              帶著購物車私訊小企鵝
             </a>
           </div>
         </aside>

@@ -67,8 +67,8 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
 
   if (!galleryImages.length) {
     return (
-      <div className="grid aspect-square place-items-center rounded-3xl border-2 border-penguin-peach bg-white text-sm font-bold text-gray-400">
-        No image
+      <div className="mx-auto grid aspect-[4/3] max-h-[420px] min-h-[220px] w-full place-items-center rounded-3xl border-2 border-dashed border-penguin-peach bg-white/80 text-sm font-bold text-gray-400 lg:max-h-[520px]">
+        圖片準備中
       </div>
     );
   }
@@ -79,7 +79,7 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
   return (
     <div className="space-y-3">
       <div
-        className="group relative aspect-square overflow-hidden rounded-3xl border-4 border-white bg-white shadow-xl"
+        className="group relative mx-auto aspect-[4/3] max-h-[560px] min-h-[280px] w-full overflow-hidden rounded-3xl border-4 border-white bg-white shadow-xl sm:min-h-[360px] lg:max-h-[600px]"
         onTouchStart={(event) => {
           touchStartX.current = event.touches[0]?.clientX ?? null;
         }}
@@ -99,7 +99,7 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
           fill
           priority={selectedIndex === primaryIndex(galleryImages)}
           sizes="(max-width: 1024px) 100vw, 48vw"
-          className="object-cover"
+          className="object-contain"
         />
         <div className="pointer-events-none absolute right-3 top-3 z-20 rounded-full bg-white/90 p-2 text-penguin-pink-dark shadow-sm">
           <Maximize2 size={16} />

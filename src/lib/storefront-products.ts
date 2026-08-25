@@ -1,4 +1,4 @@
-import { categories as fallbackCategories, products as fallbackProducts, Product, ProductTag } from "@/lib/products";
+import { categories as fallbackCategories, products as fallbackProducts, Product, ProductTag, ProductVariant } from "@/lib/products";
 
 type SupabaseProductRow = {
   id: string;
@@ -24,6 +24,16 @@ type SupabaseProductRow = {
       sort_order?: number | null;
       color?: string | null;
     } | null;
+  }> | null;
+  product_variants?: Array<{
+    id: string;
+    legacy_id?: string | null;
+    spec?: string | null;
+    price?: number | null;
+    stock_quantity?: number | null;
+    product_url?: string | null;
+    status?: "active" | "sold_out" | "draft" | null;
+    sort_order?: number | null;
   }> | null;
 };
 
@@ -56,8 +66,8 @@ async function supabaseFetch<T>(path: string): Promise<T | null> {
 
 function categoryFromRow(row: SupabaseProductRow) {
   const linkedCategory = row.product_categories
-    ?.map((link) => link.categories?.name)
-    .find((name): name is string => Boolean(name));
+    ?.map((link) => link.categories)
+    .find((category) => category?.type !== "ip" && category?.name)?.name;
 
   if (linkedCategory) return linkedCategory;
   return row.product_type === "preorder" ? "預購商品" : "現貨商品";
@@ -82,6 +92,25 @@ function tagsFromRow(row: SupabaseProductRow): ProductTag[] {
     .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
+function variantsFromRow(row: SupabaseProductRow): ProductVariant[] {
+  const normalizeStatus = (status: "active" | "sold_out" | "draft" | null | undefined): ProductVariant["status"] => (
+    status === "sold_out" || status === "draft" ? status : "active"
+  );
+  return (row.product_variants || [])
+    .filter((variant) => variant.spec)
+    .map((variant, index) => ({
+      id: variant.id,
+      legacyId: variant.legacy_id || undefined,
+      spec: variant.spec || "",
+      price: variant.price,
+      stockQuantity: variant.stock_quantity,
+      productUrl: variant.product_url || undefined,
+      status: normalizeStatus(variant.status),
+      sortOrder: Number(variant.sort_order ?? index),
+    }))
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
 export function mapStorefrontProduct(row: SupabaseProductRow): Product {
   const isPreorder = row.product_type === "preorder";
   const status = row.status === "sold_out"
@@ -91,6 +120,7 @@ export function mapStorefrontProduct(row: SupabaseProductRow): Product {
       : isPreorder
         ? "preorder"
         : "in_stock";
+  const tags = tagsFromRow(row);
 
   return {
     id: row.legacy_id || row.id,
@@ -98,14 +128,15 @@ export function mapStorefrontProduct(row: SupabaseProductRow): Product {
     sku: row.legacy_id || row.id,
     price: Number(row.base_price || 0),
     status,
-    category: tagsFromRow(row).find((tag) => tag.type === "category")?.name || categoryFromRow(row),
-    brand: tagsFromRow(row).find((tag) => tag.type === "ip")?.name,
-    tags: tagsFromRow(row),
+    category: tags.find((tag) => tag.type === "category")?.name || categoryFromRow(row),
+    brand: tags.find((tag) => tag.type === "ip")?.name,
+    tags,
     stock_quantity: isPreorder ? row.preorder_quota : row.stock_quantity,
     images: row.image_url ? [row.image_url] : [],
     description: row.description || "",
     source: "Pinkkkuin",
     preorder_note: isPreorder && row.deadline ? `預購截止：${row.deadline}` : undefined,
+    variants: variantsFromRow(row),
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -127,6 +158,7 @@ export async function getStorefrontProducts() {
     "created_at",
     "updated_at",
     "product_categories(categories(id,legacy_id,name,type,enabled,sort_order,color))",
+    "product_variants(id,legacy_id,spec,price,stock_quantity,product_url,status,sort_order)",
   ].join(",");
   const legacySelect = [
     "id",

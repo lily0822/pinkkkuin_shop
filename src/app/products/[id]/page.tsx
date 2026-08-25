@@ -4,7 +4,7 @@ import { ArrowLeft, Camera, MessageCircle } from "lucide-react";
 import { AddToCartButton } from "@/components/add-to-cart-button";
 import { CopyProductButton } from "@/components/copy-product-button";
 import { ProductGallery } from "@/components/product-gallery";
-import { formatPrice, products, statusLabels, statusStyles } from "@/lib/products";
+import { products, statusLabels, statusStyles } from "@/lib/products";
 import { getProductDetailById } from "@/lib/product-detail";
 import { contactLinks } from "@/lib/site";
 
@@ -25,37 +25,30 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   const { product, galleryImages } = detail;
 
   const rows = [
-    ["商品日文名稱", product.name_jp],
+    ["日文名稱", product.name_jp],
     ["商品編號", product.sku],
-    ["分類", product.category],
-    ["品牌 / 角色", product.brand],
+    ["商品類別", product.category],
+    ["IP / 品牌", product.brand],
     ["尺寸", product.size],
     ["材質", product.material],
     ["來源", product.source],
-    ["庫存", product.stock_quantity == null ? "請私訊確認" : `${product.stock_quantity} 件`],
+    ["庫存 / 名額", product.stock_quantity == null ? "請私訊確認" : `${product.stock_quantity} 件`],
   ].filter((row): row is [string, string] => Boolean(row[1]));
 
-  const priceLabel =
-    product.status === "sold_out"
-      ? "已售完"
-      : product.status === "preorder"
-        ? `預購價 ${formatPrice(product.price)}`
-        : formatPrice(product.price);
-
   return (
-    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
       <Link
         href="/products"
-        className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-black text-penguin-pink-dark shadow-sm"
+        className="ml-24 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-black text-penguin-pink-dark shadow-sm sm:ml-0"
       >
         <ArrowLeft size={16} />
-        回商品總覽
+        回到商品列表
       </Link>
 
-      <div className="mt-6 grid gap-8 lg:grid-cols-[0.95fr_1.05fr]">
+      <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,0.6fr)_minmax(360px,0.4fr)] lg:gap-8">
         <ProductGallery images={galleryImages} productName={product.name_zh} />
 
-        <section className="space-y-6">
+        <section className="space-y-4">
           <div className="rounded-3xl border-4 border-white bg-white/90 p-5 shadow-xl">
             <div className="mb-3 flex flex-wrap gap-2">
               <span className={`rounded-full px-3 py-1 text-xs font-black ${statusStyles[product.status]}`}>
@@ -67,11 +60,11 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
             </div>
             <h1 className="text-3xl font-black leading-tight text-penguin-gray sm:text-4xl">{product.name_zh}</h1>
             {product.name_jp ? <p className="mt-3 text-sm font-bold text-gray-500">{product.name_jp}</p> : null}
-            <p className="mt-5 text-3xl font-black text-penguin-pink-dark">{priceLabel}</p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            <AddToCartButton product={product} />
+          <AddToCartButton product={product} />
+
+          <div className="grid gap-3 sm:grid-cols-2">
             <CopyProductButton product={product} />
             <Link
               href={contactLinks.line}
@@ -87,15 +80,15 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
             className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full border-2 border-penguin-pink bg-white px-5 text-sm font-black text-penguin-pink-dark shadow-sm sm:w-auto"
           >
             <Camera size={17} />
-            到 Instagram 看連線
+            到 Instagram 詢問
           </Link>
 
-          <div className="rounded-3xl border-2 border-penguin-peach bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-black text-penguin-gray">商品說明</h2>
+          <div className="rounded-3xl border-2 border-penguin-peach bg-white p-4 shadow-sm sm:p-5">
+            <h2 className="text-lg font-black text-penguin-gray">商品描述</h2>
             <p className="mt-3 text-sm leading-7 text-gray-500">{product.description}</p>
           </div>
 
-          <div className="rounded-3xl border-2 border-penguin-peach bg-white p-5 shadow-sm">
+          <div className="rounded-3xl border-2 border-penguin-peach bg-white p-4 shadow-sm sm:p-5">
             <h2 className="text-lg font-black text-penguin-gray">商品資訊</h2>
             <dl className="mt-4 grid gap-3 sm:grid-cols-2">
               {rows.map(([label, value]) => (

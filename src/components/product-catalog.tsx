@@ -580,7 +580,17 @@ export function ProductCatalog({
         ) : null}
 
         {quickViewProduct ? (
-          <QuickViewModal product={quickViewProduct} onClose={() => setQuickViewProduct(null)} onAddToCart={() => cart.addProduct(quickViewProduct)} />
+          <QuickViewModal
+            product={quickViewProduct}
+            onClose={() => setQuickViewProduct(null)}
+            onAddToCart={() => {
+              if ((quickViewProduct.variants || []).length > 1) {
+                window.location.href = `/products/${quickViewProduct.id}`;
+                return;
+              }
+              cart.addProduct(quickViewProduct, quickViewProduct.variants?.[0] || null);
+            }}
+          />
         ) : null}
       </>
     );
@@ -701,7 +711,17 @@ export function ProductCatalog({
       </div>
 
       {quickViewProduct ? (
-        <QuickViewModal product={quickViewProduct} onClose={() => setQuickViewProduct(null)} onAddToCart={() => cart.addProduct(quickViewProduct)} />
+        <QuickViewModal
+          product={quickViewProduct}
+          onClose={() => setQuickViewProduct(null)}
+          onAddToCart={() => {
+            if ((quickViewProduct.variants || []).length > 1) {
+              window.location.href = `/products/${quickViewProduct.id}`;
+              return;
+            }
+            cart.addProduct(quickViewProduct, quickViewProduct.variants?.[0] || null);
+          }}
+        />
       ) : null}
     </>
   );

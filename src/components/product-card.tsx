@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Eye, ShoppingBasket } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useCart } from "@/components/cart-provider";
 import { ProductArt } from "@/components/product-art";
 import { formatPrice, Product, statusLabels, statusStyles } from "@/lib/products";
@@ -27,7 +28,10 @@ function tagStyle(color?: string) {
 
 export function ProductCard({ product, onQuickView, compact = false }: ProductCardProps) {
   const cart = useCart();
+  const router = useRouter();
   const canOrder = product.status !== "sold_out" && product.status !== "hidden";
+  const hasMultipleVariants = (product.variants || []).length > 1;
+  const singleVariant = product.variants?.length === 1 ? product.variants[0] : null;
   const allTags = (product.tags || []).filter((tag) => tag.enabled !== false);
   const ipTags = allTags.filter((tag) => tag.type === "ip").sort((a, b) => a.sortOrder - b.sortOrder);
   const categoryTags = allTags.filter((tag) => tag.type === "category").sort((a, b) => a.sortOrder - b.sortOrder);
@@ -37,6 +41,17 @@ export function ProductCard({ product, onQuickView, compact = false }: ProductCa
     : product.category
       ? [{ id: `category:${product.category}`, name: product.category, type: "category" as const, enabled: true, sortOrder: 0, color: "#facc15" }]
       : [];
+
+  function handleCartClick() {
+    if (!canOrder) return;
+    if (hasMultipleVariants) {
+      router.push(`/products/${product.id}`);
+      return;
+    }
+    cart.addProduct(product, singleVariant || null);
+  }
+
+  const cartLabel = hasMultipleVariants ? "選擇規格" : "加入購物車";
 
   if (compact) {
     return (
@@ -66,14 +81,14 @@ export function ProductCard({ product, onQuickView, compact = false }: ProductCa
           </Link>
           <div className="mt-auto flex items-end justify-between gap-2">
             <p className="text-base font-black text-penguin-pink-dark">{formatPrice(product.price)}</p>
-            <p className="text-[10px] font-bold text-gray-400">{canOrder ? "可詢問" : "售完"}</p>
+            <p className="text-[10px] font-bold text-gray-400">{canOrder ? "可購買" : "售完"}</p>
           </div>
           <div className="grid grid-cols-[34px_1fr] gap-1.5">
             <button
               type="button"
               className="inline-flex h-8 items-center justify-center rounded-xl border border-penguin-peach bg-white text-penguin-gray transition hover:border-penguin-pink"
               onClick={() => onQuickView?.(product)}
-              aria-label="快速查看商品"
+              aria-label="快速瀏覽商品"
             >
               <Eye size={14} />
             </button>
@@ -81,10 +96,10 @@ export function ProductCard({ product, onQuickView, compact = false }: ProductCa
               type="button"
               disabled={!canOrder}
               className="inline-flex h-8 items-center justify-center gap-1 rounded-xl border border-penguin-pink-dark bg-penguin-pink px-2 text-[11px] font-black text-penguin-gray transition hover:bg-penguin-pink-light disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-stone-100 disabled:text-stone-400"
-              onClick={() => cart.addProduct(product)}
+              onClick={handleCartClick}
             >
               <ShoppingBasket size={13} />
-              加入購物車
+              {hasMultipleVariants ? "選規格" : "加入"}
             </button>
           </div>
         </div>
@@ -119,14 +134,14 @@ export function ProductCard({ product, onQuickView, compact = false }: ProductCa
         </Link>
         <div className="flex items-end justify-between gap-2">
           <p className="text-lg font-black text-penguin-pink-dark">{formatPrice(product.price)}</p>
-          <p className="text-[11px] font-bold text-gray-400">{canOrder ? "可以詢問" : "暫不可購買"}</p>
+          <p className="text-[11px] font-bold text-gray-400">{canOrder ? "可私訊訂購" : "暫時無法購買"}</p>
         </div>
         <div className="grid grid-cols-[auto_1fr] gap-2">
           <button
             type="button"
             className="inline-flex h-10 items-center justify-center rounded-xl border-2 border-penguin-peach bg-white px-3 text-xs font-black text-penguin-gray transition hover:border-penguin-pink"
             onClick={() => onQuickView?.(product)}
-            aria-label="快速查看商品"
+            aria-label="快速瀏覽商品"
           >
             <Eye size={16} />
           </button>
@@ -134,10 +149,10 @@ export function ProductCard({ product, onQuickView, compact = false }: ProductCa
             type="button"
             disabled={!canOrder}
             className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border-2 border-penguin-pink-dark bg-penguin-pink text-xs font-black text-penguin-gray transition hover:bg-penguin-pink-light disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-stone-100 disabled:text-stone-400"
-            onClick={() => cart.addProduct(product)}
+            onClick={handleCartClick}
           >
             <ShoppingBasket size={15} />
-            加入選物箱
+            {cartLabel}
           </button>
         </div>
       </div>

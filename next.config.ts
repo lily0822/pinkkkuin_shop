@@ -9,6 +9,9 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  outputFileTracingIncludes: {
+    "/backend": [".backend-product-publish/lily-backend.html"],
+  },
 };
 
 export default nextConfig;
