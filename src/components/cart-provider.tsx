@@ -1,12 +1,14 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ShoppingBasket, Trash2, X } from "lucide-react";
 import { formatPrice, Product, ProductVariant, statusLabels } from "@/lib/products";
 
 export type AddToCartVariant = ProductVariant | null;
+export type CartProductTypeKey = "stock" | "preorder" | "unknown";
 
-type CartItem = {
+export type CartItem = {
   id: string;
   productId: string;
   productName: string;
@@ -16,6 +18,8 @@ type CartItem = {
   quantity: number;
   image?: string;
   productType: string;
+  productTypeKey: CartProductTypeKey;
+  selected: boolean;
   maxQuantity?: number | null;
   name?: string;
   price?: number;
@@ -24,8 +28,20 @@ type CartItem = {
 
 type CartContextValue = {
   count: number;
-  addProduct: (product: Product, variant?: AddToCartVariant) => boolean;
+  items: CartItem[];
+  total: number;
+  selectedItems: CartItem[];
+  selectedLineCount: number;
+  selectedQuantity: number;
+  selectedTotal: number;
+  addProduct: (product: Product, variant?: AddToCartVariant, quantity?: number) => boolean;
+  toggleItemSelected: (id: string, selected?: boolean) => void;
+  setAllItemsSelected: (selected: boolean) => void;
+  setItemsSelectedByType: (type: CartProductTypeKey, selected: boolean) => void;
   openCart: () => void;
+  closeCart: () => void;
+  clearCart: () => void;
+  clearSelectedItems: () => void;
 };
 
 const CartContext = createContext<CartContextValue | null>(null);
@@ -44,6 +60,23 @@ function variantStock(product: Product, variant?: AddToCartVariant) {
   return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : null;
 }
 
+function productTypeKeyFromProduct(product: Product): CartProductTypeKey {
+  return product.status === "preorder" ? "preorder" : "stock";
+}
+
+function normalizeProductTypeKey(value: unknown, label?: unknown): CartProductTypeKey {
+  const normalized = String(value || label || "").trim().toLowerCase();
+  if (normalized === "preorder" || normalized === "預購") return "preorder";
+  if (normalized === "stock" || normalized === "in_stock" || normalized === "現貨") return "stock";
+  return "unknown";
+}
+
+function productTypeLabel(type: CartProductTypeKey, fallback: string) {
+  if (type === "stock") return "現貨";
+  if (type === "preorder") return "預購";
+  return fallback || "商品";
+}
+
 function normalizeSavedItems(value: unknown): CartItem[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -57,6 +90,7 @@ function normalizeSavedItems(value: unknown): CartItem[] {
       const unitPrice = Number(source.unitPrice ?? source.price ?? 0);
       const quantity = Math.max(1, Math.floor(Number(source.quantity || 1)));
       const maxQuantity = typeof source.maxQuantity === "number" && Number.isFinite(source.maxQuantity) ? source.maxQuantity : null;
+      const productTypeKey = normalizeProductTypeKey(source.productTypeKey, source.productType || source.type);
       return {
         id: lineItemId(productId, variantId),
         productId,
@@ -66,11 +100,55 @@ function normalizeSavedItems(value: unknown): CartItem[] {
         unitPrice,
         quantity: maxQuantity ? Math.min(quantity, maxQuantity) : quantity,
         image: source.image,
-        productType: String(source.productType || source.type || ""),
+        productType: productTypeLabel(productTypeKey, String(source.productType || source.type || "")),
+        productTypeKey,
+        selected: source.selected !== false,
         maxQuantity,
       };
     })
     .filter((item): item is CartItem => Boolean(item));
+}
+
+function selectionState(items: CartItem[]) {
+  const selectedCount = items.filter((item) => item.selected !== false).length;
+  return {
+    disabled: items.length === 0,
+    checked: items.length > 0 && selectedCount === items.length,
+    indeterminate: selectedCount > 0 && selectedCount < items.length,
+  };
+}
+
+function SelectionCheckbox({
+  label,
+  checked,
+  indeterminate,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  indeterminate?: boolean;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = Boolean(indeterminate);
+  }, [indeterminate]);
+
+  return (
+    <label className={`inline-flex items-center gap-1.5 rounded-full border border-penguin-peach bg-white px-2.5 py-1 text-xs font-black text-penguin-gray shadow-sm ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:border-penguin-pink"}`}>
+      <input
+        ref={ref}
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+        className="h-3.5 w-3.5 accent-penguin-pink-dark"
+      />
+      {label}
+    </label>
+  );
 }
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
@@ -94,19 +172,37 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const count = items.reduce((sum, item) => sum + item.quantity, 0);
   const total = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  const selectedItems = items.filter((item) => item.selected !== false);
+  const selectedLineCount = selectedItems.length;
+  const selectedQuantity = selectedItems.reduce((sum, item) => sum + item.quantity, 0);
+  const selectedTotal = selectedItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  const allSelection = selectionState(items);
+  const stockSelection = selectionState(items.filter((item) => item.productTypeKey === "stock"));
+  const preorderSelection = selectionState(items.filter((item) => item.productTypeKey === "preorder"));
 
-  function addProduct(product: Product, variant: AddToCartVariant = null) {
+  function addProduct(product: Product, variant: AddToCartVariant = null, quantity = 1) {
     const maxQuantity = variantStock(product, variant);
     if (maxQuantity !== null && maxQuantity <= 0) return false;
     const itemId = lineItemId(product.id, variant?.id || null);
+    const addQuantity = Math.max(1, Math.floor(Number(quantity || 1)));
+    const existing = items.find((item) => item.id === itemId);
+
+    if (existing && existing.maxQuantity !== null && existing.maxQuantity !== undefined && existing.quantity + addQuantity > existing.maxQuantity) {
+      return false;
+    }
+
+    if (!existing && maxQuantity !== null && addQuantity > maxQuantity) {
+      return false;
+    }
 
     setItems((current) => {
-      const existing = current.find((item) => item.id === itemId);
-      if (existing) {
-        const nextQuantity = existing.quantity + 1;
-        if (existing.maxQuantity !== null && existing.maxQuantity !== undefined && nextQuantity > existing.maxQuantity) return current;
-        return current.map((item) => (item.id === itemId ? { ...item, quantity: nextQuantity } : item));
+      const currentExisting = current.find((item) => item.id === itemId);
+      if (currentExisting) {
+        const nextQuantity = currentExisting.quantity + addQuantity;
+        if (currentExisting.maxQuantity !== null && currentExisting.maxQuantity !== undefined && nextQuantity > currentExisting.maxQuantity) return current;
+        return current.map((item) => (item.id === itemId ? { ...item, quantity: nextQuantity, selected: true } : item));
       }
+      const productTypeKey = productTypeKeyFromProduct(product);
       return [
         ...current,
         {
@@ -116,9 +212,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           variantId: variant?.id || null,
           variantSpec: variant?.spec || null,
           unitPrice: variantPrice(product, variant),
-          productType: statusLabels[product.status],
+          productType: productTypeLabel(productTypeKey, statusLabels[product.status]),
+          productTypeKey,
+          selected: true,
           image: product.images[0],
-          quantity: 1,
+          quantity: addQuantity,
           maxQuantity,
         },
       ];
@@ -143,11 +241,49 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setItems((current) => current.filter((item) => item.id !== id));
   }
 
+  function clearCart() {
+    setItems([]);
+    setIsOpen(false);
+  }
+
+  function clearSelectedItems() {
+    setItems((current) => current.filter((item) => item.selected === false));
+    setIsOpen(false);
+  }
+
+  function toggleItemSelected(id: string, selected?: boolean) {
+    setItems((current) => current.map((item) => (
+      item.id === id ? { ...item, selected: selected ?? item.selected === false } : item
+    )));
+  }
+
+  function setAllItemsSelected(selected: boolean) {
+    setItems((current) => current.map((item) => ({ ...item, selected })));
+  }
+
+  function setItemsSelectedByType(type: CartProductTypeKey, selected: boolean) {
+    setItems((current) => current.map((item) => (
+      item.productTypeKey === type ? { ...item, selected } : item
+    )));
+  }
+
   const value = useMemo<CartContextValue>(() => ({
     count,
+    items,
+    total,
+    selectedItems,
+    selectedLineCount,
+    selectedQuantity,
+    selectedTotal,
     addProduct,
+    toggleItemSelected,
+    setAllItemsSelected,
+    setItemsSelectedByType,
     openCart: () => setIsOpen(true),
-  }), [count]);
+    closeCart: () => setIsOpen(false),
+    clearCart,
+    clearSelectedItems,
+  }), [count, items, selectedItems, selectedLineCount, selectedQuantity, selectedTotal, total]);
 
   return (
     <CartContext.Provider value={value}>
@@ -170,9 +306,42 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex-1 space-y-4 overflow-y-auto p-4">
+            {items.length ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-penguin-peach bg-penguin-cream/60 p-2">
+                <SelectionCheckbox
+                  label="全選"
+                  checked={allSelection.checked}
+                  indeterminate={allSelection.indeterminate}
+                  onChange={setAllItemsSelected}
+                />
+                <SelectionCheckbox
+                  label="現貨"
+                  checked={stockSelection.checked}
+                  indeterminate={stockSelection.indeterminate}
+                  disabled={stockSelection.disabled}
+                  onChange={(checked) => setItemsSelectedByType("stock", checked)}
+                />
+                <SelectionCheckbox
+                  label="預購"
+                  checked={preorderSelection.checked}
+                  indeterminate={preorderSelection.indeterminate}
+                  disabled={preorderSelection.disabled}
+                  onChange={(checked) => setItemsSelectedByType("preorder", checked)}
+                />
+              </div>
+            ) : null}
             {items.length ? items.map((item) => (
-              <div key={item.id} className="rounded-2xl border-2 border-penguin-peach bg-penguin-peach-light p-3">
+              <div key={item.id} className={`rounded-2xl border-2 p-3 transition ${item.selected === false ? "border-penguin-peach bg-white opacity-75" : "border-penguin-peach bg-penguin-peach-light"}`}>
                 <div className="flex gap-3">
+                  <label className="mt-5 flex shrink-0 cursor-pointer items-center" title="選擇本次結帳商品">
+                    <input
+                      type="checkbox"
+                      checked={item.selected !== false}
+                      onChange={(event) => toggleItemSelected(item.id, event.target.checked)}
+                      className="h-4 w-4 accent-penguin-pink-dark"
+                      aria-label={`選擇 ${item.productName}`}
+                    />
+                  </label>
                   <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-xl bg-white text-2xl">
                     {item.image ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -224,15 +393,32 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
           <div className="border-t bg-white p-4">
             <div className="mb-3 flex items-center justify-between text-sm font-black">
-              <span>小計</span>
-              <span className="text-lg text-penguin-pink-dark">{formatPrice(total)}</span>
+              <span>本次小計</span>
+              <span className="text-lg text-penguin-pink-dark">{formatPrice(selectedTotal)}</span>
             </div>
-            <a
-              href="https://line.me/R/ti/p/@pinkkkuin"
-              className="block rounded-2xl bg-penguin-pink-dark py-3 text-center text-sm font-black text-white shadow-md hover:bg-penguin-pink"
-            >
-              帶著購物車私訊小企鵝
-            </a>
+            <div className="mb-3 text-xs font-bold text-gray-500">
+              已選 {selectedQuantity} 件商品
+              {!selectedLineCount ? <span className="ml-2 text-red-500">請至少選擇一件要結帳的商品</span> : null}
+            </div>
+            <div className="grid gap-2">
+              <Link
+                href="/checkout"
+                onClick={() => setIsOpen(false)}
+                className={`block rounded-2xl py-3 text-center text-sm font-black shadow-md transition ${
+                  selectedLineCount
+                    ? "bg-penguin-pink-dark text-white hover:bg-penguin-pink"
+                    : "pointer-events-none bg-gray-200 text-gray-400"
+                }`}
+              >
+                前往結帳
+              </Link>
+              <a
+                href="https://line.me/R/ti/p/@pinkkkuin"
+                className="block rounded-2xl border-2 border-[#06C755] bg-white py-3 text-center text-sm font-black text-[#06A948] shadow-sm hover:bg-emerald-50"
+              >
+                帶著購物車私訊小企鵝
+              </a>
+            </div>
           </div>
         </aside>
       </div>

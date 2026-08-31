@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Camera, MessageCircle } from "lucide-react";
+import { ArrowLeft, MessageCircle } from "lucide-react";
 import { AddToCartButton } from "@/components/add-to-cart-button";
 import { CopyProductButton } from "@/components/copy-product-button";
 import { ProductGallery } from "@/components/product-gallery";
@@ -23,17 +23,6 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   }
 
   const { product, galleryImages } = detail;
-
-  const rows = [
-    ["日文名稱", product.name_jp],
-    ["商品編號", product.sku],
-    ["商品類別", product.category],
-    ["IP / 品牌", product.brand],
-    ["尺寸", product.size],
-    ["材質", product.material],
-    ["來源", product.source],
-    ["庫存 / 名額", product.stock_quantity == null ? "請私訊確認" : `${product.stock_quantity} 件`],
-  ].filter((row): row is [string, string] => Boolean(row[1]));
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
@@ -75,29 +64,9 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
             </Link>
           </div>
 
-          <Link
-            href={contactLinks.instagram}
-            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full border-2 border-penguin-pink bg-white px-5 text-sm font-black text-penguin-pink-dark shadow-sm sm:w-auto"
-          >
-            <Camera size={17} />
-            到 Instagram 詢問
-          </Link>
-
           <div className="rounded-3xl border-2 border-penguin-peach bg-white p-4 shadow-sm sm:p-5">
             <h2 className="text-lg font-black text-penguin-gray">商品描述</h2>
             <p className="mt-3 text-sm leading-7 text-gray-500">{product.description}</p>
-          </div>
-
-          <div className="rounded-3xl border-2 border-penguin-peach bg-white p-4 shadow-sm sm:p-5">
-            <h2 className="text-lg font-black text-penguin-gray">商品資訊</h2>
-            <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-              {rows.map(([label, value]) => (
-                <div key={label} className="rounded-2xl bg-penguin-pink-light/70 p-3">
-                  <dt className="text-xs font-black text-penguin-pink-dark">{label}</dt>
-                  <dd className="mt-1 text-sm font-bold text-penguin-gray">{value}</dd>
-                </div>
-              ))}
-            </dl>
           </div>
 
           {product.preorder_note || product.notice ? (

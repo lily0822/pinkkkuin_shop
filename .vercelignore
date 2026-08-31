@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+.env.backup-*
+.vercel
+node_modules/
+.next/
+*.log
+shop-env.js
+public/shop-env.js
+.backend-product-publish/.git/
+.backend-product-publish/backend-env.local.js

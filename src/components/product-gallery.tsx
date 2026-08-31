@@ -67,7 +67,7 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
 
   if (!galleryImages.length) {
     return (
-      <div className="mx-auto grid aspect-[4/3] max-h-[420px] min-h-[220px] w-full place-items-center rounded-3xl border-2 border-dashed border-penguin-peach bg-white/80 text-sm font-bold text-gray-400 lg:max-h-[520px]">
+      <div className="mx-auto grid aspect-[4/3] max-h-[360px] min-h-[180px] w-full max-w-2xl place-items-center rounded-3xl border-2 border-dashed border-penguin-peach bg-white/80 text-sm font-bold text-gray-400 sm:min-h-[220px] lg:max-h-[440px]">
         圖片準備中
       </div>
     );
@@ -79,7 +79,7 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
   return (
     <div className="space-y-3">
       <div
-        className="group relative mx-auto aspect-[4/3] max-h-[560px] min-h-[280px] w-full overflow-hidden rounded-3xl border-4 border-white bg-white shadow-xl sm:min-h-[360px] lg:max-h-[600px]"
+        className="group relative mx-auto aspect-[4/3] max-h-[520px] min-h-[240px] w-full overflow-hidden rounded-3xl border-4 border-white bg-white shadow-xl sm:min-h-[320px] lg:max-h-[560px]"
         onTouchStart={(event) => {
           touchStartX.current = event.touches[0]?.clientX ?? null;
         }}
