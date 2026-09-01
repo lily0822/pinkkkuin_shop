@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  if (!isBackendSessionValid(request)) {
+  if (!(await isBackendSessionValid(request))) {
     return backendAuthJsonError("需要重新登入後台。");
   }
 

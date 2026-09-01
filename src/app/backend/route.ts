@@ -1,8 +1,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { NextRequest } from "next/server";
-import { NextResponse } from "next/server";
-import { getBackendRuntime, isBackendAuthConfigured, isBackendSessionValid } from "@/lib/backend-auth";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  getBackendRuntime,
+  isBackendAuthConfigured,
+  isBackendSessionValid,
+  shouldRequireBackendAuth,
+} from "@/lib/backend-auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -20,9 +24,7 @@ const LOCAL_BACKEND_ENV_PATH = path.join(
 );
 
 async function readLocalBackendApiUrl() {
-  if (process.env.NODE_ENV === "production") {
-    return "";
-  }
+  if (process.env.NODE_ENV === "production") return "";
 
   try {
     const source = await readFile(LOCAL_BACKEND_ENV_PATH, "utf8");
@@ -42,7 +44,7 @@ async function getStagingBackendApiUrl() {
   );
 }
 
-function renderBackendLoginPage(message = "") {
+function renderBackendLoginPage(environment: string, message = "") {
   return `<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -64,7 +66,7 @@ function renderBackendLoginPage(message = "") {
 </head>
 <body>
   <main>
-    <span class="badge">PRODUCTION</span>
+    <span class="badge">${environment}</span>
     <h1>後台登入</h1>
     <p>${message || "請輸入後台管理密碼。"}</p>
     <form id="backend-login-form">
@@ -105,9 +107,81 @@ function injectBackendRuntimeConfig(html: string, config: string) {
   return html.includes("</head>") ? html.replace("</head>", `${config}\n</head>`) : `${config}\n${html}`;
 }
 
+function renderAuthToolsScript() {
+  return `
+document.addEventListener('DOMContentLoaded', function(){
+  var wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:9999;display:flex;gap:8px;align-items:center;';
+  function makeButton(text, bg){
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = text;
+    button.style.cssText = 'border:0;border-radius:999px;background:' + bg + ';color:#fff;padding:10px 16px;font-weight:800;box-shadow:0 10px 24px rgba(190,24,93,.22);cursor:pointer;';
+    return button;
+  }
+  var changeButton = makeButton('修改密碼', '#ec4899');
+  var logoutButton = makeButton('登出', '#be185d');
+  logoutButton.addEventListener('click', async function(){
+    await fetch('/api/backend/auth/logout', { method: 'POST' });
+    location.reload();
+  });
+  changeButton.addEventListener('click', openBackendPasswordModal);
+  wrap.appendChild(changeButton);
+  wrap.appendChild(logoutButton);
+  document.body.appendChild(wrap);
+
+  function openBackendPasswordModal(){
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(15,23,42,.38);display:grid;place-items:center;padding:16px;';
+    overlay.innerHTML =
+      '<form id="backend-password-form" style="width:min(420px,100%);background:#fff;border:1px solid #fbcfe8;border-radius:24px;box-shadow:0 24px 60px rgba(236,72,153,.22);padding:24px;font-family:&quot;Noto Sans TC&quot;,system-ui,sans-serif;color:#1f2937">' +
+      '<h2 style="margin:0 0 8px;font-size:22px;color:#be185d">修改後台密碼</h2>' +
+      '<p style="margin:0 0 18px;color:#6b7280;font-size:14px">密碼更新後會自動登出，請使用新密碼重新登入。</p>' +
+      '<label style="display:block;margin:12px 0 6px;font-weight:800">目前密碼</label>' +
+      '<input name="currentPassword" type="password" autocomplete="current-password" required style="width:100%;height:42px;border:1px solid #f9a8d4;border-radius:12px;padding:0 12px;box-sizing:border-box">' +
+      '<label style="display:block;margin:12px 0 6px;font-weight:800">新密碼</label>' +
+      '<input name="newPassword" type="password" autocomplete="new-password" required style="width:100%;height:42px;border:1px solid #f9a8d4;border-radius:12px;padding:0 12px;box-sizing:border-box">' +
+      '<label style="display:block;margin:12px 0 6px;font-weight:800">再次輸入新密碼</label>' +
+      '<input name="confirmPassword" type="password" autocomplete="new-password" required style="width:100%;height:42px;border:1px solid #f9a8d4;border-radius:12px;padding:0 12px;box-sizing:border-box">' +
+      '<div id="backend-password-error" style="min-height:22px;margin-top:12px;color:#be123c;font-size:14px"></div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px">' +
+      '<button type="button" data-cancel style="border:1px solid #f9a8d4;border-radius:999px;background:#fff;color:#be185d;padding:10px 16px;font-weight:800;cursor:pointer">取消</button>' +
+      '<button type="submit" style="border:0;border-radius:999px;background:#ec4899;color:#fff;padding:10px 16px;font-weight:800;cursor:pointer">儲存密碼</button>' +
+      '</div></form>';
+    document.body.appendChild(overlay);
+    overlay.querySelector('[data-cancel]').addEventListener('click', function(){ overlay.remove(); });
+    overlay.addEventListener('click', function(event){ if(event.target === overlay) overlay.remove(); });
+    overlay.querySelector('form').addEventListener('submit', async function(event){
+      event.preventDefault();
+      var form = event.currentTarget;
+      var submit = form.querySelector('button[type=submit]');
+      var error = form.querySelector('#backend-password-error');
+      submit.disabled = true;
+      error.textContent = '';
+      try {
+        var response = await fetch('/api/backend/auth/change-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(Object.fromEntries(new FormData(form).entries()))
+        });
+        var result = await response.json().catch(function(){ return null; });
+        if(!response.ok || !result || !result.ok) throw new Error((result && result.error) || '變更密碼失敗。');
+        error.style.color = '#047857';
+        error.textContent = '密碼已更新，請重新登入。';
+        setTimeout(function(){ location.reload(); }, 900);
+      } catch(err) {
+        error.textContent = err && err.message ? err.message : '變更密碼失敗。';
+      } finally {
+        submit.disabled = false;
+      }
+    });
+  }
+});`;
+}
+
 export async function GET(request: NextRequest) {
-  const runtime = getBackendRuntime();
-  if (runtime === "unknown") {
+  const backendRuntime = getBackendRuntime();
+  if (backendRuntime === "unknown") {
     return new NextResponse("Not found", {
       status: 404,
       headers: {
@@ -117,9 +191,11 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  if (runtime === "production" && !isBackendSessionValid(request)) {
-    const message = isBackendAuthConfigured() ? "" : "Production 後台登入尚未完成環境設定。";
-    return new NextResponse(renderBackendLoginPage(message), {
+  const environment = backendRuntime.toUpperCase();
+
+  if (shouldRequireBackendAuth() && !(await isBackendSessionValid(request))) {
+    const message = isBackendAuthConfigured() ? "" : "後台登入尚未完成環境設定。";
+    return new NextResponse(renderBackendLoginPage(environment, message), {
       status: 200,
       headers: {
         "content-type": "text/html; charset=utf-8",
@@ -129,9 +205,10 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const backendApiUrl = runtime === "staging" ? await getStagingBackendApiUrl() : "";
+  const backendApiUrl =
+    backendRuntime === "staging" ? await getStagingBackendApiUrl() : "";
 
-  if (runtime === "staging" && !backendApiUrl) {
+  if (backendRuntime === "staging" && !backendApiUrl) {
     return new NextResponse("STAGING_BACKEND_API_URL is not configured.", {
       status: 500,
       headers: {
@@ -145,20 +222,15 @@ export async function GET(request: NextRequest) {
   const uploadApiUrl = `${origin}/api/upload`;
   const runtimeConfig = [
     "<script>",
-    `window.PINKKKUIN_BACKEND_ENV = ${JSON.stringify(runtime.toUpperCase())};`,
+    `window.PINKKKUIN_BACKEND_ENV = ${JSON.stringify(environment)};`,
     ...(backendApiUrl ? [`window.PINKKKUIN_BACKEND_API_URL = ${JSON.stringify(backendApiUrl)};`] : []),
     `window.PINKKKUIN_UPLOAD_API_URL = ${JSON.stringify(uploadApiUrl)};`,
-    ...(runtime === "production" ? [
-      "window.PINKKKUIN_BACKEND_AUTHENTICATED = true;",
-      "document.addEventListener('DOMContentLoaded', function(){",
-      "  var button = document.createElement('button');",
-      "  button.type = 'button';",
-      "  button.textContent = '登出';",
-      "  button.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:9999;border:0;border-radius:999px;background:#be185d;color:#fff;padding:10px 16px;font-weight:800;box-shadow:0 10px 24px rgba(190,24,93,.22);cursor:pointer;';",
-      "  button.addEventListener('click', async function(){ await fetch('/api/backend/auth/logout', { method: 'POST' }); location.reload(); });",
-      "  document.body.appendChild(button);",
-      "});",
-    ] : []),
+    ...(shouldRequireBackendAuth()
+      ? [
+          "window.PINKKKUIN_BACKEND_AUTHENTICATED = true;",
+          renderAuthToolsScript(),
+        ]
+      : []),
     "</script>",
   ].join("\n");
 

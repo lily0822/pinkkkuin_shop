@@ -5,6 +5,7 @@ import {
   getBackendRuntime,
   isBackendSessionValid,
   isSameOriginMutation,
+  shouldRequireBackendAuth,
 } from "@/lib/backend-auth";
 
 export const dynamic = "force-dynamic";
@@ -75,10 +76,9 @@ const ALLOWED_SHIPPING_STATUSES = new Set([
 ]);
 const ALLOWED_PAGE_SIZES = new Set([10, 20, 50]);
 
-function guardBackendRequest(request: NextRequest, mutation = false) {
+async function guardBackendRequest(request: NextRequest, mutation = false) {
   const runtime = getBackendRuntime();
-  if (runtime === "staging") return null;
-  if (runtime !== "production") {
+  if (runtime === "unknown") {
     return new NextResponse("Not found", {
       status: 404,
       headers: {
@@ -87,7 +87,8 @@ function guardBackendRequest(request: NextRequest, mutation = false) {
       },
     });
   }
-  if (!isBackendSessionValid(request)) return backendAuthJsonError();
+  if (!shouldRequireBackendAuth()) return null;
+  if (!(await isBackendSessionValid(request))) return backendAuthJsonError();
   if (mutation && !isSameOriginMutation(request)) return backendAuthJsonError("請重新整理後再操作。", 403);
   return null;
 }
@@ -288,7 +289,7 @@ async function fetchOrdersPage(
 }
 
 export async function GET(request: NextRequest) {
-  const guard = guardBackendRequest(request);
+  const guard = await guardBackendRequest(request);
   if (guard) return guard;
 
   const supabaseUrl = process.env.SUPABASE_URL?.trim().replace(/\/+$/, "");
@@ -430,7 +431,7 @@ async function callOrderRpc(
 }
 
 export async function PATCH(request: NextRequest) {
-  const guard = guardBackendRequest(request, true);
+  const guard = await guardBackendRequest(request, true);
   if (guard) return guard;
 
   let body: {

@@ -5,15 +5,15 @@ import {
   getBackendRuntime,
   isBackendSessionValid,
   isSameOriginMutation,
+  shouldRequireBackendAuth,
 } from "@/lib/backend-auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-function guardBackendRequest(request: NextRequest) {
+async function guardBackendRequest(request: NextRequest) {
   const runtime = getBackendRuntime();
-  if (runtime === "staging") return null;
-  if (runtime !== "production") {
+  if (runtime === "unknown") {
     return new NextResponse("Not found", {
       status: 404,
       headers: {
@@ -22,7 +22,8 @@ function guardBackendRequest(request: NextRequest) {
       },
     });
   }
-  if (!isBackendSessionValid(request)) return backendAuthJsonError();
+  if (!shouldRequireBackendAuth()) return null;
+  if (!(await isBackendSessionValid(request))) return backendAuthJsonError();
   if (!isSameOriginMutation(request)) return backendAuthJsonError("請重新整理後再操作。", 403);
   return null;
 }
@@ -69,7 +70,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const guard = guardBackendRequest(request);
+  const guard = await guardBackendRequest(request);
   if (guard) return guard;
 
   const { id } = await params;
