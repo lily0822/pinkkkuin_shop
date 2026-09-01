@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchEmailOrderById, sendOrderCancelledEmail } from "@/lib/email/order-notifications";
+import {
+  backendAuthJsonError,
+  getBackendRuntime,
+  isBackendSessionValid,
+  isSameOriginMutation,
+} from "@/lib/backend-auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -69,11 +75,21 @@ const ALLOWED_SHIPPING_STATUSES = new Set([
 ]);
 const ALLOWED_PAGE_SIZES = new Set([10, 20, 50]);
 
-function isStagingRuntime() {
-  return (
-    process.env.APP_ENV?.trim().toLowerCase() === "staging" ||
-    process.env.SUPABASE_ENV?.trim().toLowerCase() === "staging"
-  );
+function guardBackendRequest(request: NextRequest, mutation = false) {
+  const runtime = getBackendRuntime();
+  if (runtime === "staging") return null;
+  if (runtime !== "production") {
+    return new NextResponse("Not found", {
+      status: 404,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store",
+      },
+    });
+  }
+  if (!isBackendSessionValid(request)) return backendAuthJsonError();
+  if (mutation && !isSameOriginMutation(request)) return backendAuthJsonError("請重新整理後再操作。", 403);
+  return null;
 }
 
 function toNumber(value: number | string | null | undefined) {
@@ -272,15 +288,8 @@ async function fetchOrdersPage(
 }
 
 export async function GET(request: NextRequest) {
-  if (!isStagingRuntime()) {
-    return new NextResponse("Not found", {
-      status: 404,
-      headers: {
-        "content-type": "text/plain; charset=utf-8",
-        "cache-control": "no-store",
-      },
-    });
-  }
+  const guard = guardBackendRequest(request);
+  if (guard) return guard;
 
   const supabaseUrl = process.env.SUPABASE_URL?.trim().replace(/\/+$/, "");
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
@@ -421,15 +430,8 @@ async function callOrderRpc(
 }
 
 export async function PATCH(request: NextRequest) {
-  if (!isStagingRuntime()) {
-    return new NextResponse("Not found", {
-      status: 404,
-      headers: {
-        "content-type": "text/plain; charset=utf-8",
-        "cache-control": "no-store",
-      },
-    });
-  }
+  const guard = guardBackendRequest(request, true);
+  if (guard) return guard;
 
   let body: {
     id?: unknown;

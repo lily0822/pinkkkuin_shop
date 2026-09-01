@@ -1,14 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchEmailOrderById, sendOrderCancelledEmail } from "@/lib/email/order-notifications";
+import {
+  backendAuthJsonError,
+  getBackendRuntime,
+  isBackendSessionValid,
+  isSameOriginMutation,
+} from "@/lib/backend-auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-function isStagingRuntime() {
-  return (
-    process.env.APP_ENV?.trim().toLowerCase() === "staging" ||
-    process.env.SUPABASE_ENV?.trim().toLowerCase() === "staging"
-  );
+function guardBackendRequest(request: NextRequest) {
+  const runtime = getBackendRuntime();
+  if (runtime === "staging") return null;
+  if (runtime !== "production") {
+    return new NextResponse("Not found", {
+      status: 404,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store",
+      },
+    });
+  }
+  if (!isBackendSessionValid(request)) return backendAuthJsonError();
+  if (!isSameOriginMutation(request)) return backendAuthJsonError("請重新整理後再操作。", 403);
+  return null;
 }
 
 function jsonError(message: string, status = 400) {
@@ -53,15 +69,8 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  if (!isStagingRuntime()) {
-    return new NextResponse("Not found", {
-      status: 404,
-      headers: {
-        "content-type": "text/plain; charset=utf-8",
-        "cache-control": "no-store",
-      },
-    });
-  }
+  const guard = guardBackendRequest(request);
+  if (guard) return guard;
 
   const { id } = await params;
   const orderId = typeof id === "string" ? id.trim() : "";
