@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchEmailOrderById, sendOrderCancelledEmail } from "@/lib/email/order-notifications";
+import { sendOrderCancelledLineNotification } from "@/lib/line/admin-notifications";
 import {
   backendAuthJsonError,
   getBackendRuntime,
@@ -472,6 +473,7 @@ export async function PATCH(request: NextRequest) {
     }
     const emailOrder = await fetchEmailOrderById(orderId);
     await sendOrderCancelledEmail(emailOrder);
+    await sendOrderCancelledLineNotification(emailOrder);
     return NextResponse.json({ ok: true, order: rpc.result });
   }
 

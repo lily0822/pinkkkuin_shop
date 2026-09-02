@@ -1,11 +1,13 @@
 import "server-only";
 
+import { getDefaultProductImageUrl, isPublicHttpsImageUrl } from "@/lib/product-default-image";
 import { sendEmail } from "./client";
 import { renderOrderCancelledEmail } from "./templates/order-cancelled";
 import { renderOrderCreatedEmail } from "./templates/order-created";
 
 type SupabaseOrderItem = {
   id: string;
+  product_id: string | null;
   product_name: string | null;
   variant_spec: string | null;
   unit_price: number | string | null;
@@ -41,6 +43,7 @@ type SupabaseOrder = {
 };
 
 export type EmailOrderItem = {
+  productId: string;
   productName: string;
   variantSpec: string;
   unitPrice: number;
@@ -48,6 +51,7 @@ export type EmailOrderItem = {
   subtotal: number;
   productUrl: string;
   productType: string;
+  imageUrl: string;
 };
 
 export type EmailOrder = {
@@ -97,7 +101,7 @@ const ORDER_EMAIL_SELECT = [
   "convenience_store_name",
   "cancel_reason",
   "cancelled_at",
-  "order_items(id,product_name,variant_spec,unit_price,quantity,subtotal,product_url,product_type)",
+  "order_items(id,product_id,product_name,variant_spec,unit_price,quantity,subtotal,product_url,product_type)",
 ].join(",");
 
 function toNumber(value: number | string | null | undefined) {
@@ -109,6 +113,7 @@ function normalizeOrderItem(item: SupabaseOrderItem): EmailOrderItem {
   const unitPrice = toNumber(item.unit_price);
   const quantity = Math.max(0, Math.floor(toNumber(item.quantity)));
   return {
+    productId: item.product_id || "",
     productName: item.product_name || "",
     variantSpec: item.variant_spec || "",
     unitPrice,
@@ -116,6 +121,7 @@ function normalizeOrderItem(item: SupabaseOrderItem): EmailOrderItem {
     subtotal: toNumber(item.subtotal) || unitPrice * quantity,
     productUrl: item.product_url || "",
     productType: item.product_type || "",
+    imageUrl: "",
   };
 }
 
@@ -165,6 +171,83 @@ function logOrderEmail(event: string, details: Record<string, unknown>) {
   );
 }
 
+function uniqueValues(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
+function postgrestQuotedInList(values: string[]) {
+  return `in.(${values.map((value) => `"${value.replace(/"/g, '\\"')}"`).join(",")})`;
+}
+
+type SupabaseProductImage = {
+  product_id: string | null;
+  secure_url: string | null;
+  is_primary: boolean | null;
+  sort_order: number | string | null;
+  created_at: string | null;
+};
+
+async function fetchProductImageMap(
+  config: { url: string; key: string },
+  productIds: string[],
+): Promise<Map<string, string>> {
+  const cleanProductIds = uniqueValues(productIds);
+  if (!cleanProductIds.length) return new Map();
+
+  const url = new URL(`${config.url}/rest/v1/product_images`);
+  url.searchParams.set("select", "product_id,secure_url,is_primary,sort_order,created_at");
+  url.searchParams.set("product_id", postgrestQuotedInList(cleanProductIds));
+  url.searchParams.set("order", "is_primary.desc,sort_order.asc,created_at.asc");
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        apikey: config.key,
+        Authorization: `Bearer ${config.key}`,
+      },
+      cache: "no-store",
+    });
+    const result = (await response.json().catch(() => null)) as SupabaseProductImage[] | null;
+    if (!response.ok || !Array.isArray(result)) {
+      logOrderEmail("order_notification_images_fetch_failed", {
+        status: response.status,
+      });
+      return new Map();
+    }
+
+    const imageMap = new Map<string, string>();
+    for (const image of result) {
+      const productId = image.product_id || "";
+      const secureUrl = image.secure_url || "";
+      if (!productId || imageMap.has(productId) || !isPublicHttpsImageUrl(secureUrl)) continue;
+      imageMap.set(productId, secureUrl);
+    }
+    return imageMap;
+  } catch (error) {
+    logOrderEmail("order_notification_images_fetch_error", {
+      message: error instanceof Error ? error.message : "unknown",
+    });
+    return new Map();
+  }
+}
+
+async function attachProductImages(
+  orders: EmailOrder[],
+  config: { url: string; key: string },
+): Promise<EmailOrder[]> {
+  const productIds = orders.flatMap((order) => order.items.map((item) => item.productId));
+  const imageMap = await fetchProductImageMap(config, productIds);
+  const defaultImageUrl = await getDefaultProductImageUrl();
+
+  return orders.map((order) => ({
+    ...order,
+    items: order.items.map((item) => ({
+      ...item,
+      imageUrl: imageMap.get(item.productId) || defaultImageUrl || "",
+    })),
+  }));
+}
+
 async function fetchOrders(url: URL): Promise<EmailOrder[]> {
   const config = getSupabaseEmailConfig();
   if (!config.url || !config.key) {
@@ -198,7 +281,8 @@ async function fetchOrders(url: URL): Promise<EmailOrder[]> {
     return [];
   }
 
-  return result.map((order) => normalizeOrder(order as SupabaseOrder));
+  const orders = result.map((order) => normalizeOrder(order as SupabaseOrder));
+  return attachProductImages(orders, config);
 }
 
 export async function fetchEmailOrdersByOrderNos(orderNos: string[]): Promise<EmailOrder[]> {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchEmailOrdersByOrderNos, sendOrderCreatedEmail } from "@/lib/email/order-notifications";
+import { sendOrderCreatedLineNotification } from "@/lib/line/admin-notifications";
 
 type CheckoutItemInput = {
   productId?: unknown;
@@ -244,6 +245,7 @@ export async function POST(request: NextRequest) {
     orders.map((order) => order.orderNo || "").filter(Boolean),
   );
   await sendOrderCreatedEmail(emailOrders);
+  await sendOrderCreatedLineNotification(emailOrders);
 
   return NextResponse.json({
     ok: true,
