@@ -20,6 +20,7 @@ type LineFlexMessage = {
 };
 
 type LineAdminMessage = LineTextMessage | LineFlexMessage;
+type LinePushMessage = LineAdminMessage;
 
 function env(name: string): string {
   return process.env[name]?.trim() ?? "";
@@ -114,6 +115,67 @@ async function sendLineAdminMessage(message: LineAdminMessage): Promise<LinePush
   };
 }
 
+async function sendLineMessageToUser(
+  recipientUserId: string,
+  message: LinePushMessage,
+  logPrefix: string,
+): Promise<LinePushResult> {
+  const config = getLineConfig();
+  const recipient = recipientUserId.trim();
+  if (!config.channelAccessToken || !recipient) {
+    logLineEvent(`${logPrefix}_disabled`, {
+      hasChannelAccessToken: Boolean(config.channelAccessToken),
+      hasRecipient: Boolean(recipient),
+    });
+    return {
+      provider: "line",
+      id: null,
+      disabled: true,
+    };
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(LINE_PUSH_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.channelAccessToken}`,
+        "Content-Type": "application/json",
+        "User-Agent": "pinkkkuin-shop/1.0",
+      },
+      body: JSON.stringify({
+        to: recipient,
+        messages: [message],
+      }),
+    });
+  } catch (error) {
+    logLineEvent(`${logPrefix}_network_error`, {
+      message: error instanceof Error ? error.message : "unknown",
+    });
+    throw new Error("LINE 通知傳送失敗");
+  }
+
+  if (!response.ok) {
+    let providerMessage = "provider rejected request";
+    try {
+      const body = (await response.json()) as { message?: unknown };
+      providerMessage = String(body.message || providerMessage);
+    } catch {
+      providerMessage = response.statusText || providerMessage;
+    }
+    logLineEvent(`${logPrefix}_provider_error`, {
+      status: response.status,
+      message: providerMessage,
+    });
+    throw new Error("LINE 通知傳送失敗");
+  }
+
+  return {
+    provider: "line",
+    id: response.headers.get("x-line-request-id"),
+  };
+}
+
 export async function sendLineAdminText(text: string): Promise<LinePushResult> {
   return sendLineAdminMessage({
     type: "text",
@@ -130,4 +192,20 @@ export async function sendLineAdminFlex(
     altText: truncateLineAltText(altText),
     contents,
   });
+}
+
+export async function sendLineUserFlex(
+  recipientUserId: string,
+  altText: string,
+  contents: Record<string, unknown>,
+): Promise<LinePushResult> {
+  return sendLineMessageToUser(
+    recipientUserId,
+    {
+      type: "flex",
+      altText: truncateLineAltText(altText),
+      contents,
+    },
+    "line_member_push",
+  );
 }

@@ -23,3 +23,7 @@ import/*.csv
 !.env.example
 public/shop-env.js
 shop-env.js
+
+.vercel
+.env*
+supabase/.temp/

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Heart, Menu, Search, ShoppingBasket, X } from "lucide-react";
+import { Heart, Menu, Search, ShoppingBasket, UserRound, X } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { useCart } from "@/components/cart-provider";
 import { type SiteAnnouncement, type SiteNavigationItem } from "@/lib/appearance-settings";
@@ -12,6 +12,7 @@ type SiteHeaderClientProps = {
   brand: BrandSettings;
   announcements?: SiteAnnouncement[];
   navigationItems?: SiteNavigationItem[];
+  isMemberLoggedIn?: boolean;
 };
 
 const FALLBACK_NAVIGATION_ITEMS: SiteNavigationItem[] = [
@@ -59,7 +60,7 @@ function isNavigationItemActive(item: SiteNavigationItem, pathname: string) {
   return itemPath.startsWith("/category/") && currentPath.startsWith(`${itemPath}/`);
 }
 
-export function SiteHeaderClient({ brand, announcements = [], navigationItems = FALLBACK_NAVIGATION_ITEMS }: SiteHeaderClientProps) {
+export function SiteHeaderClient({ brand, announcements = [], navigationItems = FALLBACK_NAVIGATION_ITEMS, isMemberLoggedIn = false }: SiteHeaderClientProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const router = useRouter();
@@ -85,6 +86,11 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
     const trimmed = query.trim();
     router.push(trimmed ? `/products?q=${encodeURIComponent(trimmed)}` : "/products");
     setIsOpen(false);
+  }
+
+  async function logoutMember() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.refresh();
   }
 
   return (
@@ -156,6 +162,35 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
           </form>
 
           <div className="flex items-center gap-2">
+            {isMemberLoggedIn ? (
+              <>
+                <Link href="/member" className={`hidden md:flex ${headerActionButtonBase} border-penguin-peach bg-white text-penguin-gray hover:bg-penguin-pink-light`}>
+                  <UserRound size={15} strokeWidth={2} />
+                  <span className={headerActionTextClass} style={headerActionTextStyle}>
+                    會員
+                  </span>
+                </Link>
+                <button type="button" onClick={logoutMember} className={`hidden md:flex ${headerActionButtonBase} border-gray-200 bg-white text-gray-500 hover:bg-gray-50`}>
+                  <span className={headerActionTextClass} style={headerActionTextStyle}>
+                    登出
+                  </span>
+                </button>
+              </>
+            ) : (
+              <>
+                <Link href="/login" className={`hidden md:flex ${headerActionButtonBase} border-penguin-peach bg-white text-penguin-gray hover:bg-penguin-pink-light`}>
+                  <UserRound size={15} strokeWidth={2} />
+                  <span className={headerActionTextClass} style={headerActionTextStyle}>
+                    登入
+                  </span>
+                </Link>
+                <Link href="/signup" className={`hidden md:flex ${headerActionButtonBase} border-penguin-pink-dark bg-penguin-pink-light text-penguin-pink-dark hover:bg-penguin-pink`}>
+                  <span className={headerActionTextClass} style={headerActionTextStyle}>
+                    註冊
+                  </span>
+                </Link>
+              </>
+            )}
             <Link href="/contact" className={`hidden md:flex ${headerActionButtonBase} ${helpButtonVariant}`}>
               <Heart size={15} strokeWidth={2} />
               <span className={headerActionTextClass} style={headerActionTextStyle}>
@@ -184,6 +219,22 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
 
         <nav className={`${isOpen ? "block" : "hidden"} border-t border-penguin-pink bg-penguin-pink-light/70 lg:block lg:border-t-0`}>
           <div className="nav-scrollbar mx-auto flex max-w-7xl gap-2 overflow-x-auto px-4 py-2 text-sm font-bold">
+            <Link
+              href={isMemberLoggedIn ? "/member" : "/login"}
+              className="category-tab shrink-0 snap-start lg:hidden"
+              onClick={() => setIsOpen(false)}
+            >
+              {isMemberLoggedIn ? "會員中心" : "會員登入"}
+            </Link>
+            {!isMemberLoggedIn ? (
+              <Link
+                href="/signup"
+                className="category-tab shrink-0 snap-start lg:hidden"
+                onClick={() => setIsOpen(false)}
+              >
+                會員註冊
+              </Link>
+            ) : null}
             {visibleNavigationItems.map((item) => {
               const isActive = isNavigationItemActive(item, pathname);
               return (

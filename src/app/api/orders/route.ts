@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchEmailOrdersByOrderNos, sendOrderCreatedEmail } from "@/lib/email/order-notifications";
 import { sendOrderCreatedLineNotification } from "@/lib/line/admin-notifications";
+import { sendMemberLineOrderNotification } from "@/lib/line/member-notifications";
+import { isMemberDisabled } from "@/lib/member/status";
+import { appendSupabaseCookies, createSupabaseRouteClient } from "@/lib/supabase/route";
 
 type CheckoutItemInput = {
   productId?: unknown;
@@ -191,6 +194,8 @@ export async function POST(request: NextRequest) {
   const supabaseUrl = process.env.SUPABASE_URL?.trim().replace(/\/+$/, "");
   const supabaseKey = process.env.SUPABASE_ANON_KEY?.trim();
   if (!supabaseUrl || !supabaseKey) return jsonError("訂單系統尚未設定完成。", 500);
+  const cookieResponse = NextResponse.json({ ok: true });
+  const supabase = createSupabaseRouteClient(request, cookieResponse);
 
   let body: CheckoutPayload;
   try {
@@ -209,30 +214,20 @@ export async function POST(request: NextRequest) {
     return jsonError(error instanceof Error ? error.message : "商品資料驗證失敗，請稍後再試。", 500);
   }
 
-  const response = await fetch(`${supabaseUrl}/rest/v1/rpc/create_storefront_order`, {
-    method: "POST",
-    headers: {
-      apikey: supabaseKey,
-      Authorization: `Bearer ${supabaseKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ payload }),
-  });
-
-  const rawText = await response.text();
-  let result: unknown = null;
-  try {
-    result = rawText ? JSON.parse(rawText) : null;
-  } catch {
-    result = rawText;
+  const { data: userData } = await supabase.auth.getUser();
+  if (userData.user && await isMemberDisabled(supabase, userData.user.id)) {
+    return appendSupabaseCookies(
+      jsonError("會員帳號目前已停用，請登出後以訪客身分結帳或聯繫客服。", 403),
+      cookieResponse,
+    );
   }
 
-  if (!response.ok) {
-    const message =
-      typeof result === "object" && result && "message" in result
-        ? String((result as { message?: unknown }).message || "")
-        : "";
-    return jsonError(message || "訂單建立失敗，請稍後再試。", response.status >= 500 ? 500 : 400);
+  const { data: result, error } = await supabase.rpc("create_storefront_order", { payload });
+  if (error) {
+    return appendSupabaseCookies(
+      jsonError(error.message || "訂單建立失敗，請稍後再試。", 400),
+      cookieResponse,
+    );
   }
 
   const orders = normalizeOrders(result);
@@ -246,11 +241,15 @@ export async function POST(request: NextRequest) {
   );
   await sendOrderCreatedEmail(emailOrders);
   await sendOrderCreatedLineNotification(emailOrders);
+  await sendMemberLineOrderNotification("order_created", emailOrders);
 
-  return NextResponse.json({
-    ok: true,
-    checkoutGroupId: checkoutGroupId || null,
-    orders,
-    order: orders[0] || null,
-  });
+  return appendSupabaseCookies(
+    NextResponse.json({
+      ok: true,
+      checkoutGroupId: checkoutGroupId || null,
+      orders,
+      order: orders[0] || null,
+    }),
+    cookieResponse,
+  );
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchEmailOrderById, sendOrderCancelledEmail } from "@/lib/email/order-notifications";
 import { sendOrderCancelledLineNotification } from "@/lib/line/admin-notifications";
+import { sendMemberLineOrderNotification } from "@/lib/line/member-notifications";
 import {
   backendAuthJsonError,
   getBackendRuntime,
@@ -474,6 +475,7 @@ export async function PATCH(request: NextRequest) {
     const emailOrder = await fetchEmailOrderById(orderId);
     await sendOrderCancelledEmail(emailOrder);
     await sendOrderCancelledLineNotification(emailOrder);
+    await sendMemberLineOrderNotification("order_cancelled", emailOrder);
     return NextResponse.json({ ok: true, order: rpc.result });
   }
 
@@ -485,6 +487,7 @@ export async function PATCH(request: NextRequest) {
   if (paymentStatus && !allowedPayment.has(paymentStatus)) return jsonError("不支援的付款狀態。");
   if (shippingStatus && !allowedShipping.has(shippingStatus)) return jsonError("不支援的配送狀態。");
 
+  const beforeOrder = await fetchEmailOrderById(orderId);
   const rpc = await callOrderRpc("update_storefront_order_status", {
     p_order_id: orderId,
     p_status: status || null,
@@ -497,6 +500,14 @@ export async function PATCH(request: NextRequest) {
         ? String((rpc.result as { message?: unknown }).message || "")
         : "";
     return jsonError(message || "更新訂單狀態失敗。", rpc.status >= 500 ? 500 : 400);
+  }
+
+  const afterOrder = await fetchEmailOrderById(orderId);
+  if (afterOrder && beforeOrder?.paymentStatus !== "paid" && afterOrder.paymentStatus === "paid") {
+    await sendMemberLineOrderNotification("payment_completed", afterOrder);
+  }
+  if (afterOrder && beforeOrder?.shippingStatus !== "shipped" && afterOrder.shippingStatus === "shipped") {
+    await sendMemberLineOrderNotification("order_shipped", afterOrder);
   }
 
   return NextResponse.json({ ok: true, order: rpc.result });

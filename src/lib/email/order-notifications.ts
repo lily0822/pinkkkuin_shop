@@ -19,6 +19,7 @@ type SupabaseOrderItem = {
 
 type SupabaseOrder = {
   id: string;
+  user_id: string | null;
   order_no: string | null;
   order_type: string | null;
   checkout_group_id: string | null;
@@ -31,7 +32,9 @@ type SupabaseOrder = {
   delivery_method: string | null;
   delivery_address: string | null;
   payment_method: string | null;
+  status: string | null;
   payment_status: string | null;
+  shipping_status: string | null;
   subtotal: number | string | null;
   shipping_fee: number | string | null;
   discount_amount: number | string | null;
@@ -56,6 +59,7 @@ export type EmailOrderItem = {
 
 export type EmailOrder = {
   id: string;
+  userId: string;
   orderNo: string;
   orderType: string;
   checkoutGroupId: string;
@@ -68,7 +72,9 @@ export type EmailOrder = {
   deliveryMethod: string;
   deliveryAddress: string;
   paymentMethod: string;
+  status: string;
   paymentStatus: string;
+  shippingStatus: string;
   subtotal: number;
   shippingFee: number;
   discountAmount: number;
@@ -81,6 +87,7 @@ export type EmailOrder = {
 
 const ORDER_EMAIL_SELECT = [
   "id",
+  "user_id",
   "order_no",
   "order_type",
   "checkout_group_id",
@@ -93,7 +100,9 @@ const ORDER_EMAIL_SELECT = [
   "delivery_method",
   "delivery_address",
   "payment_method",
+  "status",
   "payment_status",
+  "shipping_status",
   "subtotal",
   "shipping_fee",
   "discount_amount",
@@ -128,6 +137,7 @@ function normalizeOrderItem(item: SupabaseOrderItem): EmailOrderItem {
 function normalizeOrder(order: SupabaseOrder): EmailOrder {
   return {
     id: order.id,
+    userId: order.user_id || "",
     orderNo: order.order_no || "",
     orderType: order.order_type || "",
     checkoutGroupId: order.checkout_group_id || "",
@@ -140,7 +150,9 @@ function normalizeOrder(order: SupabaseOrder): EmailOrder {
     deliveryMethod: order.delivery_method || "",
     deliveryAddress: order.delivery_address || "",
     paymentMethod: order.payment_method || "",
+    status: order.status || "",
     paymentStatus: order.payment_status || "",
+    shippingStatus: order.shipping_status || "",
     subtotal: toNumber(order.subtotal),
     shippingFee: toNumber(order.shipping_fee),
     discountAmount: toNumber(order.discount_amount),
