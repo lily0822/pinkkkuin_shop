@@ -1,5 +1,14 @@
 import { randomUUID } from "crypto";
 import { v2 as cloudinary, type UploadApiResponse } from "cloudinary";
+import { NextRequest, NextResponse } from "next/server";
+
+import {
+  backendAuthJsonError,
+  getBackendRuntime,
+  isBackendSessionValid,
+  isSameOriginMutation,
+  shouldRequireBackendAuth,
+} from "@/lib/backend-auth";
 
 export const runtime = "nodejs";
 
@@ -32,6 +41,28 @@ function json(data: unknown, init?: ResponseInit) {
       ...init?.headers,
     },
   });
+}
+
+async function guardBackendMutation(request: NextRequest) {
+  if (getBackendRuntime() === "unknown") {
+    return new NextResponse("Not found", {
+      status: 404,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store",
+      },
+    });
+  }
+
+  if (!shouldRequireBackendAuth() || !(await isBackendSessionValid(request))) {
+    return backendAuthJsonError();
+  }
+
+  if (!isSameOriginMutation(request)) {
+    return backendAuthJsonError("請從後台頁面操作。", 403);
+  }
+
+  return null;
 }
 
 function requiredEnv(name: string) {
@@ -95,7 +126,10 @@ async function readImageFile(file: File) {
   return Buffer.from(await file.arrayBuffer());
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const guard = await guardBackendMutation(request);
+  if (guard) return guard;
+
   try {
     configureCloudinary();
 
@@ -131,7 +165,10 @@ export async function POST(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
+export async function DELETE(request: NextRequest) {
+  const guard = await guardBackendMutation(request);
+  if (guard) return guard;
+
   try {
     configureCloudinary();
 
