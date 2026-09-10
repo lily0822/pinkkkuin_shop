@@ -1,4 +1,5 @@
 import { getProductById, Product, ProductVariant } from "@/lib/products";
+import { getStorefrontProducts } from "@/lib/storefront-products";
 
 export type ProductGalleryImage = {
   url: string;
@@ -176,16 +177,19 @@ function isUuid(value: string) {
 
 async function getSupabaseProductById(id: string) {
   const select = "id,legacy_id,product_type,name,description,image_url,cost_price,base_price,stock_quantity,preorder_quota,deadline,status,created_at,updated_at,product_variants(id,legacy_id,spec,price,stock_quantity,product_url,status,sort_order)";
+  if (isUuid(id)) {
+    const byId = await supabaseFetch<SupabaseProductRow[]>(
+      `products?select=${encodeURIComponent(select)}&id=eq.${encodeURIComponent(id)}&limit=1`,
+    );
+    if (byId?.[0]) return byId[0];
+  }
+
   const byLegacyId = await supabaseFetch<SupabaseProductRow[]>(
     `products?select=${encodeURIComponent(select)}&legacy_id=eq.${encodeURIComponent(id)}&limit=1`,
   );
   if (byLegacyId?.[0]) return byLegacyId[0];
 
-  if (!isUuid(id)) return null;
-  const byId = await supabaseFetch<SupabaseProductRow[]>(
-    `products?select=${encodeURIComponent(select)}&id=eq.${encodeURIComponent(id)}&limit=1`,
-  );
-  return byId?.[0] || null;
+  return null;
 }
 
 export async function getProductDetailById(id: string): Promise<ProductDetailData | null> {
@@ -217,10 +221,11 @@ export async function getProductDetailById(id: string): Promise<ProductDetailDat
     };
   }
 
-  if (!staticProduct) return null;
-  const galleryImages = staticGalleryImages(staticProduct);
+  const fallbackProduct = staticProduct || (await getStorefrontProducts()).find((product) => product.id === id);
+  if (!fallbackProduct) return null;
+  const galleryImages = staticGalleryImages(fallbackProduct);
   return {
-    product: staticProduct,
+    product: fallbackProduct,
     galleryImages,
   };
 }

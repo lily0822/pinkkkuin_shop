@@ -4,15 +4,11 @@ import { ArrowLeft, MessageCircle } from "lucide-react";
 import { AddToCartButton } from "@/components/add-to-cart-button";
 import { CopyProductButton } from "@/components/copy-product-button";
 import { ProductGallery } from "@/components/product-gallery";
-import { products, statusLabels, statusStyles } from "@/lib/products";
+import { statusLabels, statusStyles } from "@/lib/products";
 import { getProductDetailById } from "@/lib/product-detail";
 import { contactLinks } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
-
-export function generateStaticParams() {
-  return products.map((product) => ({ id: product.id }));
-}
 
 export default async function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
