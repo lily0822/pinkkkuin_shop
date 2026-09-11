@@ -30,7 +30,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
         回到商品列表
       </Link>
 
-      <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,0.6fr)_minmax(360px,0.4fr)] lg:gap-8">
+      <div className="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,0.6fr)_minmax(360px,0.4fr)] lg:gap-8">
         <ProductGallery images={galleryImages} productName={product.name_zh} />
 
         <section className="space-y-4">

@@ -53,7 +53,7 @@ function renderBackendLoginPage(environment: string, message = "") {
   <title>後台登入 | 小企鵝選物</title>
   <style>
     body{margin:0;min-height:100vh;display:grid;place-items:center;background:#fdf2f8;color:#1f2937;font-family:"Noto Sans TC",system-ui,sans-serif}
-    main{width:min(420px,calc(100vw - 32px));background:#fff;border:1px solid #fbcfe8;border-radius:24px;box-shadow:0 24px 60px rgba(236,72,153,.16);padding:32px}
+    main{box-sizing:border-box;width:min(486px,calc(100vw - 32px));background:#fff;border:1px solid #fbcfe8;border-radius:24px;box-shadow:0 24px 60px rgba(236,72,153,.16);padding:32px}
     h1{margin:0 0 8px;font-size:26px;color:#be185d}
     p{margin:0 0 24px;color:#6b7280;font-size:14px}
     label{display:block;margin-bottom:8px;font-weight:700}
