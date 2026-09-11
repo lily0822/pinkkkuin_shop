@@ -162,13 +162,20 @@ function normalizeBanners(row?: ScheduleSettingRow): SiteBanner[] {
   return banners
     .map((item, index) => {
       const source = item as Record<string, unknown>;
-      const desktopImageUrl = String(source.desktop_image_url || source.desktopImageUrl || source.image || "").trim();
+      const desktopImageUrl = String(
+        source.desktop_image_url ||
+          source.desktopImageUrl ||
+          source.image ||
+          source.mobile_image_url ||
+          source.mobileImageUrl ||
+          "",
+      ).trim();
       if (!desktopImageUrl) return null;
       return {
         id: String(source.id || `banner-${index}`),
         name: String(source.name || `Banner ${index + 1}`),
         desktopImageUrl,
-        mobileImageUrl: String(source.mobile_image_url || source.mobileImageUrl || "").trim() || undefined,
+        mobileImageUrl: desktopImageUrl,
         href: String(source.href || source.link || "").trim() || undefined,
         enabled: source.enabled !== false,
         sortOrder: Number(source.sort_order ?? source.sortOrder ?? index),
