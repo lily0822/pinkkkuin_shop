@@ -55,7 +55,7 @@ function variantPrice(product: Product, variant?: AddToCartVariant) {
   return Number(variant?.price ?? product.price ?? 0);
 }
 
-function variantStock(product: Product, variant?: AddToCartVariant) {
+export function variantStock(product: Product, variant?: AddToCartVariant) {
   const value = variant ? variant.stockQuantity : product.stock_quantity;
   return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : null;
 }

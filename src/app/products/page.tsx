@@ -9,8 +9,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <SectionHeading
-        eyebrow="Catalog"
-        title="商品總覽"
+        title="全部商品"
         description="從日本限定、現貨商品到連線預購都整理在這裡。列表只載入主圖，詳細頁才會載入完整商品圖片 Gallery。"
       />
       <div className="mt-6">

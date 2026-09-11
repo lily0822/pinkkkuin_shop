@@ -79,7 +79,9 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
   const cartButtonVariant = "border-penguin-pink-dark bg-penguin-pink text-penguin-gray hover:-translate-y-0.5 hover:bg-penguin-pink-light";
   const visibleAnnouncements = announcements.filter((item) => item.enabled && item.text);
   const showAnnouncement = visibleAnnouncements.length > 0;
-  const visibleNavigationItems = navigationItems.filter((item) => item.enabled);
+  const visibleNavigationItems = navigationItems
+    .filter((item) => item.enabled && !["/login", "/signup"].includes(item.href))
+    .map((item) => item.href === "/category/live_order" ? { ...item, label: "代購 / 市集" } : item);
 
   function submitSearch(event: FormEvent) {
     event.preventDefault();
@@ -162,6 +164,13 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
           </form>
 
           <div className="flex items-center gap-2">
+            <Link
+              href={isMemberLoggedIn ? "/member" : "/login"}
+              aria-label={isMemberLoggedIn ? "會員中心" : "會員登入"}
+              className="grid h-10 w-10 place-items-center rounded-full border border-penguin-peach md:hidden"
+            >
+              <UserRound size={18} />
+            </Link>
             {isMemberLoggedIn ? (
               <>
                 <Link href="/member" className={`hidden md:flex ${headerActionButtonBase} border-penguin-peach bg-white text-penguin-gray hover:bg-penguin-pink-light`}>
@@ -202,9 +211,11 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
               <span className={headerActionTextClass} style={headerActionTextStyle}>
                 購物車
               </span>
-              <span className="absolute -right-2 -top-2 grid h-5 min-w-5 place-items-center rounded-full bg-red-500 px-1 text-[10px] text-white">
-                {cart.count}
-              </span>
+              {cart.count > 0 ? (
+                <span className="absolute -right-2 -top-2 grid h-5 min-w-5 place-items-center rounded-full bg-red-500 px-1 text-[10px] text-white">
+                  {cart.count}
+                </span>
+              ) : null}
             </button>
             <button
               type="button"
@@ -219,22 +230,6 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
 
         <nav className={`${isOpen ? "block" : "hidden"} border-t border-penguin-pink bg-penguin-pink-light/70 lg:block lg:border-t-0`}>
           <div className="nav-scrollbar mx-auto flex max-w-7xl gap-2 overflow-x-auto px-4 py-2 text-sm font-bold">
-            <Link
-              href={isMemberLoggedIn ? "/member" : "/login"}
-              className="category-tab shrink-0 snap-start lg:hidden"
-              onClick={() => setIsOpen(false)}
-            >
-              {isMemberLoggedIn ? "會員中心" : "會員登入"}
-            </Link>
-            {!isMemberLoggedIn ? (
-              <Link
-                href="/signup"
-                className="category-tab shrink-0 snap-start lg:hidden"
-                onClick={() => setIsOpen(false)}
-              >
-                會員註冊
-              </Link>
-            ) : null}
             {visibleNavigationItems.map((item) => {
               const isActive = isNavigationItemActive(item, pathname);
               return (

@@ -14,19 +14,20 @@ const AUTOPLAY_DELAY = 5000;
 const SWIPE_THRESHOLD = 60;
 
 export function HomeBannerCarousel({ banners }: HomeBannerCarouselProps) {
-  const activeBanners = useMemo(() => banners.filter((banner) => banner.desktopImageUrl || banner.mobileImageUrl), [banners]);
+  const activeBanners = useMemo(() => banners.filter((banner) => banner.enabled && (banner.desktopImageUrl || banner.mobileImageUrl)), [banners]);
   const bannerCount = activeBanners.length;
   const hasMultiple = bannerCount > 1;
   const trackBanners = useMemo(() => {
     if (!hasMultiple) return activeBanners;
-    return [activeBanners[bannerCount - 1], ...activeBanners, activeBanners[0]];
+    return [...activeBanners.slice(-2), ...activeBanners, ...activeBanners.slice(0, 2)];
   }, [activeBanners, bannerCount, hasMultiple]);
 
-  const [trackIndex, setTrackIndex] = useState(hasMultiple ? 1 : 0);
+  const [trackIndex, setTrackIndex] = useState(hasMultiple ? 2 : 0);
   const [activeIndex, setActiveIndex] = useState(0);
   const [dragOffset, setDragOffset] = useState(0);
   const [transitionEnabled, setTransitionEnabled] = useState(true);
   const [autoplayTick, setAutoplayTick] = useState(0);
+  const [paused, setPaused] = useState(false);
   const startX = useRef<number | null>(null);
   const isDragging = useRef(false);
   const movedDuringDrag = useRef(false);
@@ -78,7 +79,7 @@ export function HomeBannerCarousel({ banners }: HomeBannerCarouselProps) {
     transitionInProgress.current = true;
     setTransitionEnabled(true);
     setActiveIndex(normalizedIndex);
-    setTrackIndex(hasMultiple ? normalizedIndex + 1 : normalizedIndex);
+    setTrackIndex(hasMultiple ? normalizedIndex + 2 : normalizedIndex);
     if (manual) restartAutoplayTimer();
   }
 
@@ -86,7 +87,7 @@ export function HomeBannerCarousel({ banners }: HomeBannerCarouselProps) {
     setTransitionEnabled(false);
     transitionInProgress.current = false;
     setActiveIndex(0);
-    setTrackIndex(hasMultiple ? 1 : 0);
+    setTrackIndex(hasMultiple ? 2 : 0);
     const frame = window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => setTransitionEnabled(true));
     });
@@ -95,9 +96,12 @@ export function HomeBannerCarousel({ banners }: HomeBannerCarouselProps) {
 
   useEffect(() => {
     if (!hasMultiple) return;
-    const timer = window.setInterval(() => goNext(false), AUTOPLAY_DELAY);
+    if (paused || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = window.setInterval(() => {
+      if (!isDragging.current) goNext(false);
+    }, AUTOPLAY_DELAY);
     return () => window.clearInterval(timer);
-  }, [autoplayTick, hasMultiple, bannerCount]);
+  }, [autoplayTick, hasMultiple, bannerCount, paused]);
 
   useEffect(() => {
     return () => {
@@ -123,37 +127,40 @@ export function HomeBannerCarousel({ banners }: HomeBannerCarouselProps) {
   function handleTransitionEnd(event: TransitionEvent<HTMLDivElement>) {
     if (!hasMultiple) return;
     if (event.target !== event.currentTarget || event.propertyName !== "transform") return;
-    if (trackIndex === 0) {
-      resetToRealSlide(bannerCount);
+    if (trackIndex === 1) {
+      resetToRealSlide(bannerCount + 1);
       return;
     }
-    if (trackIndex === bannerCount + 1) {
-      resetToRealSlide(1);
+    if (trackIndex === bannerCount + 2) {
+      resetToRealSlide(2);
       return;
     }
     transitionInProgress.current = false;
   }
 
   function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
-    if (!hasMultiple) return;
+    if (!hasMultiple || transitionInProgress.current || event.button !== 0) return;
     startX.current = event.clientX;
     isDragging.current = true;
     movedDuringDrag.current = false;
     setTransitionEnabled(false);
     setDragOffset(0);
-    event.currentTarget.setPointerCapture(event.pointerId);
+
   }
 
   function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
     if (!isDragging.current || startX.current === null) return;
     const nextOffset = event.clientX - startX.current;
-    if (Math.abs(nextOffset) > 8) movedDuringDrag.current = true;
+    if (Math.abs(nextOffset) > 8) {
+      movedDuringDrag.current = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
     setDragOffset(nextOffset);
   }
 
   function finishDrag(event: PointerEvent<HTMLDivElement>) {
     if (!isDragging.current) return;
-    const finalOffset = dragOffset;
+    const finalOffset = event.type === "pointercancel" ? 0 : event.clientX - (startX.current ?? event.clientX);
     isDragging.current = false;
     startX.current = null;
     setDragOffset(0);
@@ -180,20 +187,20 @@ export function HomeBannerCarousel({ banners }: HomeBannerCarouselProps) {
     event.stopPropagation();
   }
 
-  const translate = `calc(${-trackIndex * 100}% + ${dragOffset}px)`;
+  const translate = `calc(${-trackIndex * 100}% - ${trackIndex} * var(--banner-gap) + ${dragOffset}px)`;
 
   return (
-    <section className="overflow-hidden rounded-3xl border-4 border-penguin-peach-dark bg-white shadow-lg">
+    <section aria-label="首頁 Banner" aria-roledescription="輪播" className="overflow-hidden [--banner-gap:16px] md:[--banner-gap:24px]" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocusCapture={() => setPaused(true)} onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setPaused(false); }}>
       <div
-        className="relative aspect-[16/7] min-h-[220px] cursor-grab overflow-hidden active:cursor-grabbing md:min-h-[320px]"
+        className="relative cursor-grab touch-pan-y active:cursor-grabbing"
+        onDragStart={(event) => event.preventDefault()}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={finishDrag}
         onPointerCancel={finishDrag}
-        onPointerLeave={finishDrag}
       >
         <div
-          className="relative z-0 flex h-full"
+          className="relative z-0 mx-auto flex w-[88%] gap-[var(--banner-gap)] md:w-[78%]"
           onTransitionEnd={handleTransitionEnd}
           style={{
             transform: `translateX(${translate})`,
@@ -205,16 +212,19 @@ export function HomeBannerCarousel({ banners }: HomeBannerCarouselProps) {
             const desktop = cloudinaryTransform(desktopSource, "f_auto,q_auto,w_1600,c_limit");
             const mobile = cloudinaryTransform(banner.mobileImageUrl || desktopSource, "f_auto,q_auto,w_900,c_limit");
             const image = (
-              <picture>
+              <picture className="block h-full">
                 <source media="(max-width: 767px)" srcSet={mobile} />
                 <img src={desktop} alt={banner.name} className="h-full w-full select-none object-cover" draggable={false} />
               </picture>
             );
 
             return (
-              <div key={`${banner.id}-${slideIndex}`} className="h-full flex-[0_0_100%]">
+              <div key={`${banner.id}-${slideIndex}`} className="relative aspect-[16/9] min-w-0 flex-[0_0_100%] overflow-hidden rounded-[22px] bg-penguin-pink-light md:aspect-[16/7]">
+                {hasMultiple && slideIndex !== trackIndex ? (
+                  <button type="button" tabIndex={-1} aria-label={slideIndex < trackIndex ? "上一張 Banner" : "下一張 Banner"} className="absolute inset-0 z-10" onClick={() => { if (!movedDuringDrag.current) { if (slideIndex < trackIndex) goPrev(true); else goNext(true); } movedDuringDrag.current = false; }} />
+                ) : null}
                 {banner.href ? (
-                  <Link href={banner.href} className="block h-full w-full" onClick={handleBannerClick}>
+                  <Link href={banner.href} className="block h-full w-full" tabIndex={slideIndex === trackIndex ? 0 : -1} onClick={handleBannerClick}>
                     {image}
                   </Link>
                 ) : (
@@ -235,7 +245,7 @@ export function HomeBannerCarousel({ banners }: HomeBannerCarouselProps) {
                 stopControlClick(event);
                 goPrev(true);
               }}
-              className="absolute left-3 top-1/2 z-20 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/85 text-penguin-pink-dark shadow-md transition hover:bg-white"
+              className="absolute left-3 top-1/2 z-20 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/85 text-penguin-pink-dark border border-penguin-peach transition hover:bg-white"
             >
               <ChevronLeft size={22} />
             </button>
@@ -247,31 +257,32 @@ export function HomeBannerCarousel({ banners }: HomeBannerCarouselProps) {
                 stopControlClick(event);
                 goNext(true);
               }}
-              className="absolute right-3 top-1/2 z-20 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/85 text-penguin-pink-dark shadow-md transition hover:bg-white"
+              className="absolute right-3 top-1/2 z-20 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/85 text-penguin-pink-dark border border-penguin-peach transition hover:bg-white"
             >
               <ChevronRight size={22} />
             </button>
           </>
         ) : null}
 
-        <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 gap-2">
+      </div>
+        <div className="flex flex-wrap justify-center gap-2 px-4 pt-4">
           {activeBanners.map((item, itemIndex) => (
             <button
               key={item.id}
               type="button"
               aria-label={`切換到 Banner ${itemIndex + 1}`}
+              aria-current={itemIndex === activeIndex ? "true" : undefined}
               onPointerDown={stopControlPointer}
               onClick={(event) => {
                 stopControlClick(event);
                 goTo(itemIndex, true);
               }}
-              className={`h-1.5 w-6 rounded-full shadow-sm transition-colors ${
+              className={`h-2 w-2 rounded-full transition-colors ${
                 itemIndex === activeIndex ? "bg-penguin-pink-dark" : "bg-slate-200/90 hover:bg-white"
               }`}
             />
           ))}
         </div>
-      </div>
     </section>
   );
 }
