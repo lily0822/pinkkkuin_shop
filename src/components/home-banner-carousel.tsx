@@ -188,6 +188,9 @@ export function HomeBannerCarousel({ banners }: HomeBannerCarouselProps) {
   }
 
   const translate = `calc(${-trackIndex * 100}% - ${trackIndex} * var(--banner-gap) + ${dragOffset}px)`;
+  const trackLayout = hasMultiple
+    ? "ml-[5%] w-[88%] md:ml-[14%] md:w-[calc(36%-12px)]"
+    : "mx-auto w-[88%] md:w-[calc(36%-12px)]";
 
   return (
     <section aria-label="首頁 Banner" aria-roledescription="輪播" className="overflow-hidden [--banner-gap:16px] md:[--banner-gap:24px]" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocusCapture={() => setPaused(true)} onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setPaused(false); }}>
@@ -200,7 +203,7 @@ export function HomeBannerCarousel({ banners }: HomeBannerCarouselProps) {
         onPointerCancel={finishDrag}
       >
         <div
-          className="relative z-0 mx-auto flex w-[88%] gap-[var(--banner-gap)] md:w-[78%]"
+          className={`relative z-0 flex gap-[var(--banner-gap)] ${trackLayout}`}
           onTransitionEnd={handleTransitionEnd}
           style={{
             transform: `translateX(${translate})`,
@@ -219,7 +222,7 @@ export function HomeBannerCarousel({ banners }: HomeBannerCarouselProps) {
             );
 
             return (
-              <div key={`${banner.id}-${slideIndex}`} className="relative aspect-[16/9] min-w-0 flex-[0_0_100%] overflow-hidden rounded-[22px] bg-penguin-pink-light md:aspect-[16/7]">
+              <div key={`${banner.id}-${slideIndex}`} className="relative aspect-square min-w-0 flex-[0_0_100%] overflow-hidden rounded-[26px] bg-penguin-pink-light md:rounded-[28px]">
                 {hasMultiple && slideIndex !== trackIndex ? (
                   <button type="button" tabIndex={-1} aria-label={slideIndex < trackIndex ? "上一張 Banner" : "下一張 Banner"} className="absolute inset-0 z-10" onClick={() => { if (!movedDuringDrag.current) { if (slideIndex < trackIndex) goPrev(true); else goNext(true); } movedDuringDrag.current = false; }} />
                 ) : null}
