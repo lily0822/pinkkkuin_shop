@@ -12,7 +12,7 @@ __pycache__/
 # Logs
 *.log
 .vercel
-.backend-product-publish/
+.backend-product-publish/backend-env.local.js
 .wrangler/
 .tmp-*.png
 import/*.csv

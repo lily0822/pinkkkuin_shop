@@ -1,0 +1,4 @@
+[submodule ".backend-product-publish"]
+	path = .backend-product-publish
+	url = https://github.com/lily0822/workspace.git
+	branch = backend-staging
