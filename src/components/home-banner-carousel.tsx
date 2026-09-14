@@ -189,13 +189,13 @@ export function HomeBannerCarousel({ banners }: HomeBannerCarouselProps) {
 
   const translate = `calc(${-trackIndex * 100}% - ${trackIndex} * var(--banner-gap) + ${dragOffset}px)`;
   const trackLayout = hasMultiple
-    ? "ml-[5%] w-[88%] md:ml-[14%] md:w-[calc(36%-12px)]"
-    : "mx-auto w-[88%] md:w-[calc(36%-12px)]";
+    ? "ml-[5%] w-[88%] md:ml-[9%] md:w-[calc(41%-16px)]"
+    : "mx-auto w-[88%] md:w-[calc(41%-16px)]";
 
   return (
-    <section aria-label="首頁 Banner" aria-roledescription="輪播" className="overflow-hidden [--banner-gap:16px] md:[--banner-gap:24px]" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocusCapture={() => setPaused(true)} onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setPaused(false); }}>
+    <section aria-label="首頁 Banner" aria-roledescription="輪播" className="overflow-hidden [--banner-gap:16px] md:[--banner-gap:32px]" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocusCapture={() => setPaused(true)} onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setPaused(false); }}>
       <div
-        className="relative cursor-grab touch-pan-y active:cursor-grabbing"
+        className="relative mx-auto cursor-grab touch-pan-y active:cursor-grabbing md:max-w-[1040px] md:overflow-hidden"
         onDragStart={(event) => event.preventDefault()}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
