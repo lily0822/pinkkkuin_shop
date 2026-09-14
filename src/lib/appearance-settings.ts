@@ -112,12 +112,11 @@ function safeJson<T>(value: string | null, fallback: T): T {
   }
 }
 
-function isWithinSchedule(startAt?: string, endAt?: string) {
-  const now = Date.now();
+function isWithinSchedule(startAt?: string, endAt?: string, now = Date.now()) {
   const start = startAt ? new Date(startAt).getTime() : Number.NaN;
   const end = endAt ? new Date(endAt).getTime() : Number.NaN;
   if (Number.isFinite(start) && now < start) return false;
-  if (Number.isFinite(end) && now > end) return false;
+  if (Number.isFinite(end) && now >= end) return false;
   return true;
 }
 
