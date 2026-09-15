@@ -1,4 +1,7 @@
-import { CalendarDays, Clock3, ImageIcon, MapPin, Radio, Store } from "lucide-react";
+"use client";
+
+import { useState } from "react";
+import { CalendarDays, ChevronLeft, ChevronRight, Clock3, ImageIcon, MapPin, Radio, Store } from "lucide-react";
 import type { PublicScheduleEvent, ScheduleEventStatus } from "@/lib/storefront-schedules";
 
 type LiveMarketInfoProps = {
@@ -57,7 +60,8 @@ function Calendar({ connections, stalls }: LiveMarketInfoProps) {
   const stallDates = eventDateKeys(stalls);
   const markedDates = [...new Set([...connectionDates, ...stallDates])].sort();
   const focusDate = markedDates.find((date) => date >= today) || markedDates.at(-1) || today;
-  const [year, month] = focusDate.split("-").map(Number);
+  const [initialYear, initialMonth] = focusDate.split("-").map(Number);
+  const [{ year, month }, setVisibleMonth] = useState({ year: initialYear, month: initialMonth });
   const firstWeekday = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
   const dayCount = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const cells: Array<{ key: string; day?: number }> = [
@@ -69,29 +73,58 @@ function Calendar({ connections, stalls }: LiveMarketInfoProps) {
     }),
   ];
 
+  function changeMonth(offset: number) {
+    setVisibleMonth((current) => {
+      const next = new Date(Date.UTC(current.year, current.month - 1 + offset, 1));
+      return { year: next.getUTCFullYear(), month: next.getUTCMonth() + 1 };
+    });
+  }
+
   return (
     <section className="rounded-[22px] border border-penguin-peach bg-white p-3">
       <div className="flex flex-col items-stretch gap-2">
-        <div className="flex items-center gap-2.5">
-          <span className="grid h-8 w-8 place-items-center rounded-xl bg-penguin-pink-light text-penguin-pink-dark"><CalendarDays size={17} /></span>
-          <h2 className="text-sm font-black text-penguin-gray">{year} 年 {month} 月</h2>
-        </div>
-        <div className="flex flex-wrap gap-3 self-end text-[11px] font-bold text-gray-500">
-          <span className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-penguin-pink-dark" />代購連線</span>
-          <span className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-brand-mint" />市集出攤</span>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5">
+            <span className="grid h-8 w-8 place-items-center rounded-xl bg-penguin-pink-light text-penguin-pink-dark"><CalendarDays size={17} /></span>
+            <h2 className="text-sm font-black text-penguin-gray">{year} 年 {month} 月</h2>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <button type="button" aria-label="上一月" onClick={() => changeMonth(-1)} className="grid h-8 w-8 place-items-center rounded-xl border border-penguin-peach bg-white text-penguin-pink-dark transition-colors hover:bg-penguin-pink-light"><ChevronLeft size={16} /></button>
+            <button type="button" aria-label="下一月" onClick={() => changeMonth(1)} className="grid h-8 w-8 place-items-center rounded-xl border border-penguin-peach bg-white text-penguin-pink-dark transition-colors hover:bg-penguin-pink-light"><ChevronRight size={16} /></button>
+          </div>
         </div>
       </div>
       <div className="mt-2 grid grid-cols-7 gap-0.5 text-center sm:gap-1">
         {WEEKDAYS.map((weekday) => <div key={weekday} className="py-1 text-xs font-black text-gray-400">{weekday}</div>)}
-        {cells.map((cell) => cell.day ? (
-          <div key={cell.key} className={`relative grid aspect-square min-w-0 place-items-center rounded-lg text-xs font-bold ${cell.key === today ? "bg-penguin-pink-light text-penguin-pink-dark" : "text-penguin-gray"}`}>
-            {cell.day}
-            <span className="absolute bottom-0.5 flex gap-0.5">
-              {connectionDates.has(cell.key) ? <i className="h-1.5 w-1.5 rounded-full bg-penguin-pink-dark" /> : null}
-              {stallDates.has(cell.key) ? <i className="h-1.5 w-1.5 rounded-full bg-brand-mint" /> : null}
-            </span>
-          </div>
-        ) : <div key={cell.key} aria-hidden="true" />)}
+        {cells.map((cell) => {
+          if (!cell.day) return <div key={cell.key} aria-hidden="true" />;
+          const hasConnection = connectionDates.has(cell.key);
+          const hasStall = stallDates.has(cell.key);
+          const activityStyle = hasConnection && hasStall
+            ? "ring-1 ring-inset ring-penguin-pink-dark/35"
+            : hasConnection
+              ? "ring-1 ring-inset ring-penguin-pink-dark/35"
+              : hasStall
+                ? "ring-1 ring-inset ring-emerald-600/25"
+                : "";
+          const activityBackground = hasConnection && hasStall
+            ? { backgroundImage: "linear-gradient(135deg, #ffebf1 0%, #ffebf1 49%, #bfe2ce 51%, #bfe2ce 100%)" }
+            : hasConnection
+              ? { backgroundColor: "#ffebf1" }
+              : hasStall
+                ? { backgroundColor: "#bfe2ce" }
+                : undefined;
+          return (
+            <div key={cell.key} style={activityBackground} className={`relative grid aspect-square min-w-0 place-items-center rounded-lg text-xs font-bold text-penguin-gray ${activityStyle}`}>
+              <span className={`relative z-10 grid h-6 w-6 place-items-center ${cell.key === today ? "rounded-full bg-penguin-yellow text-penguin-gray" : ""}`}>{cell.day}</span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-2 flex flex-wrap justify-end gap-3 text-[11px] font-bold text-gray-500">
+        <span className="inline-flex items-center gap-1.5"><i style={{ backgroundColor: "#ffebf1" }} className="h-2.5 w-2.5 rounded-[3px] ring-1 ring-inset ring-penguin-pink-dark/35" />代購連線</span>
+        <span className="inline-flex items-center gap-1.5"><i style={{ backgroundColor: "#bfe2ce" }} className="h-2.5 w-2.5 rounded-[3px] ring-1 ring-inset ring-emerald-600/25" />市集出攤</span>
+        <span className="inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-penguin-yellow" />今天</span>
       </div>
     </section>
   );
@@ -119,7 +152,7 @@ function DateDetails({ event }: { event: PublicScheduleEvent }) {
 
 function EventCard({ event }: { event: PublicScheduleEvent }) {
   return (
-    <article className="flex h-72 flex-col items-center gap-3 overflow-hidden rounded-2xl border border-penguin-peach bg-white p-3 sm:h-36 sm:flex-row sm:gap-4">
+    <article className="flex h-72 flex-col items-center gap-3 overflow-hidden p-3 sm:h-36 sm:flex-row sm:gap-4">
       <div className="grid h-28 w-28 shrink-0 place-items-center overflow-hidden rounded-xl bg-penguin-pink-light/45 text-penguin-pink-dark">
         {event.imageUrl ? <img src={event.imageUrl} alt={event.title} className="h-full w-full object-cover" loading="lazy" /> : <ImageIcon size={24} />}
       </div>
@@ -143,7 +176,7 @@ function EventSection({ title, emptyText, events, type }: { title: string; empty
         <span className={`grid h-9 w-9 place-items-center rounded-xl ${type === "connection" ? "bg-penguin-pink-light text-penguin-pink-dark" : "bg-brand-mint/45 text-emerald-700"}`}><Icon size={18} /></span>
         <h2 className="text-lg font-black text-penguin-gray">{title}</h2>
       </div>
-      {events.length ? <div className="mt-3">{events.map((event, index) => <div key={`${event.type}-${event.id}`} className={index ? "mt-3 border-t border-dashed border-penguin-peach pt-3" : ""}><EventCard event={event} /></div>)}</div> : (
+      {events.length ? <div className="mt-3 overflow-hidden rounded-2xl border border-penguin-peach bg-white">{events.map((event, index) => <div key={`${event.type}-${event.id}`} className={index ? "border-t border-dashed border-penguin-peach" : ""}><EventCard event={event} /></div>)}</div> : (
         <div className={`mt-3 flex min-h-20 items-center rounded-2xl px-4 py-4 text-sm font-bold text-gray-500 ${type === "connection" ? "bg-penguin-pink-light/45" : "bg-brand-mint/25"}`}>{emptyText}</div>
       )}
     </section>
