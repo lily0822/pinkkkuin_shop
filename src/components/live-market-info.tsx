@@ -152,11 +152,11 @@ function DateDetails({ event }: { event: PublicScheduleEvent }) {
 
 function EventCard({ event }: { event: PublicScheduleEvent }) {
   return (
-    <article className="flex h-72 flex-col items-center gap-3 overflow-hidden p-3 sm:h-36 sm:flex-row sm:gap-4">
+    <article className="flex flex-col items-center gap-3 p-3 sm:min-h-36 sm:flex-row sm:items-start sm:gap-4">
       <div className="grid h-28 w-28 shrink-0 place-items-center overflow-hidden rounded-xl bg-penguin-pink-light/45 text-penguin-pink-dark">
         {event.imageUrl ? <img src={event.imageUrl} alt={event.title} className="h-full w-full object-cover" loading="lazy" /> : <ImageIcon size={24} />}
       </div>
-      <div className="min-h-0 min-w-0 w-full flex-1 space-y-2 overflow-y-auto pr-1 sm:self-stretch sm:py-1">
+      <div className="min-w-0 w-full flex-1 space-y-2 sm:py-1">
         <div className="flex items-start justify-between gap-3">
           <h3 className="min-w-0 text-lg font-black text-penguin-gray">{event.title}</h3>
           <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${event.status === "ongoing" ? "bg-penguin-pink text-white" : event.status === "upcoming" ? "bg-white text-penguin-pink-dark" : "bg-gray-100 text-gray-500"}`}>{STATUS_LABELS[event.status]}</span>
