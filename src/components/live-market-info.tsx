@@ -1,4 +1,4 @@
-import { CalendarDays, Clock3, MapPin, Radio, Store } from "lucide-react";
+import { CalendarDays, Clock3, ImageIcon, MapPin, Radio, Store } from "lucide-react";
 import type { PublicScheduleEvent, ScheduleEventStatus } from "@/lib/storefront-schedules";
 
 type LiveMarketInfoProps = {
@@ -119,9 +119,11 @@ function DateDetails({ event }: { event: PublicScheduleEvent }) {
 
 function EventCard({ event }: { event: PublicScheduleEvent }) {
   return (
-    <article className="overflow-hidden rounded-2xl border border-penguin-peach bg-white sm:flex">
-      {event.imageUrl ? <img src={event.imageUrl} alt="" className="aspect-[16/8] w-full object-cover sm:aspect-auto sm:w-28 sm:shrink-0" loading="lazy" /> : null}
-      <div className="min-w-0 flex-1 space-y-2.5 p-4">
+    <article className="flex h-72 flex-col items-center gap-3 overflow-hidden rounded-2xl border border-penguin-peach bg-white p-3 sm:h-36 sm:flex-row sm:gap-4">
+      <div className="grid h-28 w-28 shrink-0 place-items-center overflow-hidden rounded-xl bg-penguin-pink-light/45 text-penguin-pink-dark">
+        {event.imageUrl ? <img src={event.imageUrl} alt={event.title} className="h-full w-full object-cover" loading="lazy" /> : <ImageIcon size={24} />}
+      </div>
+      <div className="min-h-0 min-w-0 w-full flex-1 space-y-2 overflow-y-auto pr-1 sm:self-stretch sm:py-1">
         <div className="flex items-start justify-between gap-3">
           <h3 className="min-w-0 text-lg font-black text-penguin-gray">{event.title}</h3>
           <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${event.status === "ongoing" ? "bg-penguin-pink text-white" : event.status === "upcoming" ? "bg-white text-penguin-pink-dark" : "bg-gray-100 text-gray-500"}`}>{STATUS_LABELS[event.status]}</span>
@@ -141,7 +143,7 @@ function EventSection({ title, emptyText, events, type }: { title: string; empty
         <span className={`grid h-9 w-9 place-items-center rounded-xl ${type === "connection" ? "bg-penguin-pink-light text-penguin-pink-dark" : "bg-brand-mint/45 text-emerald-700"}`}><Icon size={18} /></span>
         <h2 className="text-lg font-black text-penguin-gray">{title}</h2>
       </div>
-      {events.length ? <div className="mt-3 space-y-3">{events.map((event) => <EventCard key={`${event.type}-${event.id}`} event={event} />)}</div> : (
+      {events.length ? <div className="mt-3">{events.map((event, index) => <div key={`${event.type}-${event.id}`} className={index ? "mt-3 border-t border-dashed border-penguin-peach pt-3" : ""}><EventCard event={event} /></div>)}</div> : (
         <div className={`mt-3 flex min-h-20 items-center rounded-2xl px-4 py-4 text-sm font-bold text-gray-500 ${type === "connection" ? "bg-penguin-pink-light/45" : "bg-brand-mint/25"}`}>{emptyText}</div>
       )}
     </section>
