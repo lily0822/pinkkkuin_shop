@@ -70,28 +70,28 @@ function Calendar({ connections, stalls }: LiveMarketInfoProps) {
   ];
 
   return (
-    <section className="rounded-[28px] border-2 border-penguin-peach bg-white p-4 sm:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <section className="rounded-3xl border-2 border-penguin-peach bg-white p-3 sm:p-4">
+      <div className="flex flex-col items-stretch gap-2">
         <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-2xl bg-penguin-pink-light text-penguin-pink-dark"><CalendarDays size={20} /></span>
+          <span className="grid h-9 w-9 place-items-center rounded-xl bg-penguin-pink-light text-penguin-pink-dark"><CalendarDays size={18} /></span>
           <div>
             <h2 className="font-black text-penguin-gray">{year} 年 {month} 月</h2>
             <p className="text-xs font-bold text-gray-500">活動行事曆</p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-3 text-xs font-bold text-gray-500">
+        <div className="flex flex-wrap gap-3 self-end text-[11px] font-bold text-gray-500">
           <span className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-penguin-pink-dark" />代購連線</span>
-          <span className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-penguin-peach-dark" />市集出攤</span>
+          <span className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-brand-mint" />市集出攤</span>
         </div>
       </div>
-      <div className="mt-4 grid grid-cols-7 gap-1 text-center sm:gap-2">
+      <div className="mt-2 grid grid-cols-7 gap-0.5 text-center sm:gap-1">
         {WEEKDAYS.map((weekday) => <div key={weekday} className="py-1 text-xs font-black text-gray-400">{weekday}</div>)}
         {cells.map((cell) => cell.day ? (
-          <div key={cell.key} className={`relative grid aspect-square min-w-0 place-items-center rounded-xl text-sm font-bold ${cell.key === today ? "bg-penguin-pink-light text-penguin-pink-dark" : "text-penguin-gray"}`}>
+          <div key={cell.key} className={`relative grid aspect-square min-w-0 place-items-center rounded-lg text-xs font-bold ${cell.key === today ? "bg-penguin-pink-light text-penguin-pink-dark" : "text-penguin-gray"}`}>
             {cell.day}
-            <span className="absolute bottom-1 flex gap-0.5">
+            <span className="absolute bottom-0.5 flex gap-0.5">
               {connectionDates.has(cell.key) ? <i className="h-1.5 w-1.5 rounded-full bg-penguin-pink-dark" /> : null}
-              {stallDates.has(cell.key) ? <i className="h-1.5 w-1.5 rounded-full bg-penguin-peach-dark" /> : null}
+              {stallDates.has(cell.key) ? <i className="h-1.5 w-1.5 rounded-full bg-brand-mint" /> : null}
             </span>
           </div>
         ) : <div key={cell.key} aria-hidden="true" />)}
@@ -158,7 +158,7 @@ export function LiveMarketInfo({ connections, stalls }: LiveMarketInfoProps) {
         <h1 className="text-3xl font-black text-penguin-gray sm:text-4xl">代購 / 市集</h1>
         <p className="mt-3 text-sm font-bold leading-7 text-gray-500 sm:text-base">查看近期代購連線與市集出攤日期，行程更新會同步顯示在這裡。</p>
       </div>
-      <div className="mt-7 max-w-2xl"><Calendar connections={connections} stalls={stalls} /></div>
+      <div className="mt-7 w-full max-w-sm"><Calendar connections={connections} stalls={stalls} /></div>
       <div className="mt-7 grid items-start gap-6 lg:grid-cols-2">
         <EventSection title="代購連線" emptyText="目前沒有進行中的代購連線" events={connections} type="connection" />
         <EventSection title="市集出攤" emptyText="目前沒有近期市集活動" events={stalls} type="stall" />
