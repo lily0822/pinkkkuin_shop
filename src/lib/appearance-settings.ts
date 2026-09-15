@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 export type SiteAnnouncement = {
   id?: string;
   name?: string;
@@ -64,6 +66,8 @@ type ScheduleSettingRow = {
   updated_at: string | null;
 };
 
+const APPEARANCE_FETCH_ATTEMPTS = 3;
+
 const DEFAULT_ANNOUNCEMENT: SiteAnnouncement = {
   enabled: true,
   text: "東京連線與現貨選物同步更新，滿 NT$1,100 可免運。",
@@ -110,6 +114,33 @@ function safeJson<T>(value: string | null, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function wait(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function fetchAppearanceRows(url: string, headers: Record<string, string>) {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < APPEARANCE_FETCH_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch(url, { headers, cache: "no-store" });
+      if (response.ok) return (await response.json()) as ScheduleSettingRow[];
+
+      const error = new Error(`Supabase appearance settings fetch failed (${response.status})`);
+      if (response.status !== 429 && response.status < 500) throw error;
+      lastError = error;
+    } catch (error) {
+      lastError = error;
+    }
+
+    if (attempt < APPEARANCE_FETCH_ATTEMPTS - 1) {
+      await wait(200 * 2 ** attempt);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Supabase appearance settings fetch failed");
 }
 
 function isWithinSchedule(startAt?: string, endAt?: string, now = Date.now()) {
@@ -256,7 +287,7 @@ export function isAnnouncementVisible(announcement: SiteAnnouncement) {
   return announcement.enabled && Boolean(announcement.text) && isWithinSchedule(announcement.startAt, announcement.endAt);
 }
 
-export async function getAppearanceSettings(): Promise<AppearanceSettings> {
+export const getAppearanceSettings = cache(async function getAppearanceSettings(): Promise<AppearanceSettings> {
   const headers = supabaseHeaders();
   const baseUrl = process.env.SUPABASE_URL?.trim().replace(/\/+$/, "");
   if (!headers || !baseUrl) {
@@ -271,12 +302,10 @@ export async function getAppearanceSettings(): Promise<AppearanceSettings> {
   }
 
   try {
-    const response = await fetch(
+    const rows = await fetchAppearanceRows(
       `${baseUrl}/rest/v1/schedule_settings?select=type,image,updated_at&type=in.(site-announcements,site-banners,homepage-sections,site-navigation,site-info)&order=updated_at.desc`,
-      { headers, cache: "no-store" },
+      headers,
     );
-    if (!response.ok) throw new Error(`Supabase appearance settings fetch failed (${response.status})`);
-    const rows = (await response.json()) as ScheduleSettingRow[];
     const announcements = normalizeAnnouncementList(rows.find((row) => row.type === "site-announcements"));
     return {
       announcement: announcements[0] || { ...DEFAULT_ANNOUNCEMENT, enabled: false },
@@ -297,4 +326,4 @@ export async function getAppearanceSettings(): Promise<AppearanceSettings> {
       siteInfo: DEFAULT_SITE_INFO,
     };
   }
-}
+});
