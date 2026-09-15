@@ -1,6 +1,8 @@
+import { LiveMarketInfo } from "@/components/live-market-info";
 import { ProductCatalog } from "@/components/product-catalog";
 import { SectionHeading } from "@/components/section-heading";
 import { ProductStatus, statusLabels } from "@/lib/products";
+import { getPublicSchedules } from "@/lib/storefront-schedules";
 import { getStorefrontCategories, getStorefrontProducts } from "@/lib/storefront-products";
 
 const statusSlugs: ProductStatus[] = ["in_stock", "preorder", "live_order", "sold_out", "restocking"];
@@ -8,6 +10,12 @@ const statusSlugs: ProductStatus[] = ["in_stock", "preorder", "live_order", "sol
 export default async function CategoryPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const decodedSlug = decodeURIComponent(slug);
+
+  if (decodedSlug === "live_order") {
+    const schedules = await getPublicSchedules();
+    return <LiveMarketInfo connections={schedules.connections} stalls={schedules.stalls} />;
+  }
+
   const products = await getStorefrontProducts();
   const categories = await getStorefrontCategories();
   const isStatus = statusSlugs.includes(decodedSlug as ProductStatus);
