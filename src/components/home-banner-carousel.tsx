@@ -194,7 +194,13 @@ export function HomeBannerCarousel({ banners }: HomeBannerCarouselProps) {
 
   return (
     <section aria-label="首頁 Banner" aria-roledescription="輪播" className="mx-auto max-w-7xl px-4 [--banner-gap:16px] md:[--banner-gap:32px]" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocusCapture={() => setPaused(true)} onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setPaused(false); }}>
-      <div className="overflow-hidden rounded-[28px] border-2 border-penguin-peach bg-white/70 py-3 sm:py-4">
+      <div className="relative overflow-hidden rounded-[28px] border-2 border-penguin-peach bg-white/70 py-3 after:pointer-events-none after:absolute after:inset-[4px] after:z-10 after:rounded-[23px] after:border after:border-penguin-pink-light after:content-[''] sm:py-4">
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-[15] text-[9px] leading-none text-penguin-pink-dark/40 sm:text-[10px]">
+          <span className="absolute left-2 top-2">✿</span>
+          <span className="absolute right-2 top-2">•</span>
+          <span className="absolute bottom-2 left-2">•</span>
+          <span className="absolute bottom-2 right-2">✿</span>
+        </div>
       <div
         className="relative mx-auto cursor-grab touch-pan-y active:cursor-grabbing"
         onDragStart={(event) => event.preventDefault()}
