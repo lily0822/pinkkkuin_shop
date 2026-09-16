@@ -6,7 +6,6 @@ type StallScheduleRow = {
   period: string | null;
   location: string | null;
   image: string | null;
-  stall_fee: number | string | null;
   days: unknown;
 };
 
@@ -18,8 +17,6 @@ type ConnectionScheduleRow = {
   image: string | null;
   start_date: string | null;
   end_date: string | null;
-  flight_fee: number | string | null;
-  hotel_fee: number | string | null;
 };
 
 export type ScheduleEventStatus = "upcoming" | "ongoing" | "ended";
@@ -28,11 +25,6 @@ export type ScheduleEventDay = {
   date: string;
   startTime?: string;
   endTime?: string;
-};
-
-export type ScheduleEventAmount = {
-  label: string;
-  amount: number;
 };
 
 export type PublicScheduleEvent = {
@@ -44,7 +36,6 @@ export type PublicScheduleEvent = {
   startDate?: string;
   endDate?: string;
   days: ScheduleEventDay[];
-  amounts: ScheduleEventAmount[];
   status: ScheduleEventStatus;
 };
 
@@ -77,11 +68,6 @@ async function readRows<T>(path: string): Promise<T[]> {
 function optionalText(value: unknown) {
   const text = String(value || "").trim();
   return text || undefined;
-}
-
-function scheduleAmount(label: string, value: unknown): ScheduleEventAmount | null {
-  const amount = Number(value);
-  return Number.isFinite(amount) && amount > 0 ? { label, amount } : null;
 }
 
 function dateTimeValue(date?: string, time?: string, endOfDay = false) {
@@ -138,10 +124,6 @@ function mapConnections(rows: ConnectionScheduleRow[]): PublicScheduleEvent[] {
     startDate: optionalText(row.start_date),
     endDate: optionalText(row.end_date),
     days: [],
-    amounts: [
-      scheduleAmount("機票費", row.flight_fee),
-      scheduleAmount("住宿費", row.hotel_fee),
-    ].filter((amount): amount is ScheduleEventAmount => Boolean(amount)),
     status: getScheduleEventStatus(optionalText(row.start_date), optionalText(row.end_date)),
   })));
 }
@@ -160,7 +142,6 @@ function mapStalls(rows: StallScheduleRow[]): PublicScheduleEvent[] {
       startDate: firstDay?.date,
       endDate: lastDay?.date,
       days,
-      amounts: [scheduleAmount("攤位費", row.stall_fee)].filter((amount): amount is ScheduleEventAmount => Boolean(amount)),
       status: getScheduleEventStatus(firstDay?.date, lastDay?.date, firstDay?.startTime, lastDay?.endTime),
     };
   }));
@@ -169,8 +150,8 @@ function mapStalls(rows: StallScheduleRow[]): PublicScheduleEvent[] {
 export const getPublicSchedules = cache(async function getPublicSchedules(): Promise<PublicSchedules> {
   try {
     const [connections, stalls] = await Promise.all([
-      readRows<ConnectionScheduleRow>("connection_schedules?select=id,legacy_id,period,location,image,start_date,end_date,flight_fee,hotel_fee&order=updated_at.desc"),
-      readRows<StallScheduleRow>("stall_schedules?select=id,legacy_id,period,location,image,stall_fee,days&order=updated_at.desc"),
+      readRows<ConnectionScheduleRow>("connection_schedules?select=id,legacy_id,period,location,image,start_date,end_date&order=updated_at.desc"),
+      readRows<StallScheduleRow>("stall_schedules?select=id,legacy_id,period,location,image,days&order=updated_at.desc"),
     ]);
     return { connections: mapConnections(connections), stalls: mapStalls(stalls) };
   } catch (error) {

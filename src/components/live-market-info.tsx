@@ -149,10 +149,6 @@ function DateDetails({ event }: { event: PublicScheduleEvent }) {
   return <p className="flex items-start gap-2 text-sm font-bold text-gray-600"><Clock3 className="mt-0.5 shrink-0 text-penguin-pink-dark" size={16} /><span>{dateText}</span></p>;
 }
 
-function formatMoney(amount: number) {
-  return `NT$ ${Math.round(amount).toLocaleString("zh-TW")}`;
-}
-
 function EventCard({ event, onOpenImage }: { event: PublicScheduleEvent; onOpenImage: (url: string, alt: string) => void }) {
   return (
     <article className="flex flex-col items-center gap-3 p-3 sm:min-h-36 sm:flex-row sm:items-start sm:gap-4">
@@ -170,7 +166,6 @@ function EventCard({ event, onOpenImage }: { event: PublicScheduleEvent; onOpenI
         </div>
         <DateDetails event={event} />
         {event.location ? <p className="flex items-start gap-2 text-sm font-bold text-gray-600"><MapPin className="mt-0.5 shrink-0 text-penguin-pink-dark" size={16} /><span>{event.location}</span></p> : null}
-        {event.amounts.length ? <div className="flex flex-wrap gap-2 pt-0.5">{event.amounts.map((item) => <span key={item.label} className="rounded-full bg-penguin-pink-light/70 px-2.5 py-1 text-xs font-black text-penguin-pink-dark">{item.label}・{formatMoney(item.amount)}</span>)}</div> : null}
       </div>
     </article>
   );
