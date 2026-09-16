@@ -111,51 +111,11 @@ function normalizeSavedItems(value: unknown): CartItem[] {
     .filter((item): item is CartItem => Boolean(item));
 }
 
-function selectionState(items: CartItem[]) {
-  const selectedCount = items.filter((item) => item.selected !== false).length;
-  return {
-    disabled: items.length === 0,
-    checked: items.length > 0 && selectedCount === items.length,
-    indeterminate: selectedCount > 0 && selectedCount < items.length,
-  };
-}
-
-function SelectionCheckbox({
-  label,
-  checked,
-  indeterminate,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  indeterminate?: boolean;
-  disabled?: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (ref.current) ref.current.indeterminate = Boolean(indeterminate);
-  }, [indeterminate]);
-
-  return (
-    <label className={`inline-flex items-center gap-1.5 rounded-full border border-penguin-peach bg-white px-2.5 py-1 text-xs font-black text-penguin-gray shadow-sm ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:border-penguin-pink"}`}>
-      <input
-        ref={ref}
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.checked)}
-        className="h-3.5 w-3.5 accent-penguin-pink-dark"
-      />
-      {label}
-    </label>
-  );
-}
-
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [isOpen, setIsOpen] = useState(false);
+  const [limitNoticeId, setLimitNoticeId] = useState<string | null>(null);
+  const limitNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     try {
@@ -189,15 +149,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     };
   }, [isOpen]);
 
+  useEffect(() => () => {
+    if (limitNoticeTimeoutRef.current) clearTimeout(limitNoticeTimeoutRef.current);
+  }, []);
+
   const count = items.reduce((sum, item) => sum + item.quantity, 0);
   const total = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
   const selectedItems = items.filter((item) => item.selected !== false);
   const selectedLineCount = selectedItems.length;
   const selectedQuantity = selectedItems.reduce((sum, item) => sum + item.quantity, 0);
   const selectedTotal = selectedItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
-  const allSelection = selectionState(items);
-  const stockSelection = selectionState(items.filter((item) => item.productTypeKey === "stock"));
-  const preorderSelection = selectionState(items.filter((item) => item.productTypeKey === "preorder"));
 
   function addProduct(product: Product, variant: AddToCartVariant = null, quantity = 1) {
     const maxQuantity = variantStock(product, variant);
@@ -254,6 +215,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       const nextQuantity = item.maxQuantity !== null && item.maxQuantity !== undefined ? Math.min(quantity, item.maxQuantity) : quantity;
       return { ...item, quantity: nextQuantity };
     }));
+  }
+
+  function increaseDrawerQuantity(item: CartItem) {
+    if (item.maxQuantity !== null && item.maxQuantity !== undefined && item.quantity >= item.maxQuantity) {
+      setLimitNoticeId(item.id);
+      if (limitNoticeTimeoutRef.current) clearTimeout(limitNoticeTimeoutRef.current);
+      limitNoticeTimeoutRef.current = setTimeout(() => setLimitNoticeId(null), 2200);
+      return;
+    }
+    setLimitNoticeId(null);
+    updateQuantity(item.id, item.quantity + 1);
   }
 
   function removeItem(id: string) {
@@ -334,43 +306,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex-1 space-y-4 overflow-y-auto p-4">
-            {items.length ? (
-              <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-penguin-peach bg-penguin-cream/60 p-2">
-                <SelectionCheckbox
-                  label="全選"
-                  checked={allSelection.checked}
-                  indeterminate={allSelection.indeterminate}
-                  onChange={setAllItemsSelected}
-                />
-                <SelectionCheckbox
-                  label="現貨"
-                  checked={stockSelection.checked}
-                  indeterminate={stockSelection.indeterminate}
-                  disabled={stockSelection.disabled}
-                  onChange={(checked) => setItemsSelectedByType("stock", checked)}
-                />
-                <SelectionCheckbox
-                  label="預購"
-                  checked={preorderSelection.checked}
-                  indeterminate={preorderSelection.indeterminate}
-                  disabled={preorderSelection.disabled}
-                  onChange={(checked) => setItemsSelectedByType("preorder", checked)}
-                />
-              </div>
-            ) : null}
             {items.length ? items.map((item) => (
-              <div key={item.id} className={`rounded-2xl border-2 p-3 transition ${item.selected === false ? "border-penguin-peach bg-white opacity-75" : "border-penguin-peach bg-penguin-peach-light"}`}>
+              <div key={item.id} className="rounded-2xl border-2 border-penguin-peach bg-penguin-peach-light p-3 transition">
                 <div className="flex gap-3">
-                  <label className="mt-5 flex shrink-0 cursor-pointer items-center" title="選擇本次結帳商品">
-                    <input
-                      type="checkbox"
-                      checked={item.selected !== false}
-                      onChange={(event) => toggleItemSelected(item.id, event.target.checked)}
-                      className="h-4 w-4 accent-penguin-pink-dark"
-                      aria-label={`選擇 ${item.productName}`}
-                    />
-                  </label>
-                  <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-xl bg-white text-2xl">
+                  <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white text-2xl">
                     {item.image ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={item.image} alt={item.productName} className="h-full w-full object-cover" />
@@ -380,7 +319,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                     <p className="line-clamp-2 text-sm font-black text-penguin-gray">{item.productName}</p>
                     <p className="mt-1 text-xs font-bold text-gray-500">{item.productType}</p>
                     {item.variantSpec ? <p className="mt-1 text-xs font-black text-penguin-pink-dark">規格：{item.variantSpec}</p> : null}
-                    <p className="mt-2 text-sm font-black text-penguin-pink-dark">{formatPrice(item.unitPrice)}</p>
+                    <p className="mt-2 text-sm font-black text-penguin-gray">單價：{formatPrice(item.unitPrice)}</p>
                   </div>
                   <button
                     type="button"
@@ -391,24 +330,21 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                     <Trash2 size={15} />
                   </button>
                 </div>
-                <div className="mt-3 flex items-center justify-between">
+                <div className="mt-3 flex flex-col items-end gap-2">
                   <div className="inline-flex items-center overflow-hidden rounded-full border-2 border-penguin-pink bg-white">
-                    <button className="px-3 py-1 font-black" onClick={() => updateQuantity(item.id, item.quantity - 1)} type="button">-</button>
+                    <button className="px-3 py-1 font-black disabled:cursor-not-allowed disabled:text-gray-300" disabled={item.quantity <= 1} onClick={() => updateQuantity(item.id, item.quantity - 1)} type="button">-</button>
                     <span className="min-w-8 text-center text-sm font-black">{item.quantity}</span>
                     <button
-                      className="px-3 py-1 font-black disabled:cursor-not-allowed disabled:text-gray-300"
-                      disabled={item.maxQuantity !== null && item.maxQuantity !== undefined && item.quantity >= item.maxQuantity}
-                      onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                      className="px-3 py-1 font-black"
+                      onClick={() => increaseDrawerQuantity(item)}
                       type="button"
                     >
                       +
                     </button>
                   </div>
-                  <p className="text-sm font-black text-penguin-gray">{formatPrice(item.unitPrice * item.quantity)}</p>
+                  <p className="text-sm font-black text-penguin-gray">小計：{formatPrice(item.unitPrice * item.quantity)}</p>
+                  {limitNoticeId === item.id ? <p className="text-xs font-black text-penguin-pink-dark" role="status">已達可購買數量上限</p> : null}
                 </div>
-                {item.maxQuantity !== null && item.maxQuantity !== undefined ? (
-                  <p className="mt-2 text-right text-[11px] font-bold text-gray-400">最多 {item.maxQuantity} 件</p>
-                ) : null}
               </div>
             )) : (
               <div className="space-y-2 py-20 text-center text-gray-400">
