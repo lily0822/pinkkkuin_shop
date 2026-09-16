@@ -35,6 +35,8 @@ type CartContextValue = {
   selectedQuantity: number;
   selectedTotal: number;
   addProduct: (product: Product, variant?: AddToCartVariant, quantity?: number) => boolean;
+  updateQuantity: (id: string, quantity: number) => void;
+  removeItem: (id: string) => void;
   toggleItemSelected: (id: string, selected?: boolean) => void;
   setAllItemsSelected: (selected: boolean) => void;
   setItemsSelectedByType: (type: CartProductTypeKey, selected: boolean) => void;
@@ -276,6 +278,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     selectedQuantity,
     selectedTotal,
     addProduct,
+    updateQuantity,
+    removeItem,
     toggleItemSelected,
     setAllItemsSelected,
     setItemsSelectedByType,
@@ -402,7 +406,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             </div>
             <div className="grid gap-2">
               <Link
-                href="/checkout"
+                href="/cart"
                 onClick={() => setIsOpen(false)}
                 className={`block rounded-2xl py-3 text-center text-sm font-black shadow-md transition ${
                   selectedLineCount
@@ -410,7 +414,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                     : "pointer-events-none bg-gray-200 text-gray-400"
                 }`}
               >
-                前往結帳
+                確認購物車
               </Link>
               <a
                 href="https://line.me/R/ti/p/@pinkkkuin"
