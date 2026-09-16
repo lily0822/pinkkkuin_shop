@@ -316,10 +316,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                     ) : "P"}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="line-clamp-2 text-sm font-black text-penguin-gray">{item.productName}</p>
-                    <p className="mt-1 text-xs font-bold text-gray-500">{item.productType}</p>
+                    <p className="flex flex-wrap items-center gap-1.5 text-sm font-black leading-5 text-penguin-gray">
+                      <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black leading-4 ${
+                        item.productTypeKey === "stock"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-penguin-pink-light text-penguin-pink-dark"
+                      }`}>
+                        {item.productType}
+                      </span>
+                      <span className="min-w-0">{item.productName}</span>
+                    </p>
                     {item.variantSpec ? <p className="mt-1 text-xs font-black text-penguin-pink-dark">規格：{item.variantSpec}</p> : null}
-                    <p className="mt-2 text-sm font-black text-penguin-gray">單價：{formatPrice(item.unitPrice)}</p>
                   </div>
                   <button
                     type="button"
@@ -330,20 +337,23 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                     <Trash2 size={15} />
                   </button>
                 </div>
-                <div className="mt-3 flex flex-col items-end gap-2">
-                  <div className="inline-flex items-center overflow-hidden rounded-full border-2 border-penguin-pink bg-white">
-                    <button className="px-3 py-1 font-black disabled:cursor-not-allowed disabled:text-gray-300" disabled={item.quantity <= 1} onClick={() => updateQuantity(item.id, item.quantity - 1)} type="button">-</button>
-                    <span className="min-w-8 text-center text-sm font-black">{item.quantity}</span>
-                    <button
-                      className="px-3 py-1 font-black"
-                      onClick={() => increaseDrawerQuantity(item)}
-                      type="button"
-                    >
-                      +
-                    </button>
+                <div className="mt-3 grid grid-cols-[1fr_auto] items-end gap-x-3 gap-y-2">
+                  <p className="text-sm font-black text-penguin-gray">單價：{formatPrice(item.unitPrice)}</p>
+                  <div className="flex flex-col items-end gap-2">
+                    <div className="inline-flex items-center overflow-hidden rounded-full border-2 border-penguin-pink bg-white">
+                      <button className="px-3 py-1 font-black disabled:cursor-not-allowed disabled:text-gray-300" disabled={item.quantity <= 1} onClick={() => updateQuantity(item.id, item.quantity - 1)} type="button">-</button>
+                      <span className="min-w-8 text-center text-sm font-black">{item.quantity}</span>
+                      <button
+                        className="px-3 py-1 font-black"
+                        onClick={() => increaseDrawerQuantity(item)}
+                        type="button"
+                      >
+                        +
+                      </button>
+                    </div>
+                    <p className="text-sm font-black text-penguin-gray">小計：{formatPrice(item.unitPrice * item.quantity)}</p>
                   </div>
-                  <p className="text-sm font-black text-penguin-gray">小計：{formatPrice(item.unitPrice * item.quantity)}</p>
-                  {limitNoticeId === item.id ? <p className="text-xs font-black text-penguin-pink-dark" role="status">已達可購買數量上限</p> : null}
+                  {limitNoticeId === item.id ? <p className="col-span-2 text-right text-xs font-black text-penguin-pink-dark" role="status">已達可購買數量上限</p> : null}
                 </div>
               </div>
             )) : (
