@@ -172,6 +172,23 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   }, [items]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsOpen(false);
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
   const count = items.reduce((sum, item) => sum + item.quantity, 0);
   const total = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
   const selectedItems = items.filter((item) => item.selected !== false);
@@ -292,8 +309,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   return (
     <CartContext.Provider value={value}>
       {children}
-      <div className={`fixed inset-0 z-50 bg-black/50 transition ${isOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}>
-        <aside className={`absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l-4 border-penguin-pink bg-white shadow-2xl transition-transform duration-300 ${isOpen ? "translate-x-0" : "translate-x-full"}`}>
+      <div
+        className={`fixed inset-0 z-50 bg-penguin-gray/25 transition-opacity ${isOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
+        onClick={() => setIsOpen(false)}
+        aria-hidden={!isOpen}
+      >
+        <aside
+          className={`absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l-4 border-penguin-pink bg-white shadow-2xl transition-transform duration-300 ${isOpen ? "translate-x-0" : "translate-x-full"}`}
+          onClick={(event) => event.stopPropagation()}
+        >
           <div className="flex items-center justify-between border-b border-penguin-pink bg-penguin-pink-light p-4">
             <h2 className="flex items-center gap-2 text-lg font-black text-penguin-pink-dark">
               <ShoppingBasket size={20} />
