@@ -16,13 +16,9 @@ const STATUS_LABELS: Record<Exclude<ScheduleEventStatus, "upcoming">, string> = 
 };
 
 function formatDate(date: string) {
-  return new Intl.DateTimeFormat("zh-TW", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    weekday: "short",
-    timeZone: "Asia/Taipei",
-  }).format(new Date(`${date}T00:00:00+08:00`));
+  const [year, month, day] = date.split("-").map(Number);
+  const weekday = WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
+  return `${month}/${day}(${weekday})`;
 }
 
 function taipeiDateKey() {
@@ -136,7 +132,7 @@ function DateDetails({ event }: { event: PublicScheduleEvent }) {
         {event.days.map((day) => (
           <p key={`${day.date}-${day.startTime || ""}-${day.endTime || ""}`} className="flex items-start gap-2 text-sm font-bold text-gray-600">
             <Clock3 className="mt-0.5 shrink-0 text-penguin-pink-dark" size={16} />
-            <span>{formatDate(day.date)}{day.startTime || day.endTime ? `　${[day.startTime, day.endTime].filter(Boolean).join("－")}` : ""}</span>
+            <span>{formatDate(day.date)}{day.startTime || day.endTime ? ` ${[day.startTime, day.endTime].filter(Boolean).join(" ~ ")}` : ""}</span>
           </p>
         ))}
       </div>
@@ -144,7 +140,7 @@ function DateDetails({ event }: { event: PublicScheduleEvent }) {
   }
   if (!event.startDate && !event.endDate) return null;
   const dateText = event.startDate && event.endDate && event.startDate !== event.endDate
-    ? `${formatDate(event.startDate)}－${formatDate(event.endDate)}`
+    ? `${formatDate(event.startDate)} ~ ${formatDate(event.endDate)}`
     : formatDate(event.startDate || event.endDate || "");
   return <p className="flex items-start gap-2 text-sm font-bold text-gray-600"><Clock3 className="mt-0.5 shrink-0 text-penguin-pink-dark" size={16} /><span>{dateText}</span></p>;
 }
