@@ -14,8 +14,10 @@ export function CartConfirmationClient() {
     updateQuantity,
     removeItem,
     toggleItemSelected,
-    openCart,
+    setAllItemsSelected,
   } = useCart();
+
+  const allItemsSelected = items.length > 0 && items.every((item) => item.selected !== false);
 
   if (!items.length) {
     return (
@@ -44,6 +46,18 @@ export function CartConfirmationClient() {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <section className="overflow-hidden rounded-3xl border-2 border-penguin-peach bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-penguin-peach bg-penguin-cream/55 px-4 py-3 sm:px-5">
+            <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-black text-penguin-gray">
+              <input
+                type="checkbox"
+                checked={allItemsSelected}
+                onChange={(event) => setAllItemsSelected(event.target.checked)}
+                className="h-4 w-4 accent-penguin-pink-dark"
+              />
+              全選
+            </label>
+            <span className="text-xs font-bold text-gray-400">共 {items.length} 項商品</span>
+          </div>
           {items.map((item, index) => {
             const atMaximum = item.maxQuantity !== null && item.maxQuantity !== undefined && item.quantity >= item.maxQuantity;
             return (
@@ -67,8 +81,16 @@ export function CartConfirmationClient() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <h2 className="text-sm font-black leading-5 text-penguin-gray sm:text-base">{item.productName}</h2>
-                        <p className="mt-1 text-xs font-bold text-gray-500">{item.productType}</p>
+                        <h2 className="flex flex-wrap items-center gap-1.5 text-sm font-black leading-5 text-penguin-gray sm:text-base">
+                          <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black leading-4 ${
+                            item.productTypeKey === "stock"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-penguin-pink-light text-penguin-pink-dark"
+                          }`}>
+                            {item.productType}
+                          </span>
+                          <span className="min-w-0">{item.productName}</span>
+                        </h2>
                         {item.variantSpec ? <p className="mt-1 text-xs font-black text-penguin-pink-dark">規格：{item.variantSpec}</p> : null}
                       </div>
                       <button type="button" onClick={() => removeItem(item.id)} aria-label={`移除 ${item.productName}`} className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-penguin-pink-light/60 text-gray-400 transition hover:text-red-500">
@@ -122,9 +144,6 @@ export function CartConfirmationClient() {
             <Link href="/checkout" aria-disabled={!selectedLineCount} className={`mt-5 block rounded-full py-3 text-center text-sm font-black shadow-md transition ${selectedLineCount ? "bg-penguin-pink-dark text-white hover:bg-penguin-pink" : "pointer-events-none bg-gray-200 text-gray-400"}`}>
               前往結帳
             </Link>
-            <button type="button" onClick={openCart} className="mt-3 w-full rounded-full border-2 border-penguin-pink py-2.5 text-sm font-black text-penguin-pink-dark transition hover:bg-penguin-pink-light">
-              返回購物車
-            </button>
             <Link href="/products" className="mt-3 flex items-center justify-center gap-2 text-sm font-black text-gray-500 transition hover:text-penguin-pink-dark">
               <ArrowLeft size={15} />
               繼續購物
