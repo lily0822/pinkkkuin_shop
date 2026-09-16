@@ -400,6 +400,12 @@ export function CheckoutClient() {
             >
               {submitting ? "建立訂單中..." : "送出訂單"}
             </button>
+            <Link
+              href="/cart"
+              className="mt-3 flex h-11 w-full items-center justify-center rounded-full border-2 border-penguin-pink bg-white px-5 text-sm font-black text-penguin-pink-dark transition hover:bg-penguin-pink-light"
+            >
+              返回購物車
+            </Link>
             {errors.cart ? <FieldError message={errors.cart} /> : null}
             {submitError ? (
               <p className="mt-3 rounded-2xl bg-red-50 px-3 py-2 text-xs font-black leading-5 text-red-600">{submitError}</p>
