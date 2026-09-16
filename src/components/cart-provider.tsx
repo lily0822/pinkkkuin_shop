@@ -309,14 +309,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             {items.length ? items.map((item) => (
               <div key={item.id} className="rounded-2xl border-2 border-penguin-peach bg-penguin-peach-light p-3 transition">
                 <div className="flex gap-3">
-                  <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white text-2xl">
+                  <div className="grid h-24 w-24 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white text-2xl" style={{ width: 96, height: 96 }}>
                     {item.image ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={item.image} alt={item.productName} className="h-full w-full object-cover" />
                     ) : "P"}
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="flex flex-wrap items-center gap-1.5 text-sm font-black leading-5 text-penguin-gray">
+                  <div className="flex h-24 min-w-0 flex-1 flex-col" style={{ height: 96 }}>
+                    <div className="flex h-6 shrink-0 items-start justify-between gap-2">
                       <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black leading-4 ${
                         item.productTypeKey === "stock"
                           ? "bg-emerald-100 text-emerald-700"
@@ -324,36 +324,35 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                       }`}>
                         {item.productType}
                       </span>
-                      <span className="min-w-0">{item.productName}</span>
-                    </p>
-                    {item.variantSpec ? <p className="mt-1 text-xs font-black text-penguin-pink-dark">規格：{item.variantSpec}</p> : null}
-                  </div>
-                  <button
-                    type="button"
-                    className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white text-gray-400 hover:text-red-500"
-                    onClick={() => removeItem(item.id)}
-                    aria-label={`移除 ${item.productName}`}
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                </div>
-                <div className="mt-3 grid grid-cols-[1fr_auto] items-end gap-x-3 gap-y-2">
-                  <p className="text-sm font-black text-penguin-gray">單價：{formatPrice(item.unitPrice)}</p>
-                  <div className="flex flex-col items-end gap-2">
-                    <div className="inline-flex items-center overflow-hidden rounded-full border-2 border-penguin-pink bg-white">
-                      <button className="px-3 py-1 font-black disabled:cursor-not-allowed disabled:text-gray-300" disabled={item.quantity <= 1} onClick={() => updateQuantity(item.id, item.quantity - 1)} type="button">-</button>
-                      <span className="min-w-8 text-center text-sm font-black">{item.quantity}</span>
                       <button
-                        className="px-3 py-1 font-black"
-                        onClick={() => increaseDrawerQuantity(item)}
                         type="button"
+                        className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-white text-gray-400 hover:text-red-500"
+                        onClick={() => removeItem(item.id)}
+                        aria-label={`移除 ${item.productName}`}
                       >
-                        +
+                        <Trash2 size={14} />
                       </button>
                     </div>
-                    <p className="text-sm font-black text-penguin-gray">小計：{formatPrice(item.unitPrice * item.quantity)}</p>
+                    <p className="line-clamp-2 h-7 shrink-0 overflow-hidden text-xs font-black leading-3.5 text-penguin-gray">{item.productName}</p>
+                    <div className="flex h-4 min-w-0 shrink-0 items-center justify-between gap-1 text-xs font-black leading-4 text-penguin-gray">
+                      {item.variantSpec ? <p className="min-w-0 truncate">規格：{item.variantSpec}</p> : <span aria-hidden="true">&nbsp;</span>}
+                      {limitNoticeId === item.id ? <p className="shrink-0 text-[10px] text-penguin-pink-dark" role="status">已達可購買數量上限</p> : null}
+                    </div>
+                    <div className="flex h-7 shrink-0 items-end justify-between gap-2">
+                      <p className="min-w-0 text-xs font-black text-penguin-gray sm:text-sm">小計：{formatPrice(item.unitPrice * item.quantity)}</p>
+                      <div className="inline-flex h-7 shrink-0 items-center overflow-hidden rounded-full border-2 border-penguin-pink bg-white">
+                        <button className="grid h-full w-8 place-items-center font-black disabled:cursor-not-allowed disabled:text-gray-300" disabled={item.quantity <= 1} onClick={() => updateQuantity(item.id, item.quantity - 1)} type="button">-</button>
+                        <span className="min-w-7 text-center text-sm font-black">{item.quantity}</span>
+                        <button
+                          className="grid h-full w-8 place-items-center font-black"
+                          onClick={() => increaseDrawerQuantity(item)}
+                          type="button"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  {limitNoticeId === item.id ? <p className="col-span-2 text-right text-xs font-black text-penguin-pink-dark" role="status">已達可購買數量上限</p> : null}
                 </div>
               </div>
             )) : (
