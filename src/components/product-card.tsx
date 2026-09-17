@@ -39,25 +39,25 @@ export function ProductCard({ product }: ProductCardProps) {
   }
 
   return (
-    <article className="group flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border border-penguin-peach bg-white p-1.5 shadow-sm">
+    <article className="group flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border border-penguin-peach bg-white p-1 shadow-sm sm:p-1.5">
       <Link href={`/products/${product.id}`} className="relative block">
         <ProductArt image={product.images[0]} name={product.name_zh} width={600} />
-        <span className="absolute left-2 top-2 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-penguin-pink-dark">
+        <span className="absolute left-1.5 top-1.5 rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-bold text-penguin-pink-dark sm:left-2 sm:top-2 sm:px-3 sm:py-1 sm:text-xs">
           {product.status === "preorder" || product.category === "預購商品" ? "預購" : "現貨"}
         </span>
       </Link>
-      <div className="flex flex-1 flex-col gap-2 px-2 py-2.5">
+      <div className="flex flex-1 flex-col gap-1 px-1.5 py-2 sm:gap-2 sm:px-2 sm:py-2.5">
         <Link href={`/products/${product.id}`} className="block">
-          <h3 className="line-clamp-2 min-h-10 break-words text-sm font-bold leading-5 text-penguin-gray">{product.name_zh}</h3>
+          <h3 className="line-clamp-2 min-h-8 break-words text-xs font-bold leading-4 text-penguin-gray sm:min-h-10 sm:text-sm sm:leading-5">{product.name_zh}</h3>
         </Link>
-        <div className="mt-auto flex min-w-0 items-center gap-1.5">
-          <p className="min-w-0 flex-1 break-words text-sm font-black leading-tight text-penguin-pink-dark">{formatPrice(singleVariant?.price ?? product.price)}</p>
-          <div role="group" aria-label={`${product.name_zh} 數量${hasMultipleVariants ? "（請先選擇規格）" : ""}`} className="flex h-8 shrink-0 items-center rounded-lg border border-penguin-peach">
-            <button type="button" aria-label="減少數量" disabled={!canOrder || hasMultipleVariants || selectedQuantity <= 1} onClick={() => setQuantity(selectedQuantity - 1)} className="h-full w-7 rounded-l-lg disabled:text-gray-300">−</button>
-            <output className="min-w-5 text-center text-xs tabular-nums">{selectedQuantity}</output>
-            <button type="button" aria-label="增加數量" disabled={!canOrder || hasMultipleVariants || (maxQuantity !== null && selectedQuantity >= maxQuantity)} onClick={() => setQuantity(selectedQuantity + 1)} className="h-full w-7 rounded-r-lg disabled:text-gray-300">+</button>
+        <div className="mt-auto flex min-w-0 flex-wrap items-center gap-1 sm:flex-nowrap sm:gap-1.5">
+          <p className="min-w-0 basis-full break-words text-xs font-black leading-tight text-penguin-pink-dark sm:flex-1 sm:basis-auto sm:text-sm">{formatPrice(singleVariant?.price ?? product.price)}</p>
+          <div role="group" aria-label={`${product.name_zh} 數量${hasMultipleVariants ? "（請先選擇規格）" : ""}`} className="ml-auto flex h-7 shrink-0 items-center rounded-lg border border-penguin-peach sm:ml-0 sm:h-8">
+            <button type="button" aria-label="減少數量" disabled={!canOrder || hasMultipleVariants || selectedQuantity <= 1} onClick={() => setQuantity(selectedQuantity - 1)} className="h-full w-6 rounded-l-lg disabled:text-gray-300 sm:w-7">−</button>
+            <output className="min-w-4 text-center text-xs tabular-nums sm:min-w-5">{selectedQuantity}</output>
+            <button type="button" aria-label="增加數量" disabled={!canOrder || hasMultipleVariants || (maxQuantity !== null && selectedQuantity >= maxQuantity)} onClick={() => setQuantity(selectedQuantity + 1)} className="h-full w-6 rounded-r-lg disabled:text-gray-300 sm:w-7">+</button>
           </div>
-          <button type="button" aria-label={`${cartLabel}：${product.name_zh}`} title={cartLabel} disabled={!canOrder} onClick={handleCartClick} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-penguin-pink text-penguin-gray transition hover:bg-penguin-pink-light disabled:bg-stone-100 disabled:text-stone-400">
+          <button type="button" aria-label={`${cartLabel}：${product.name_zh}`} title={cartLabel} disabled={!canOrder} onClick={handleCartClick} className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-penguin-pink text-penguin-gray transition hover:bg-penguin-pink-light disabled:bg-stone-100 disabled:text-stone-400 sm:h-8 sm:w-8">
             <ShoppingCart size={17} />
           </button>
         </div>
