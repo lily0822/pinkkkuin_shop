@@ -117,9 +117,9 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
       ) : null}
 
       <header className="sticky top-0 z-40 border-b-4 border-penguin-pink bg-white/95 shadow-sm backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <Link href="/" className="group flex items-center gap-2" onClick={() => setIsOpen(false)}>
-            <span className="grid h-14 w-14 place-items-center overflow-hidden bg-transparent text-2xl transition-transform group-hover:scale-105">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-2 gap-y-3 px-4 py-3 md:gap-3">
+          <Link href="/" className="group flex min-w-0 items-center gap-1.5 md:gap-2" onClick={() => setIsOpen(false)}>
+            <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden bg-transparent text-xl transition-transform group-hover:scale-105 md:h-14 md:w-14 md:text-2xl">
               {logoUrl ? (
                 <img
                   src={logoUrl}
@@ -134,18 +134,18 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
                 "P"
               )}
             </span>
-            <span>
-              <span className="flex items-center gap-2 text-xl font-black tracking-tight text-penguin-pink-dark md:text-2xl">
+            <span className="min-w-0">
+              <span className="flex items-center gap-2 truncate text-base font-black tracking-tight text-penguin-pink-dark md:text-2xl">
                 {brand.storeName}
-                <span className="rounded-full border border-yellow-400 bg-penguin-yellow px-2 py-0.5 text-xs text-penguin-gray">
+                <span className="hidden rounded-full border border-yellow-400 bg-penguin-yellow px-2 py-0.5 text-xs text-penguin-gray md:flex">
                   日本選物
                 </span>
               </span>
-              <span className="block text-[10px] tracking-wider text-gray-400">{brand.storeNameEn}</span>
+              <span className="hidden text-[10px] tracking-wider text-gray-400 md:flex">{brand.storeNameEn}</span>
             </span>
           </Link>
 
-          <form onSubmit={submitSearch} className="order-3 w-full flex-1 md:order-none md:max-w-md">
+          <form onSubmit={submitSearch} className="order-3 w-full basis-full md:order-none md:max-w-md md:basis-auto md:flex-1">
             <label className="relative block">
               <input
                 value={query}
@@ -163,7 +163,7 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
             </label>
           </form>
 
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5 md:gap-2">
             <Link
               href={isMemberLoggedIn ? "/member" : "/login"}
               aria-label={isMemberLoggedIn ? "會員中心" : "會員登入"}
@@ -206,7 +206,15 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
                 幫我找
               </span>
             </Link>
-            <button type="button" onClick={cart.openCart} className={`flex ${headerActionButtonBase} ${cartButtonVariant}`}>
+            <button type="button" onClick={cart.openCart} aria-label="購物車" className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 md:hidden ${cartButtonVariant}`}>
+              <ShoppingBasket size={15} strokeWidth={2} />
+              {cart.count > 0 ? (
+                <span className="absolute -right-2 -top-2 grid h-5 min-w-5 place-items-center rounded-full bg-red-500 px-1 text-[10px] text-white">
+                  {cart.count}
+                </span>
+              ) : null}
+            </button>
+            <button type="button" onClick={cart.openCart} aria-label="購物車" className={`hidden md:flex ${headerActionButtonBase} ${cartButtonVariant}`}>
               <ShoppingBasket size={15} strokeWidth={2} />
               <span className={headerActionTextClass} style={headerActionTextStyle}>
                 購物車

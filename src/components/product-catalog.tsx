@@ -518,7 +518,7 @@ export function ProductCatalog({
 
             <section className="min-w-0 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm font-black text-penguin-gray">共 {filteredProducts.length} 件商品</p>
+                <p className="w-full text-left text-sm font-black text-penguin-gray sm:w-auto">共 {filteredProducts.length} 件商品</p>
                 {activeFilterTags.length ? (
                   <div className="flex flex-wrap items-center gap-1.5">
                     {activeFilterTags.map((tag) => (
@@ -675,7 +675,7 @@ export function ProductCatalog({
         </div>
 
         <div className="flex items-center justify-between gap-4">
-          <p className="rounded-full bg-white px-4 py-2 text-sm font-black text-penguin-gray shadow-sm">
+          <p className="w-full rounded-full bg-white px-4 py-2 text-left text-sm font-black text-penguin-gray shadow-sm sm:w-auto">
             共 {filteredProducts.length} 件商品
           </p>
           <button
