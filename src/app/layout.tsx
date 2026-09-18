@@ -1,11 +1,7 @@
 import type { Metadata } from "next";
 import { Noto_Sans_TC } from "next/font/google";
 import "./globals.css";
-import { CartProvider } from "@/components/cart-provider";
-import { SiteFooter } from "@/components/site-footer";
-import { SiteHeader } from "@/components/site-header";
 import { StagingBadge } from "@/components/staging-badge";
-import { getAppearanceSettings } from "@/lib/appearance-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -15,33 +11,10 @@ const notoSansTc = Noto_Sans_TC({
   weight: ["400", "500", "700", "900"],
 });
 
-const fallbackMetadata: Metadata = {
-  title: "小企鵝選物 | 日本限定・可愛雜貨代購",
-  description: "日本限定、現貨、預購與連線代購選物商城。",
+export const metadata: Metadata = {
+  title: "社群訂單查詢 | 小企鵝選物",
+  description: "查詢社群下單明細與匯款金額。",
 };
-
-export async function generateMetadata(): Promise<Metadata> {
-  const { siteInfo } = await getAppearanceSettings();
-  const description = siteInfo.description || fallbackMetadata.description || "";
-  const ogImage = siteInfo.ogImageUrl ? [{ url: siteInfo.ogImageUrl }] : undefined;
-
-  return {
-    ...fallbackMetadata,
-    description,
-    icons: siteInfo.faviconUrl ? { icon: siteInfo.faviconUrl, shortcut: siteInfo.faviconUrl } : undefined,
-    openGraph: {
-      title: String(fallbackMetadata.title || ""),
-      description,
-      images: ogImage,
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: String(fallbackMetadata.title || ""),
-      description,
-      images: siteInfo.ogImageUrl ? [siteInfo.ogImageUrl] : undefined,
-    },
-  };
-}
 
 export default function RootLayout({
   children,
@@ -51,18 +24,8 @@ export default function RootLayout({
   return (
     <html lang="zh-Hant" className={notoSansTc.variable}>
       <body className="font-sans antialiased">
-        <CartProvider>
-          <StagingBadge />
-          <SiteHeader />
-          {children}
-          <SiteFooter />
-          <a
-            href="https://line.me/R/ti/p/@pinkkkuin"
-            className="fixed bottom-4 left-4 z-40 rounded-full border-2 border-white bg-[#06C755] px-4 py-2.5 text-xs font-black text-white shadow-lg transition hover:scale-105 sm:text-sm"
-          >
-            LINE 小企鵝
-          </a>
-        </CartProvider>
+        <StagingBadge />
+        {children}
       </body>
     </html>
   );
