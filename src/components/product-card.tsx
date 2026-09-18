@@ -50,9 +50,9 @@ export function ProductCard({ product }: ProductCardProps) {
         <Link href={`/products/${product.id}`} className="block">
           <h3 className="line-clamp-2 min-h-8 break-words text-xs font-bold leading-4 text-penguin-gray sm:min-h-10 sm:text-sm sm:leading-5">{product.name_zh}</h3>
         </Link>
-        <div className="mt-auto flex min-w-0 flex-wrap items-center gap-1 sm:flex-nowrap sm:gap-1.5">
+        <div className="mt-auto flex min-w-0 flex-wrap items-center justify-between gap-1 sm:flex-nowrap sm:justify-start sm:gap-1.5">
           <p className="min-w-0 basis-full break-words text-xs font-black leading-tight text-penguin-pink-dark sm:flex-1 sm:basis-auto sm:text-sm">{formatPrice(singleVariant?.price ?? product.price)}</p>
-          <div role="group" aria-label={`${product.name_zh} 數量${hasMultipleVariants ? "（請先選擇規格）" : ""}`} className="ml-auto flex h-7 shrink-0 items-center rounded-lg border border-penguin-peach sm:ml-0 sm:h-8">
+          <div role="group" aria-label={`${product.name_zh} 數量${hasMultipleVariants ? "（請先選擇規格）" : ""}`} className="flex h-7 shrink-0 items-center rounded-lg border border-penguin-peach sm:h-8">
             <button type="button" aria-label="減少數量" disabled={!canOrder || hasMultipleVariants || selectedQuantity <= 1} onClick={() => setQuantity(selectedQuantity - 1)} className="h-full w-6 rounded-l-lg disabled:text-gray-300 sm:w-7">−</button>
             <output className="min-w-4 text-center text-xs tabular-nums sm:min-w-5">{selectedQuantity}</output>
             <button type="button" aria-label="增加數量" disabled={!canOrder || hasMultipleVariants || (maxQuantity !== null && selectedQuantity >= maxQuantity)} onClick={() => setQuantity(selectedQuantity + 1)} className="h-full w-6 rounded-r-lg disabled:text-gray-300 sm:w-7">+</button>
