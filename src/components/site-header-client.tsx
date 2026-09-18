@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Heart, Menu, Search, ShoppingBasket, UserRound, X } from "lucide-react";
+import { Menu, Search, ShoppingBasket, UserRound, Users, X } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { useCart } from "@/components/cart-provider";
 import { type SiteAnnouncement, type SiteNavigationItem } from "@/lib/appearance-settings";
@@ -200,10 +200,10 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
                 </Link>
               </>
             )}
-            <Link href="/contact" className={`hidden md:flex ${headerActionButtonBase} ${helpButtonVariant}`}>
-              <Heart size={15} strokeWidth={2} />
+            <Link href="/community-orders" className={`hidden md:flex ${headerActionButtonBase} ${helpButtonVariant}`}>
+              <Users size={15} strokeWidth={2} />
               <span className={headerActionTextClass} style={headerActionTextStyle}>
-                幫我找
+                社群訂單
               </span>
             </Link>
             <button type="button" onClick={cart.openCart} aria-label="購物車" className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 md:hidden ${cartButtonVariant}`}>
