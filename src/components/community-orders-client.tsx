@@ -3,7 +3,6 @@
 import { FormEvent, useMemo, useState } from "react";
 import { AlertTriangle, Link2, Search, Wallet, PackageCheck, X } from "lucide-react";
 import { formatPrice } from "@/lib/products";
-import { contactLinks } from "@/lib/site";
 
 type CommunityOrderRow = {
   orderId: string;
@@ -172,6 +171,7 @@ export function CommunityOrdersClient() {
   const [error, setError] = useState("");
   const [shipBlocked, setShipBlocked] = useState<string[] | null>(null);
   const [remittanceOpen, setRemittanceOpen] = useState(false);
+  const [shipmentOpen, setShipmentOpen] = useState(false);
 
   const allSelected = groups !== null && groups.length > 0 && groups.every((group) => selected.has(group.orderId));
 
@@ -230,10 +230,6 @@ export function CommunityOrdersClient() {
     [selectedGroups],
   );
 
-  function openLineContact() {
-    window.open(contactLinks.line, "_blank", "noopener,noreferrer");
-  }
-
   function handleShipClick() {
     const blocked = selectedGroups.filter((group) => group.arrivalStatus !== "arrived_taiwan");
     if (blocked.length > 0) {
@@ -241,7 +237,7 @@ export function CommunityOrdersClient() {
       return;
     }
     setShipBlocked(null);
-    openLineContact();
+    setShipmentOpen(true);
   }
 
   function handleRemittanceClick() {
@@ -478,6 +474,14 @@ export function CommunityOrdersClient() {
           onClose={() => setRemittanceOpen(false)}
         />
       ) : null}
+
+      {shipmentOpen ? (
+        <ShipmentRequestModal
+          nickname={searchedNickname}
+          groups={selectedGroups}
+          onClose={() => setShipmentOpen(false)}
+        />
+      ) : null}
     </main>
   );
 }
@@ -667,6 +671,143 @@ function RemittanceModal({
                 </div>
               </div>
             )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ShipmentRequestModal({
+  nickname,
+  groups,
+  onClose,
+}: {
+  nickname: string;
+  groups: CommunityOrderGroup[];
+  onClose: () => void;
+}) {
+  const [recipientName, setRecipientName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [pickupStore, setPickupStore] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [success, setSuccess] = useState(false);
+
+  const recipientValid = recipientName.trim().length > 0;
+  const phoneValid = phone.trim().length >= 8;
+  const storeValid = pickupStore.trim().length > 0;
+  const formValid = recipientValid && phoneValid && storeValid;
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!formValid || submitting || submitted) return;
+    setSubmitting(true);
+    setSubmitted(true);
+    setSubmitError("");
+    try {
+      const response = await fetch("/api/community/shipment-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nickname,
+          orderIds: groups.map((group) => group.orderId),
+          recipientName: recipientName.trim(),
+          phone: phone.trim(),
+          pickupStore: pickupStore.trim(),
+        }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.ok) throw new Error(result?.error || "送出失敗，請稍後再試。");
+      setSuccess(true);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "送出失敗，請稍後再試。");
+      setSubmitted(false);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-penguin-gray/40 sm:items-center" role="dialog" aria-modal="true">
+      <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-t-3xl border-2 border-penguin-peach bg-white p-5 shadow-2xl sm:rounded-3xl">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-black text-penguin-gray">出貨申請</h2>
+          <button type="button" onClick={onClose} aria-label="關閉" className="text-gray-400 hover:text-penguin-pink-dark">
+            <X size={20} />
+          </button>
+        </div>
+
+        {success ? (
+          <div className="space-y-4 text-center">
+            <p className="text-sm font-bold text-penguin-gray">出貨申請已送出，小企鵝確認後會盡快為你安排！</p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full rounded-full bg-penguin-pink-dark px-4 py-3 text-sm font-black text-white shadow-md transition hover:bg-penguin-pink"
+            >
+              關閉
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="mb-4 space-y-2 rounded-2xl bg-penguin-cream/60 p-3">
+              {groups.map((group) => (
+                <div key={group.orderId} className="text-xs font-bold text-penguin-gray">
+                  <p className="truncate">{group.notebookName}</p>
+                  <ul className="mt-0.5 space-y-0.5 pl-3 text-[11px] font-medium text-gray-500">
+                    {group.items.map((item) => (
+                      <li key={item.itemId} className="truncate">
+                        {item.productName}
+                        {item.variantSpec ? `（${item.variantSpec}）` : ""} × {item.quantity}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <div>
+                <label className="mb-1 block text-xs font-black text-penguin-gray">收件人姓名</label>
+                <input
+                  type="text"
+                  value={recipientName}
+                  onChange={(event) => setRecipientName(event.target.value)}
+                  placeholder="請輸入收件人姓名"
+                  className="h-11 w-full rounded-xl border-2 border-penguin-peach bg-white px-3 text-sm font-bold text-penguin-gray outline-none focus:border-penguin-pink-dark"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-black text-penguin-gray">手機號碼</label>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(event) => setPhone(event.target.value)}
+                  placeholder="請輸入手機號碼"
+                  className="h-11 w-full rounded-xl border-2 border-penguin-peach bg-white px-3 text-sm font-bold tabular-nums text-penguin-gray outline-none focus:border-penguin-pink-dark"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-black text-penguin-gray">取貨門市</label>
+                <input
+                  type="text"
+                  value={pickupStore}
+                  onChange={(event) => setPickupStore(event.target.value)}
+                  placeholder="例如：7-11 忠孝門市"
+                  className="h-11 w-full rounded-xl border-2 border-penguin-peach bg-white px-3 text-sm font-bold text-penguin-gray outline-none focus:border-penguin-pink-dark"
+                />
+              </div>
+              {submitError ? <p className="text-xs font-bold text-red-500">{submitError}</p> : null}
+              <button
+                type="submit"
+                disabled={!formValid || submitting || submitted}
+                className="w-full rounded-full bg-penguin-pink-dark px-4 py-3 text-sm font-black text-white shadow-md transition hover:bg-penguin-pink disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {submitting ? "送出中..." : "送出出貨申請"}
+              </button>
+            </form>
           </>
         )}
       </div>
