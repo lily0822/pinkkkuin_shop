@@ -18,6 +18,7 @@ type ImportRow = {
   notebook_name: string;
   nickname: string;
   product_name: string;
+  variant_spec: string;
   quantity: number;
   unit_price: number;
 };
@@ -42,10 +43,18 @@ function cleanRow(value: unknown): ImportRow | null {
   const notebookName = typeof row.notebook_name === "string" ? row.notebook_name.trim().slice(0, 200) : "";
   const nickname = typeof row.nickname === "string" ? row.nickname.trim().slice(0, 200) : "";
   const productName = typeof row.product_name === "string" ? row.product_name.trim().slice(0, 300) : "";
+  const variantSpec = typeof row.variant_spec === "string" ? row.variant_spec.trim().slice(0, 200) : "";
   const quantity = Math.max(1, Math.round(Number(row.quantity) || 1));
   const unitPrice = Math.max(0, Number(row.unit_price) || 0);
   if (!notebookName || !nickname || !productName) return null;
-  return { notebook_name: notebookName, nickname, product_name: productName, quantity, unit_price: unitPrice };
+  return {
+    notebook_name: notebookName,
+    nickname,
+    product_name: productName,
+    variant_spec: variantSpec,
+    quantity,
+    unit_price: unitPrice,
+  };
 }
 
 export async function POST(request: NextRequest) {

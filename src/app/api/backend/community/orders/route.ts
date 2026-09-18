@@ -66,6 +66,7 @@ function mapRow(row: Record<string, unknown>) {
     orderCreatedAt: String(row.order_created_at || ""),
     itemId: String(row.item_id || ""),
     productName: String(row.product_name || ""),
+    variantSpec: row.variant_spec ? String(row.variant_spec) : "",
     quantity: Number(row.quantity || 0),
     unitPrice: Number(row.unit_price || 0),
     itemSubtotal: Number(row.item_subtotal || 0),
