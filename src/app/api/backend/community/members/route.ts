@@ -28,6 +28,7 @@ function mapRow(row: Record<string, unknown>) {
     requestedNickname: String(row.requested_nickname || ""),
     reviewStatus: String(row.review_status || "not_requested"),
     approvedAt: String(row.approved_at || ""),
+    createdAt: String(row.created_at || ""),
     updatedAt: String(row.updated_at || ""),
   };
 }
@@ -41,14 +42,14 @@ export async function GET(request: NextRequest) {
     const service = createSupabaseServiceClient();
     const { data, error } = await service
       .from("community_line_bindings")
-      .select("id,line_display_name,nickname,requested_nickname,review_status,approved_at,updated_at")
+      .select("id,line_display_name,nickname,requested_nickname,review_status,approved_at,created_at,updated_at")
       .order("updated_at", { ascending: false });
     if (error) throw error;
     const rows = (Array.isArray(data) ? data : []).map((row) => mapRow(row as Record<string, unknown>));
     return NextResponse.json({
       ok: true,
       approved: rows.filter((row) => Boolean(row.nickname)),
-      pending: rows.filter((row) => row.reviewStatus !== "approved" || Boolean(row.requestedNickname)),
+      pending: rows.filter((row) => row.reviewStatus === "pending" && Boolean(row.requestedNickname)),
     });
   } catch {
     return NextResponse.json({ ok: false, error: "社群名單讀取失敗，請稍後再試。" }, { status: 500 });
