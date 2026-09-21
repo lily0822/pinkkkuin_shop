@@ -14,6 +14,8 @@ const COMMUNITY_LINE_SESSION_MAX_AGE = 30 * 24 * 60 * 60;
 const LINE_TOKEN_URL = "https://api.line.me/oauth2/v2.1/token";
 
 type CommunityLineState = {
+  source: "community-orders";
+  returnTo: "/";
   state: string;
   nonce: string;
   codeVerifier: string;
@@ -65,6 +67,8 @@ function hashVerifier(verifier: string) {
 
 export function createCommunityLineState() {
   const payload: CommunityLineState = {
+    source: "community-orders",
+    returnTo: "/",
     state: `community.${crypto.randomBytes(24).toString("base64url")}`,
     nonce: crypto.randomBytes(24).toString("base64url"),
     codeVerifier: crypto.randomBytes(48).toString("base64url"),
@@ -75,7 +79,13 @@ export function createCommunityLineState() {
 
 export function verifyCommunityLineState(token: string, expectedState: string) {
   const payload = decodeSigned<CommunityLineState>(token);
-  if (!payload || payload.state !== expectedState || !payload.state.startsWith("community.")) return null;
+  if (
+    !payload ||
+    payload.source !== "community-orders" ||
+    payload.returnTo !== "/" ||
+    payload.state !== expectedState ||
+    !payload.state.startsWith("community.")
+  ) return null;
   if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) return null;
   if (!payload.codeVerifier || !payload.nonce) return null;
   return payload;

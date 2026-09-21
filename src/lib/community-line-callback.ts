@@ -3,6 +3,7 @@ import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import {
   clearCommunityLineState,
+  COMMUNITY_LINE_ORIGIN,
   COMMUNITY_LINE_STATE_COOKIE,
   exchangeCommunityLineCode,
   setCommunityLineSession,
@@ -11,8 +12,8 @@ import {
 import { fetchLineProfile } from "@/lib/line/login";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 
-function redirectHome(request: NextRequest, status: string) {
-  return NextResponse.redirect(new URL(`/?line=${encodeURIComponent(status)}`, request.url));
+function redirectHome(status: string) {
+  return NextResponse.redirect(new URL(`/?line=${encodeURIComponent(status)}`, COMMUNITY_LINE_ORIGIN));
 }
 
 export async function handleCommunityLineCallback(request: NextRequest) {
@@ -21,7 +22,7 @@ export async function handleCommunityLineCallback(request: NextRequest) {
   const stateToken = request.cookies.get(COMMUNITY_LINE_STATE_COOKIE)?.value || "";
   const verifiedState = verifyCommunityLineState(stateToken, state);
   if (!code || !verifiedState) {
-    return clearCommunityLineState(redirectHome(request, "invalid-state"), request);
+    return clearCommunityLineState(redirectHome("invalid-state"), request);
   }
 
   try {
@@ -37,10 +38,10 @@ export async function handleCommunityLineCallback(request: NextRequest) {
       { onConflict: "line_user_id" },
     );
     if (bindingError) throw bindingError;
-    const response = redirectHome(request, "authenticated");
+    const response = redirectHome("authenticated");
     setCommunityLineSession(response, request, profile.userId, profile.displayName || "");
     return clearCommunityLineState(response, request);
   } catch {
-    return clearCommunityLineState(redirectHome(request, "login-failed"), request);
+    return clearCommunityLineState(redirectHome("login-failed"), request);
   }
 }

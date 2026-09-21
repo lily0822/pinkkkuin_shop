@@ -4,54 +4,33 @@
 
 - Branch: `community-orders`
 - Community alias: `https://pinkkkuin-community-orders.vercel.app`
-- Shared Staging backend: `https://pinkkkuin-staging.vercel.app/backend` (owned and deployed by `official-next`)
-- Git branch Preview: `https://pinkkkuin-shop-git-community-orders-lilys-projects-2a8e834c.vercel.app`
-- `pinkkkuin-staging.vercel.app` belongs only to `official-next`; never point community deployments at it.
-- Production is untouched and must not be deployed without explicit approval.
+- Shared Staging backend: `https://pinkkkuin-staging.vercel.app/backend` (owned by `official-next`)
+- `pinkkkuin-staging.vercel.app` belongs only to `official-next`.
+- Production must not be deployed without explicit approval.
 
-## Current feature
+## Community LINE flow
 
-Community LINE login and nickname review are separated from the storefront member flow:
+- Community LINE Login starts at `/api/community/line/start`.
+- Its signed OAuth state includes `source: community-orders` and `returnTo: /`.
+- Its OAuth redirect URI is `https://pinkkkuin-community-orders.vercel.app/api/community/line/callback`.
+- Community callback always redirects to `https://pinkkkuin-community-orders.vercel.app/`; it never derives the destination from a storefront callback host.
+- The storefront `/api/member/line/start` and member callback behavior are unchanged.
+- First-time LINE users continue to nickname review; approved users load their saved binding and community orders automatically.
 
-- The community LINE callback returns only to the community page and preserves the LINE identity immediately.
-- A nickname submission creates a pending review without querying the old order nickname RPC; it does not bind or query orders.
-- Only an approved nickname can query community orders.
-- `查詢訂單` is a separate action.
-- An approved user can request a replacement nickname; the old approved nickname remains usable until approval.
-- Backend `社群管理` is a top-level module with `社群訂單` and `社群名單`.
-- `社群訂單` retains the existing import, order, remittance, and shipment functions.
-- `社群名單` shows approved users and pending/unsubmitted LINE identities; pending applications can be approved.
+## Existing accepted features
 
-## Staging migrations
+- Nickname applications remain pending until backend approval; only approved nicknames can query orders.
+- `查詢訂單` remains separate from nickname submission.
+- Community import, orders, remittance, and shipment flows remain unchanged.
+- Shared backend `社群名單` and module ordering remain owned and deployed by `official-next`.
 
-Applied to Staging through:
+## Staging data
 
-- `202609180001_community_orders_schema.sql`
-- `202609180002_community_orders_rpc.sql`
-- `202609180003_community_order_items_variant_spec.sql`
-- `202609180004_community_remittance_submissions.sql`
-- `202609180005_community_shipment_requests.sql`
-- `202609210001_community_line_bindings.sql`
-- `202609210002_community_line_binding_reviews.sql`
+- Community migrations through `202609210002_community_line_binding_reviews.sql` are applied to Staging.
+- This LINE redirect fix adds no migration and changes no environment or permissions.
 
-The latest migration makes approved nickname and pending nickname separate, adds review status and approval time, preserves existing approved bindings, keeps RLS enabled, and grants only SELECT/INSERT/UPDATE to `service_role`.
+## Deployment rules
 
-## Validation
-
-- Next.js production build: PASS
-- Backend inline JavaScript syntax: PASS
-- No DB/schema changes beyond the new additive Staging migration.
-- Existing storefront `/member` LINE flow was not modified.
-- Existing community order/import/remittance/shipment logic was not modified.
-- Nickname-to-order validation remains in the backend approval step, so a frontend submission only shows the pending review state.
-- The shared Staging backend serves backend commit `f3e6018991793381ad6dbf61ef76ff90aecdc660` through `official-next`; backend `main` and Production remain untouched.
-
-## Next step
-
-Verify on the community alias with a real LINE account:
-
-1. First LINE login appears in backend `社群名單` as `未申請`.
-2. Submit a nickname and confirm `等待審核`; pending nickname cannot query.
-3. Approve it in backend and confirm it moves to `已綁定名單`.
-4. Reload the community page and use the separate `查詢訂單` button.
-5. Submit a replacement nickname and confirm the previous approved nickname remains active until approval.
+- Deploy this branch only to its Git Preview and `pinkkkuin-community-orders.vercel.app`.
+- Never update `pinkkkuin-staging.vercel.app` from this branch.
+- Never deploy Production without explicit approval.
