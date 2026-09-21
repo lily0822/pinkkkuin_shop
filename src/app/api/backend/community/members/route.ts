@@ -84,20 +84,14 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "這筆申請已不是待審核狀態。" }, { status: 409 });
     }
 
-    const [{ data: orders, error: lookupError }, { data: conflict, error: conflictError }] = await Promise.all([
-      service.rpc("lookup_community_orders_by_nickname", { p_nickname: requestedNickname }),
-      service
-        .from("community_line_bindings")
-        .select("id")
-        .ilike("nickname", requestedNickname)
-        .neq("line_user_id", row.line_user_id)
-        .limit(1)
-        .maybeSingle(),
-    ]);
-    if (lookupError || conflictError) throw lookupError || conflictError;
-    if (!Array.isArray(orders) || !orders.length) {
-      return NextResponse.json({ ok: false, error: "找不到這個社群暱稱的訂單。" }, { status: 409 });
-    }
+    const { data: conflict, error: conflictError } = await service
+      .from("community_line_bindings")
+      .select("id")
+      .ilike("nickname", requestedNickname)
+      .neq("line_user_id", row.line_user_id)
+      .limit(1)
+      .maybeSingle();
+    if (conflictError) throw conflictError;
     if (conflict) {
       return NextResponse.json({ ok: false, error: "這個社群暱稱已綁定其他 LINE 帳號。" }, { status: 409 });
     }
