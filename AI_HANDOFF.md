@@ -11,10 +11,10 @@
 ## Shared backend
 
 - Backend source repo branch: `backend-staging`
-- Backend commit: `f3e6018991793381ad6dbf61ef76ff90aecdc660`
+- Backend commit: `448293d920b88a0713517f2618fe02def718435e`
 - The Staging backend includes the top-level `社群管理` module with `社群訂單` and `社群名單`.
 - The existing community order/import/remittance/shipment functions remain in `社群訂單`.
-- `社群名單` shows approved, pending, and unsubmitted LINE identities and supports nickname approval.
+- `社群名單` uses two standard backend tables. Approved members support client-side LINE name/nickname search; pending members support row approval, select-all, and batch approval through the existing approval API.
 - `official-next` carries only the backend API routes and migration history needed by this shared backend; it does not include the community-orders frontend or LINE callback UI.
 
 ## Staging data
