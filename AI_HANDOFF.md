@@ -13,7 +13,7 @@
 Community LINE login and nickname review are separated from the storefront member flow:
 
 - The community LINE callback returns only to the community page and preserves the LINE identity immediately.
-- A nickname submission creates a pending review; it does not bind or query orders.
+- A nickname submission creates a pending review without querying the old order nickname RPC; it does not bind or query orders.
 - Only an approved nickname can query community orders.
 - `查詢訂單` is a separate action.
 - An approved user can request a replacement nickname; the old approved nickname remains usable until approval.
@@ -42,6 +42,7 @@ The latest migration makes approved nickname and pending nickname separate, adds
 - No DB/schema changes beyond the new additive Staging migration.
 - Existing storefront `/member` LINE flow was not modified.
 - Existing community order/import/remittance/shipment logic was not modified.
+- Nickname-to-order validation remains in the backend approval step, so a frontend submission only shows the pending review state.
 
 ## Next step
 

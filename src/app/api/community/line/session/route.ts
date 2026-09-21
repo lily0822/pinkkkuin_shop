@@ -66,19 +66,10 @@ export async function PUT(request: NextRequest) {
 
   try {
     const service = createSupabaseServiceClient();
-    const { data: orders, error: lookupError } = await service.rpc("lookup_community_orders_by_nickname", {
-      p_nickname: nickname,
-    });
-    if (lookupError) throw lookupError;
-    const rows = Array.isArray(orders) ? orders : [];
-    if (!rows.length) {
-      return NextResponse.json({ ok: false, error: "找不到這個社群暱稱，請確認後再試。" }, { status: 404 });
-    }
-    const canonicalNickname = String((rows[0] as Record<string, unknown>).nickname || nickname).trim();
     const { data: conflict, error: conflictError } = await service
       .from("community_line_bindings")
       .select("line_user_id")
-      .ilike("nickname", canonicalNickname)
+      .ilike("nickname", nickname)
       .neq("line_user_id", session.lineUserId)
       .limit(1)
       .maybeSingle();
@@ -90,7 +81,7 @@ export async function PUT(request: NextRequest) {
       {
         line_user_id: session.lineUserId,
         line_display_name: session.displayName || null,
-        requested_nickname: canonicalNickname,
+        requested_nickname: nickname,
         review_status: "pending",
       },
       { onConflict: "line_user_id" },
@@ -103,7 +94,7 @@ export async function PUT(request: NextRequest) {
     }
     return NextResponse.json({
       ok: true,
-      application: { status: "pending", requestedNickname: canonicalNickname },
+      application: { status: "pending", requestedNickname: nickname },
     });
   } catch {
     return NextResponse.json({ ok: false, error: "送出審核失敗，請稍後再試。" }, { status: 500 });
