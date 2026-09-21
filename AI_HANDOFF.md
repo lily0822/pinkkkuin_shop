@@ -1,25 +1,28 @@
-﻿# AI Handoff — official-next
+# AI Handoff — official-next
 
 ## Current baseline
 
 - Branch: `official-next`
 - Storefront Staging: `https://pinkkkuin-staging.vercel.app`
 - Shared Staging backend: `https://pinkkkuin-staging.vercel.app/backend`
+- Community frontend: `https://pinkkkuin-community-orders.vercel.app`
 - Production: `https://pinkkkuin-shop.vercel.app` — never deploy without explicit approval.
-- The `community-orders` frontend remains separate at `https://pinkkkuin-community-orders.vercel.app`.
 
 ## Shared backend
 
-- Backend source repo branch: `backend-staging`
-- Backend commit: `448293d920b88a0713517f2618fe02def718435e`
-- The Staging backend includes the top-level `社群管理` module with `社群訂單` and `社群名單`.
-- The existing community order/import/remittance/shipment functions remain in `社群訂單`.
-- `社群名單` uses two standard backend tables. Approved members support client-side LINE name/nickname search; pending members support row approval, select-all, and batch approval through the existing approval API.
-- `official-next` carries only the backend API routes and migration history needed by this shared backend; it does not include the community-orders frontend or LINE callback UI.
+- Backend source branch: `backend-staging`
+- Backend commit: `0afbcb4`
+- `社群管理` contains `社群訂單` and `社群名單`; existing order/import/remittance/shipment flows remain unchanged.
+- `社群名單` uses two standard tables. Approved bindings have separate LINE-name and nickname filters, nickname editing, and confirmed unbinding. Unbinding only clears the LINE-to-nickname binding.
+- Pending bindings support row approval, select-all, and batch approval. Successful rows move to approved immediately; failed rows remain pending.
+- Backend module and submenu order can be changed from the top-right `調整模塊順序` modal.
+- Module order is shared across administrators through the existing `schedule_settings` row with type `backend-module-order`; it is not stored in browser storage.
 
 ## Staging data
 
-Community migrations through `202609210002_community_line_binding_reviews.sql` are applied to Staging. Migration files do not execute automatically in Production.
+- Community migrations through `202609210002_community_line_binding_reviews.sql` are applied to Staging.
+- No migration was added for the current backend UI work.
+- Migration files do not execute automatically in Production.
 
 ## Rules
 
