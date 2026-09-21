@@ -1,10 +1,10 @@
-﻿# AI Handoff — community-orders
+# AI Handoff — community-orders
 
 ## Current baseline
 
 - Branch: `community-orders`
 - Community alias: `https://pinkkkuin-community-orders.vercel.app`
-- Community backend test URL: `https://pinkkkuin-community-backend.vercel.app/backend`
+- Shared Staging backend: `https://pinkkkuin-staging.vercel.app/backend` (owned and deployed by `official-next`)
 - Git branch Preview: `https://pinkkkuin-shop-git-community-orders-lilys-projects-2a8e834c.vercel.app`
 - `pinkkkuin-staging.vercel.app` belongs only to `official-next`; never point community deployments at it.
 - Production is untouched and must not be deployed without explicit approval.
@@ -44,7 +44,7 @@ The latest migration makes approved nickname and pending nickname separate, adds
 - Existing storefront `/member` LINE flow was not modified.
 - Existing community order/import/remittance/shipment logic was not modified.
 - Nickname-to-order validation remains in the backend approval step, so a frontend submission only shows the pending review state.
-- The backend test URL serves backend commit `f3e6018991793381ad6dbf61ef76ff90aecdc660` from `backend-staging`; `main` was not merged or deployed.
+- The shared Staging backend serves backend commit `f3e6018991793381ad6dbf61ef76ff90aecdc660` through `official-next`; backend `main` and Production remain untouched.
 
 ## Next step
 
