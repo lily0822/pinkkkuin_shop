@@ -14,7 +14,7 @@
 - Backend commit: `0afbcb4`
 - `社群管理` contains `社群訂單` and `社群名單`; existing order/import/remittance/shipment flows remain unchanged.
 - `社群名單` uses two standard tables. Approved bindings have separate LINE-name and nickname filters, nickname editing, and confirmed unbinding. Unbinding only clears the LINE-to-nickname binding.
-- Pending bindings support row approval, select-all, and batch approval. Successful rows move to approved immediately; failed rows remain pending.
+- Pending bindings support row approval, select-all, and batch approval. Successful rows move to approved immediately; failed rows remain pending. Approval only depends on review state (`pending`) and nickname-conflict checks — it does not require the nickname to already have a community order (fixed in `src/app/api/backend/community/members/route.ts`, commit `80a6473`).
 - Backend module and submenu order can be changed from the top-right `調整模塊順序` modal.
 - Module order is shared across administrators through the existing `schedule_settings` row with type `backend-module-order`; it is not stored in browser storage.
 
