@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
-import { AlertTriangle, Link2, Search, Wallet, PackageCheck, X } from "lucide-react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Link2, Search, Wallet, PackageCheck, RefreshCw, X } from "lucide-react";
 import { formatPrice } from "@/lib/products";
 
 type CommunityOrderRow = {
@@ -31,6 +31,12 @@ type CommunityOrderGroup = {
   groupTotal: number;
   remitAmount: number;
   items: CommunityOrderRow[];
+};
+
+type CommunityLineSession = {
+  authenticated: boolean;
+  displayName?: string;
+  binding: { nickname: string; updatedAt?: string } | null;
 };
 
 const PAYMENT_STATUS_LABEL: Record<string, string> = {
@@ -172,10 +178,15 @@ export function CommunityOrdersClient() {
   const [shipBlocked, setShipBlocked] = useState<string[] | null>(null);
   const [remittanceOpen, setRemittanceOpen] = useState(false);
   const [shipmentOpen, setShipmentOpen] = useState(false);
+  const [lineSession, setLineSession] = useState<CommunityLineSession | null>(null);
+  const [lineLoading, setLineLoading] = useState(true);
+  const [lineError, setLineError] = useState("");
+  const [bindingBusy, setBindingBusy] = useState(false);
+  const [changingBinding, setChangingBinding] = useState(false);
 
   const allSelected = groups !== null && groups.length > 0 && groups.every((group) => selected.has(group.orderId));
 
-  async function runSearch(value: string) {
+  const runSearch = useCallback(async (value: string) => {
     const trimmed = value.trim();
     if (!trimmed) return;
     setLoading(true);
@@ -197,11 +208,73 @@ export function CommunityOrdersClient() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    let active = true;
+    async function loadLineSession() {
+      try {
+        const lineStatus = new URL(window.location.href).searchParams.get("line");
+        if (lineStatus === "not-configured") setLineError("LINE 登入尚未完成設定，請稍後再試。");
+        if (lineStatus === "invalid-state") setLineError("LINE 登入已逾時，請重新登入。");
+        if (lineStatus === "login-failed") setLineError("LINE 登入失敗，請重新再試一次。");
+        if (lineStatus) window.history.replaceState({}, "", window.location.pathname);
+        const response = await fetch("/api/community/line/session", { cache: "no-store" });
+        const result = await response.json().catch(() => null) as (CommunityLineSession & { ok?: boolean; error?: string }) | null;
+        if (!response.ok || !result?.ok) throw new Error(result?.error || "LINE 登入狀態讀取失敗。");
+        if (!active) return;
+        const nextSession: CommunityLineSession = {
+          authenticated: Boolean(result.authenticated),
+          displayName: result.displayName,
+          binding: result.binding,
+        };
+        setLineSession(nextSession);
+        if (nextSession.binding?.nickname) {
+          setNickname(nextSession.binding.nickname);
+          await runSearch(nextSession.binding.nickname);
+        }
+      } catch (sessionError) {
+        if (active) setLineError(sessionError instanceof Error ? sessionError.message : "LINE 登入狀態讀取失敗。");
+      } finally {
+        if (active) setLineLoading(false);
+      }
+    }
+    loadLineSession();
+    return () => {
+      active = false;
+    };
+  }, [runSearch]);
+
+  async function handleBind(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    runSearch(nickname);
+    const trimmed = nickname.trim();
+    if (!trimmed || bindingBusy) return;
+    setBindingBusy(true);
+    setLineError("");
+    try {
+      const response = await fetch("/api/community/line/session", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nickname: trimmed }),
+      });
+      const result = await response.json().catch(() => null) as { ok?: boolean; error?: string; binding?: { nickname?: string } } | null;
+      if (!response.ok || !result?.ok || !result.binding?.nickname) {
+        throw new Error(result?.error || "綁定失敗，請稍後再試。");
+      }
+      const boundNickname = result.binding.nickname;
+      setNickname(boundNickname);
+      setLineSession((current) => ({
+        authenticated: true,
+        displayName: current?.displayName,
+        binding: { nickname: boundNickname },
+      }));
+      setChangingBinding(false);
+      await runSearch(boundNickname);
+    } catch (bindError) {
+      setLineError(bindError instanceof Error ? bindError.message : "綁定失敗，請稍後再試。");
+    } finally {
+      setBindingBusy(false);
+    }
   }
 
   function toggleGroup(orderId: string, checked: boolean) {
@@ -250,40 +323,98 @@ export function CommunityOrdersClient() {
       <div className="mb-6 text-center">
         <p className="text-xs font-black text-penguin-pink-dark">社群下單查詢</p>
         <h1 className="mt-1 text-3xl font-black text-penguin-gray sm:text-4xl">社群訂單</h1>
-        <p className="mt-2 text-sm font-bold text-gray-500">輸入你在社群下單時使用的暱稱，查詢下單明細與匯款金額。</p>
+        <p className="mt-2 text-sm font-bold text-gray-500">使用 LINE 登入並綁定社群暱稱，之後會自動載入你的訂單。</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="mx-auto flex max-w-xl flex-col gap-3 sm:flex-row">
-        <div className="relative flex-1">
-          <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="search"
-            value={nickname}
-            onChange={(event) => setNickname(event.target.value)}
-            placeholder="輸入你的社群暱稱！"
-            className="h-12 w-full rounded-full border-2 border-penguin-peach bg-white pl-11 pr-4 text-sm font-bold text-penguin-gray shadow-sm outline-none focus:border-penguin-pink-dark"
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={loading || !nickname.trim()}
-          className="h-12 shrink-0 rounded-full bg-penguin-pink-dark px-6 text-sm font-black text-white shadow-md transition hover:bg-penguin-pink disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {loading ? "查詢中..." : "查詢訂單"}
-        </button>
-      </form>
+      <section className="mx-auto max-w-xl rounded-3xl border-2 border-penguin-peach bg-white p-4 shadow-sm sm:p-5">
+        {lineLoading ? (
+          <p className="text-center text-sm font-bold text-gray-500">正在確認 LINE 登入狀態...</p>
+        ) : !lineSession?.authenticated ? (
+          <div className="text-center">
+            <p className="text-sm font-black text-penguin-gray">先用 LINE 登入，才能查看社群訂單</p>
+            <p className="mt-1 text-xs font-bold text-gray-500">第一次登入後，再輸入一次社群暱稱完成綁定。</p>
+            <form action="/api/community/line/start" method="get" className="mt-4">
+              <button
+                type="submit"
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-[#06C755] px-7 text-sm font-black text-white shadow-md transition hover:bg-[#05b94e]"
+              >
+                <Link2 size={17} />
+                使用 LINE 登入
+              </button>
+            </form>
+          </div>
+        ) : !lineSession.binding || changingBinding ? (
+          <form onSubmit={handleBind}>
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-black text-penguin-gray">
+                  {changingBinding ? "更換綁定暱稱" : "LINE 登入成功"}
+                </p>
+                <p className="mt-0.5 text-xs font-bold text-gray-500">
+                  {lineSession.displayName ? `${lineSession.displayName}，` : ""}請輸入社群下單時使用的暱稱。
+                </p>
+              </div>
+              {changingBinding ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setChangingBinding(false);
+                    setNickname(lineSession.binding?.nickname || "");
+                    setLineError("");
+                  }}
+                  className="shrink-0 text-xs font-black text-gray-400 hover:text-penguin-gray"
+                >
+                  取消
+                </button>
+              ) : null}
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="relative flex-1">
+                <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="search"
+                  value={nickname}
+                  onChange={(event) => setNickname(event.target.value)}
+                  placeholder="輸入你的社群暱稱"
+                  className="h-12 w-full rounded-full border-2 border-penguin-peach bg-white pl-11 pr-4 text-sm font-bold text-penguin-gray outline-none focus:border-penguin-pink-dark"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={bindingBusy || !nickname.trim()}
+                className="h-12 shrink-0 rounded-full bg-penguin-pink-dark px-6 text-sm font-black text-white shadow-md transition hover:bg-penguin-pink disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {bindingBusy ? "綁定中..." : changingBinding ? "確認更換" : "綁定並查詢"}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-bold text-gray-500">已綁定社群暱稱</p>
+              <p className="mt-0.5 text-lg font-black text-penguin-gray">
+                {loading ? "正在載入訂單..." : lineSession.binding.nickname}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setNickname(lineSession.binding?.nickname || "");
+                setChangingBinding(true);
+                setLineError("");
+              }}
+              className="inline-flex w-fit items-center justify-center gap-1.5 rounded-full border-2 border-penguin-peach bg-white px-4 py-2 text-xs font-black text-penguin-pink-dark transition hover:bg-penguin-pink-light"
+            >
+              <RefreshCw size={14} />
+              更換綁定暱稱
+            </button>
+          </div>
+        )}
+      </section>
 
-      <div className="mx-auto mt-3 max-w-xl text-center">
-        <button
-          type="button"
-          disabled
-          title="即將推出"
-          className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-penguin-peach px-3 py-1.5 text-[11px] font-bold text-gray-400"
-        >
-          <Link2 size={12} />
-          綁定 LINE 會員（即將推出）
-        </button>
-      </div>
+      {lineError ? (
+        <p className="mx-auto mt-3 max-w-xl text-center text-sm font-bold text-red-500">{lineError}</p>
+      ) : null}
 
       {error ? (
         <p className="mx-auto mt-6 max-w-xl text-center text-sm font-bold text-red-500">{error}</p>
@@ -411,9 +542,9 @@ export function CommunityOrdersClient() {
         )
       ) : null}
 
-      {groups === null && !error && searchedNickname === "" ? (
+      {groups === null && !error && searchedNickname === "" && lineSession?.authenticated ? (
         <p className="mx-auto mt-10 max-w-xl text-center text-xs font-bold text-gray-400">
-          查詢結果只會顯示與你輸入暱稱相符的下單紀錄。
+          完成社群暱稱綁定後，訂單會自動顯示在這裡。
         </p>
       ) : null}
 

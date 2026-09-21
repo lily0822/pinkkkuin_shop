@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isCommunityLineState } from "@/lib/community-line-auth";
+import { handleCommunityLineCallback } from "@/lib/community-line-callback";
 import { exchangeLineCode, fetchLineProfile, LINE_STATE_COOKIE, verifyLineLoginState } from "@/lib/line/login";
 import { isMemberDisabled } from "@/lib/member/status";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
@@ -22,6 +24,11 @@ function clearStateCookie(response: NextResponse) {
 }
 
 export async function GET(request: NextRequest) {
+  const incomingState = request.nextUrl.searchParams.get("state") || "";
+  if (isCommunityLineState(incomingState)) {
+    return handleCommunityLineCallback(request);
+  }
+
   const cookieResponse = NextResponse.json({ ok: true });
   const supabase = createSupabaseRouteClient(request, cookieResponse);
   const { data, error } = await supabase.auth.getUser();

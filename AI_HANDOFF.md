@@ -1,67 +1,48 @@
-# AI Handoff — 社群訂單 (Community Orders)
+# AI Handoff — 社群訂單
 
-## 目前 branch
-- `community-orders`（從 `official-next` 分出）
-- Root `/` 直接顯示社群訂單查詢頁，無商城 header/footer/cart（layout 已精簡）
+## 基準
+- Branch：`community-orders`
+- 最新狀態：LINE 會員登入與社群暱稱綁定已實作，實際 HEAD 請以 `git log -1` 為準。
+- Preview：https://pinkkkuin-shop-git-community-orders-lilys-projects-2a8e834c.vercel.app
+- Root `/` 是獨立社群訂單頁，沒有商城 header/footer/cart。
+- Production 未動，不可自動部署。
 
-## 最新 commit
-- `4331082e24ee2d31b55d8e795d7c51dbbdb9b1aa`
+## 目前有效功能
+- LINE Login 使用既有 `LINE_LOGIN_*` Preview 設定與既有 `/api/member/line/callback` URL；callback 只在 `community.*` OAuth state 時分流，商城會員 LINE 綁定流程維持原狀。
+- 首次登入：LINE 授權後輸入社群暱稱並綁定。
+- 再次登入：由簽章 HttpOnly cookie 辨識 LINE 使用者，自動載入已綁定暱稱的訂單。
+- 可更換綁定暱稱；新暱稱必須存在於社群訂單，且一個暱稱只能綁定一個 LINE 使用者。
+- 社群訂單查詢、匯款回報、出貨申請 API 都從 LINE session 取得綁定暱稱，不再信任前端傳入的 nickname。
+- 暱稱查詢結果、Mobile 卡片／Desktop 表格、狀態 badge、全選、匯款、出貨申請與到貨阻擋維持既有行為。
+- 後台 `/backend` 社群管理、Excel 預覽／匯入、匯款與出貨管理維持既有行為。
 
-## Preview URL
-- https://pinkkkuin-shop-git-community-orders-lilys-projects-2a8e834c.vercel.app
-- 跟著 push 到 `community-orders` 自動更新，不用手動 `vercel alias`
-
-## 目前已完成
-- 客人暱稱查詢（Mobile 卡片 / Desktop 表格，含搶購／匯款／到貨／下單狀態 badge）
-- Mobile 底部固定操作列（全選／勾選系列匯款總金額／我要匯款／我想出貨）
-- 我要匯款：銀行下拉／後五碼／金額（可改，金額與系統不符會二次確認），後台可查
-- 我想出貨：到貨檢查擋住未到貨系列 → 出貨申請表（收件人／手機／取貨門市，含防重複送出）
-- 後台 `/backend`「社群管理」分頁：搜尋、Excel 匯入（先預覽再確認寫入）、匯入紀錄、匯款回報列表、出貨申請列表（可改狀態、可看商品內容）
-- LINE 綁定會員入口先保留（目前是 disabled 佔位按鈕，未實作登入）
-
-## 修改檔案
-- `src/app/layout.tsx`、`src/app/page.tsx`
-- `src/components/community-orders-client.tsx`（前台主要元件）
-- `src/app/api/community/{orders,remittances,shipment-requests}/route.ts`
-- `src/app/api/backend/community/{orders,order-items/[id],import,import-batches,remittances,shipment-requests,shipment-requests/[id]}/route.ts`
-- `.backend-product-publish/lily-backend.html`（submodule，社群管理分頁 UI）
-
-## DB / migration 進度
-已新增（`supabase/migrations/`）：
+## Migration
+Staging 已執行：
 - `202609180001_community_orders_schema.sql`
 - `202609180002_community_orders_rpc.sql`
 - `202609180003_community_order_items_variant_spec.sql`
 - `202609180004_community_remittance_submissions.sql`
 - `202609180005_community_shipment_requests.sql`
 
-已執行到 Staging Supabase：以上 5 個全部（使用者已在 SQL editor 手動跑完並確認成功）。
-尚未執行：無。
+新增、尚待在 Staging SQL Editor 執行：
+- `202609210001_community_line_bindings.sql`
 
-## 驗收結果
-以真實 Staging DB 完整跑過（非 mock）：
-- 查詢／Mobile 卡片／Desktop 表格：PASS
-- 我要匯款送出＋後台可見：PASS
-- 我想出貨到貨檢查（阻擋未到貨系列）：PASS
-- 出貨申請送出＋後台可見＋狀態可改：PASS
-- 320 / 375 / 390 / 430px 無 horizontal overflow：PASS
-- Desktop 無 regression：PASS
-- Build：PASS
+該 migration 只新增 `public.community_line_bindings`，RLS 開啟；anon/authenticated 無權限，service_role 只有 SELECT/INSERT/UPDATE，沒有 DELETE。Production 不可執行。
 
-## Production
-- 全程未動。`pinkkkuin-shop.vercel.app` production alias 未變更。
-
-## 不能破壞的既有功能
-- 現有購物車／商品／會員／payment／logistics business logic
-- `official-next` branch 不得修改
-- Production 不得部署或更動
+## 驗證
+- `npm run build`：PASS
+- 未登入 `/api/community/line/session`：200、`authenticated=false`
+- 未登入 `/api/community/orders`：401
+- 社群 OAuth invalid-state callback 分流：PASS
+- 375 / 1440px：無 horizontal overflow
+- 真實 LINE OAuth callback、首次綁定、自動載入、更換綁定：需先套用新 Staging migration，再由真人 LINE 帳號完成 Preview 驗收。
 
 ## 下一步
-1. LINE 會員綁定登入（目前只是 disabled 佔位按鈕）
-2. 取貨門市真正串接（這輪只有純文字輸入，未接超商門市選擇器）
-3. 決定何時／是否把 `community-orders` 功能併回 `official-next` 或正式上線
+1. 只在 Staging Supabase SQL Editor 執行 `202609210001_community_line_bindings.sql`。
+2. 在 Preview 用真人 LINE 完成：首次登入 → 綁定測試暱稱 → 重新開啟自動載入 → 更換為另一個存在的測試暱稱。
+3. 驗收後更新本檔結果；不要觸碰 Production。
 
-## submodule / env / 特殊注意事項
-- `.backend-product-publish` 是 git submodule，指向獨立 repo `github.com/lily0822/workspace.git` 的 `backend-staging` branch。修改後台 HTML 時：進該資料夾、在 detached HEAD 上 commit、`git push origin HEAD:backend-staging`，再回父repo `git add .backend-product-publish` 更新 gitlink 並隨父repo一起 commit。
-- 該 submodule 資料夾內有一條**未使用、已 diverge 的本地 `backend-staging` branch**（未 push，含舊 commit `4fd3b52`），內容較舊且會回退新功能，不要 checkout 或 merge 它，一律在 detached HEAD 工作。
-- 本機 `.env.local` 直接連 Staging Supabase；且本機因未設 `BACKEND_SESSION_SECRET`，`/backend` 會跳過登入驗證，方便本機測試，但與真正 Staging 環境需要登入不同，勿混淆。
-- `community_*` 系列資料表 service_role 只有 `SELECT/INSERT/UPDATE`，刻意不給 `DELETE`（最小權限）。Staging 裡會留測試資料（如 `acceptance_test_001`、`acceptance_test_002` 開頭的暱稱），這是預期行為，不用清除。
+## 注意
+- `.backend-product-publish` 是獨立 backend repo，本輪未修改。
+- 本機 `.env.local` 的 `DATABASE_URL` 為空，不能用 direct DB 套 migration。
+- 不要修改 `official-next`，不要碰商城會員／購物車／payment／logistics business logic。
