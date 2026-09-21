@@ -10,11 +10,12 @@
 
 ## Shared backend
 
-- Backend source branch: `community-order-admin-efficiency` (in `workspace.git`, checked out at `.backend-product-publish`)
-- Backend commit: `1d8941a`
+- Backend source branch: `community-members-binding-timestamps` (in `workspace.git`, checked out at `.backend-product-publish`)
+- Backend commit: `cecaba0`
 - The local `backend-staging` branch inside `.backend-product-publish` has diverged and must not be touched; new backend UI work is committed in detached HEAD and pushed to its own new branch per the submodule safety rule below, never onto `backend-staging`.
 - `社群管理` contains `社群訂單` and `社群名單`; existing order/import/remittance/shipment flows remain unchanged.
-- `社群名單` uses two standard tables. Approved bindings have separate LINE-name and nickname filters, nickname editing, and confirmed unbinding. Unbinding only clears the LINE-to-nickname binding.
+- `社群名單` uses two standard tables. Approved bindings have separate LINE-name and nickname filters, nickname editing, and confirmed unbinding, plus 綁定時間 (`createdAt`) and 最後更新時間 (`updatedAt`) columns — both already existed on `community_line_bindings`, no migration.
+- `已綁定名單` → 刪除 calls the existing `unbind` action (nulls nickname/requested_nickname, resets `review_status` to `not_requested`, keeps the row for the same `line_user_id`). `GET /api/backend/community/members`'s `pending` bucket now only includes rows with `review_status = 'pending'` AND a submitted `requestedNickname` (commit `ddffad2`), so an unbound row disappears from both lists instead of reappearing in 待處理名單 as an inert "未申請" placeholder — that placeholder display no longer happens for any row (including a genuine first-time LINE login that hasn't requested a nickname yet), since the two states are indistinguishable without a migration. Re-binding requires the front-end flow again.
 - Pending bindings support row approval, select-all, and batch approval. Successful rows move to approved immediately; failed rows remain pending. Approval only depends on review state (`pending`) and nickname-conflict checks — it does not require the nickname to already have a community order (fixed in `src/app/api/backend/community/members/route.ts`, commit `80a6473`).
 - `社群訂單` table has a checkbox column with select-all and a batch-update control (choose 匯款/到貨/下單/搶購狀態 and a target value, apply to all selected rows). Order-level fields (匯款/到貨/下單狀態) dedupe by `orderId` before patching; 搶購狀態 patches each selected item individually. Requests reuse the existing single-row PATCH endpoints sequentially (no new API); success/fail counts are reported and partial failures are never rolled back.
 - `社群訂單` table also has four status filter dropdowns (匯款/到貨/下單/搶購狀態, combinable with AND logic) that filter only the already-loaded page of rows client-side; no new API was added and it does not reach across pages.
