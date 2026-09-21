@@ -36,7 +36,12 @@ type CommunityOrderGroup = {
 type CommunityLineSession = {
   authenticated: boolean;
   displayName?: string;
-  binding: { nickname: string; updatedAt?: string } | null;
+  binding: { nickname: string; approvedAt?: string; updatedAt?: string } | null;
+  application: {
+    status: "not_requested" | "pending" | "approved";
+    requestedNickname: string;
+    updatedAt?: string;
+  };
 };
 
 const PAYMENT_STATUS_LABEL: Record<string, string> = {
@@ -227,11 +232,13 @@ export function CommunityOrdersClient() {
           authenticated: Boolean(result.authenticated),
           displayName: result.displayName,
           binding: result.binding,
+          application: result.application || { status: "not_requested", requestedNickname: "" },
         };
         setLineSession(nextSession);
         if (nextSession.binding?.nickname) {
           setNickname(nextSession.binding.nickname);
-          await runSearch(nextSession.binding.nickname);
+        } else if (nextSession.application.requestedNickname) {
+          setNickname(nextSession.application.requestedNickname);
         }
       } catch (sessionError) {
         if (active) setLineError(sessionError instanceof Error ? sessionError.message : "LINE 登入狀態讀取失敗。");
@@ -243,9 +250,9 @@ export function CommunityOrdersClient() {
     return () => {
       active = false;
     };
-  }, [runSearch]);
+  }, []);
 
-  async function handleBind(event: FormEvent<HTMLFormElement>) {
+  async function handleApplication(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmed = nickname.trim();
     if (!trimmed || bindingBusy) return;
@@ -257,21 +264,27 @@ export function CommunityOrdersClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ nickname: trimmed }),
       });
-      const result = await response.json().catch(() => null) as { ok?: boolean; error?: string; binding?: { nickname?: string } } | null;
-      if (!response.ok || !result?.ok || !result.binding?.nickname) {
-        throw new Error(result?.error || "綁定失敗，請稍後再試。");
+      const result = await response.json().catch(() => null) as {
+        ok?: boolean;
+        error?: string;
+        application?: CommunityLineSession["application"];
+      } | null;
+      if (!response.ok || !result?.ok || result.application?.status !== "pending") {
+        throw new Error(result?.error || "送出審核失敗，請稍後再試。");
       }
-      const boundNickname = result.binding.nickname;
-      setNickname(boundNickname);
+      const application = result.application;
+      setNickname(application.requestedNickname);
       setLineSession((current) => ({
         authenticated: true,
         displayName: current?.displayName,
-        binding: { nickname: boundNickname },
+        binding: current?.binding || null,
+        application,
       }));
       setChangingBinding(false);
-      await runSearch(boundNickname);
+      setGroups(null);
+      setSearchedNickname("");
     } catch (bindError) {
-      setLineError(bindError instanceof Error ? bindError.message : "綁定失敗，請稍後再試。");
+      setLineError(bindError instanceof Error ? bindError.message : "送出審核失敗，請稍後再試。");
     } finally {
       setBindingBusy(false);
     }
@@ -323,7 +336,7 @@ export function CommunityOrdersClient() {
       <div className="mb-6 text-center">
         <p className="text-xs font-black text-penguin-pink-dark">社群下單查詢</p>
         <h1 className="mt-1 text-3xl font-black text-penguin-gray sm:text-4xl">社群訂單</h1>
-        <p className="mt-2 text-sm font-bold text-gray-500">使用 LINE 登入並綁定社群暱稱，之後會自動載入你的訂單。</p>
+        <p className="mt-2 text-sm font-bold text-gray-500">使用 LINE 登入，社群暱稱審核通過後即可查詢訂單。</p>
       </div>
 
       <section className="mx-auto max-w-xl rounded-3xl border-2 border-penguin-peach bg-white p-4 shadow-sm sm:p-5">
@@ -332,7 +345,7 @@ export function CommunityOrdersClient() {
         ) : !lineSession?.authenticated ? (
           <div className="text-center">
             <p className="text-sm font-black text-penguin-gray">先用 LINE 登入，才能查看社群訂單</p>
-            <p className="mt-1 text-xs font-bold text-gray-500">第一次登入後，再輸入一次社群暱稱完成綁定。</p>
+            <p className="mt-1 text-xs font-bold text-gray-500">第一次登入後，送出社群暱稱等待審核。</p>
             <form action="/api/community/line/start" method="get" className="mt-4">
               <button
                 type="submit"
@@ -343,8 +356,8 @@ export function CommunityOrdersClient() {
               </button>
             </form>
           </div>
-        ) : !lineSession.binding || changingBinding ? (
-          <form onSubmit={handleBind}>
+        ) : changingBinding || (!lineSession.binding && lineSession.application.status !== "pending") ? (
+          <form onSubmit={handleApplication}>
             <div className="mb-3 flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-black text-penguin-gray">
@@ -384,30 +397,53 @@ export function CommunityOrdersClient() {
                 disabled={bindingBusy || !nickname.trim()}
                 className="h-12 shrink-0 rounded-full bg-penguin-pink-dark px-6 text-sm font-black text-white shadow-md transition hover:bg-penguin-pink disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {bindingBusy ? "綁定中..." : changingBinding ? "確認更換" : "綁定並查詢"}
+                {bindingBusy ? "送出中..." : "送出審核"}
               </button>
             </div>
           </form>
+        ) : !lineSession.binding && lineSession.application.status === "pending" ? (
+          <div className="text-center">
+            <p className="text-sm font-black text-penguin-gray">LINE 登入成功</p>
+            <p className="mt-2 text-lg font-black text-penguin-pink-dark">等待審核</p>
+            <p className="mt-1 text-sm font-bold text-gray-500">
+              申請暱稱：{lineSession.application.requestedNickname}
+            </p>
+            <p className="mt-2 text-xs font-bold text-gray-400">審核通過後才能使用這個暱稱查詢訂單。</p>
+          </div>
         ) : (
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-4">
             <div>
               <p className="text-xs font-bold text-gray-500">已綁定社群暱稱</p>
-              <p className="mt-0.5 text-lg font-black text-penguin-gray">
-                {loading ? "正在載入訂單..." : lineSession.binding.nickname}
-              </p>
+              <p className="mt-0.5 text-lg font-black text-penguin-gray">{lineSession.binding?.nickname}</p>
+              {lineSession.application.status === "pending" ? (
+                <p className="mt-1 text-xs font-bold text-amber-600">
+                  更換申請「{lineSession.application.requestedNickname}」等待審核
+                </p>
+              ) : null}
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setNickname(lineSession.binding?.nickname || "");
-                setChangingBinding(true);
-                setLineError("");
-              }}
-              className="inline-flex w-fit items-center justify-center gap-1.5 rounded-full border-2 border-penguin-peach bg-white px-4 py-2 text-xs font-black text-penguin-pink-dark transition hover:bg-penguin-pink-light"
-            >
-              <RefreshCw size={14} />
-              更換綁定暱稱
-            </button>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => lineSession.binding?.nickname && runSearch(lineSession.binding.nickname)}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-penguin-pink-dark px-6 text-sm font-black text-white transition hover:bg-penguin-pink disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Search size={16} />
+                {loading ? "查詢中..." : "查詢訂單"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setNickname(lineSession.application.requestedNickname || lineSession.binding?.nickname || "");
+                  setChangingBinding(true);
+                  setLineError("");
+                }}
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-full border-2 border-penguin-peach bg-white px-4 text-xs font-black text-penguin-pink-dark transition hover:bg-penguin-pink-light"
+              >
+                <RefreshCw size={14} />
+                更換綁定暱稱
+              </button>
+            </div>
           </div>
         )}
       </section>

@@ -12,13 +12,20 @@ function sameOrigin(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   const session = getCommunityLineSession(request);
-  if (!session) return NextResponse.json({ ok: true, authenticated: false, binding: null });
+  if (!session) {
+    return NextResponse.json({
+      ok: true,
+      authenticated: false,
+      binding: null,
+      application: { status: "not_requested", requestedNickname: "" },
+    });
+  }
 
   try {
     const service = createSupabaseServiceClient();
     const { data, error } = await service
       .from("community_line_bindings")
-      .select("nickname,updated_at")
+      .select("nickname,requested_nickname,review_status,approved_at,updated_at")
       .eq("line_user_id", session.lineUserId)
       .maybeSingle();
     if (error) throw error;
@@ -26,7 +33,17 @@ export async function GET(request: NextRequest) {
       ok: true,
       authenticated: true,
       displayName: session.displayName,
-      binding: data ? { nickname: String(data.nickname || ""), updatedAt: String(data.updated_at || "") } : null,
+      binding: data?.nickname
+        ? {
+            nickname: String(data.nickname),
+            approvedAt: String(data.approved_at || ""),
+          }
+        : null,
+      application: {
+        status: String(data?.review_status || "not_requested"),
+        requestedNickname: String(data?.requested_nickname || ""),
+        updatedAt: String(data?.updated_at || ""),
+      },
     });
   } catch {
     return NextResponse.json({ ok: false, error: "LINE 綁定資料讀取失敗，請稍後再試。" }, { status: 500 });
@@ -58,11 +75,23 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "找不到這個社群暱稱，請確認後再試。" }, { status: 404 });
     }
     const canonicalNickname = String((rows[0] as Record<string, unknown>).nickname || nickname).trim();
+    const { data: conflict, error: conflictError } = await service
+      .from("community_line_bindings")
+      .select("line_user_id")
+      .ilike("nickname", canonicalNickname)
+      .neq("line_user_id", session.lineUserId)
+      .limit(1)
+      .maybeSingle();
+    if (conflictError) throw conflictError;
+    if (conflict) {
+      return NextResponse.json({ ok: false, error: "這個社群暱稱已綁定其他 LINE 帳號。" }, { status: 409 });
+    }
     const { error } = await service.from("community_line_bindings").upsert(
       {
         line_user_id: session.lineUserId,
         line_display_name: session.displayName || null,
-        nickname: canonicalNickname,
+        requested_nickname: canonicalNickname,
+        review_status: "pending",
       },
       { onConflict: "line_user_id" },
     );
@@ -72,8 +101,11 @@ export async function PUT(request: NextRequest) {
       }
       throw error;
     }
-    return NextResponse.json({ ok: true, binding: { nickname: canonicalNickname } });
+    return NextResponse.json({
+      ok: true,
+      application: { status: "pending", requestedNickname: canonicalNickname },
+    });
   } catch {
-    return NextResponse.json({ ok: false, error: "綁定失敗，請稍後再試。" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "送出審核失敗，請稍後再試。" }, { status: 500 });
   }
 }

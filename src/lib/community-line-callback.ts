@@ -9,6 +9,7 @@ import {
   verifyCommunityLineState,
 } from "@/lib/community-line-auth";
 import { fetchLineProfile } from "@/lib/line/login";
+import { createSupabaseServiceClient } from "@/lib/supabase/service";
 
 function redirectHome(request: NextRequest, status: string) {
   return NextResponse.redirect(new URL(`/?line=${encodeURIComponent(status)}`, request.url));
@@ -27,6 +28,15 @@ export async function handleCommunityLineCallback(request: NextRequest) {
     const token = await exchangeCommunityLineCode(request.nextUrl.origin, code, verifiedState.codeVerifier);
     if (!token.access_token) throw new Error("missing access token");
     const profile = await fetchLineProfile(token.access_token);
+    const service = createSupabaseServiceClient();
+    const { error: bindingError } = await service.from("community_line_bindings").upsert(
+      {
+        line_user_id: profile.userId,
+        line_display_name: profile.displayName || null,
+      },
+      { onConflict: "line_user_id" },
+    );
+    if (bindingError) throw bindingError;
     const response = redirectHome(request, "authenticated");
     setCommunityLineSession(response, request, profile.userId, profile.displayName || "");
     return clearCommunityLineState(response, request);
