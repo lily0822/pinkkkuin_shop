@@ -20,14 +20,15 @@
 ## Existing accepted features
 
 - Nickname applications remain pending until backend approval; only approved nicknames can query orders.
-- `查詢訂單` remains separate from nickname submission.
+- Approval only depends on review state (`pending`) and nickname-conflict checks; it does not require the nickname to already have a community order. A nickname with zero orders can be approved and moves to the approved list immediately.
+- `查詢訂單` remains separate from nickname submission, and its own "查無訂單" message is unaffected by approval logic.
 - Community import, orders, remittance, and shipment flows remain unchanged.
-- Shared backend `社群名單` and module ordering remain owned and deployed by `official-next`.
+- Shared backend `社群名單` and module ordering remain owned and deployed by `official-next`; this branch's `/backend` is a separate deploy of the same route source, kept in sync for this feature only.
 
 ## Staging data
 
 - Community migrations through `202609210002_community_line_binding_reviews.sql` are applied to Staging.
-- This LINE redirect fix adds no migration and changes no environment or permissions.
+- The nickname-approval fix (commit `291b3ca`) adds no migration and changes no environment or permissions.
 
 ## Deployment rules
 
