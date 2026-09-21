@@ -42,3 +42,13 @@
 - Deploy this branch only to its Git Preview and `pinkkkuin-community-orders.vercel.app`.
 - Never update `pinkkkuin-staging.vercel.app` from this branch.
 - Never deploy Production without explicit approval.
+
+## Submodule safety rule (`.backend-product-publish`)
+
+- `git checkout <branch>` only updates the superproject's recorded submodule pointer; it does NOT update the submodule's actual checked-out files. Any branch that serves `/backend` reads live from `.backend-product-publish` at build time, so a stale checkout silently ships the wrong backend UI.
+- Never assume the submodule commit left in the working tree by a previous branch is correct for the branch you're now on.
+- Before any build or deploy that touches `/backend`, verify these two match:
+  1. The commit the current branch records for `.backend-product-publish` (`git ls-tree HEAD .backend-product-publish`).
+  2. The submodule's actual current HEAD (`git -C .backend-product-publish rev-parse HEAD`).
+- If they differ, sync first (`git submodule update --init .backend-product-publish`) and re-verify before building or deploying. Only proceed once they match.
+- Do not touch the local `backend-staging` branch inside `.backend-product-publish` — it has diverged locally. Keep working there in detached HEAD (the state `git submodule update` puts it in).
