@@ -63,19 +63,15 @@ async function validateNickname(
   lineUserId: string,
   nickname: string,
 ) {
-  const [{ data: orders, error: lookupError }, { data: conflict, error: conflictError }] = await Promise.all([
-    service.rpc("lookup_community_orders_by_nickname", { p_nickname: nickname }),
-    service
-      .from("community_line_bindings")
-      .select("id")
-      .ilike("nickname", nickname)
-      .neq("line_user_id", lineUserId)
-      .neq("id", id)
-      .limit(1)
-      .maybeSingle(),
-  ]);
-  if (lookupError || conflictError) throw lookupError || conflictError;
-  if (!Array.isArray(orders) || !orders.length) return "找不到這個社群暱稱的訂單。";
+  const { data: conflict, error: conflictError } = await service
+    .from("community_line_bindings")
+    .select("id")
+    .ilike("nickname", nickname)
+    .neq("line_user_id", lineUserId)
+    .neq("id", id)
+    .limit(1)
+    .maybeSingle();
+  if (conflictError) throw conflictError;
   if (conflict) return "這個社群暱稱已綁定其他 LINE 使用者。";
   return null;
 }
