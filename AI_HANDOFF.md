@@ -23,12 +23,13 @@
 - Approval only depends on review state (`pending`) and nickname-conflict checks; it does not require the nickname to already have a community order. A nickname with zero orders can be approved and moves to the approved list immediately.
 - `查詢訂單` remains separate from nickname submission, and its own "查無訂單" message is unaffected by approval logic.
 - Community import, orders, remittance, and shipment flows remain unchanged.
-- Shared backend `社群名單` and module ordering remain owned and deployed by `official-next`; this branch's `/backend` is a separate deploy of the same route source, kept in sync for this feature only.
+- Shared backend `社群名單` and module ordering remain owned and deployed by `official-next`. This branch's own `/backend` is NOT a test or admin entry point — it must never be treated as, aliased to, or reported as the Staging backend.
+- The nickname-approval order-lookup fix was applied identically on `official-next` (commit `80a6473`) and deployed to the real Staging backend, `https://pinkkkuin-staging.vercel.app/backend`. This branch also carries the same source fix (commit `291b3ca`) so the two stay in sync, but `official-next` is the branch of record for that endpoint.
 
 ## Staging data
 
 - Community migrations through `202609210002_community_line_binding_reviews.sql` are applied to Staging.
-- The nickname-approval fix (commit `291b3ca`) adds no migration and changes no environment or permissions.
+- The nickname-approval fix adds no migration and changes no environment or permissions.
 
 ## Deployment rules
 
