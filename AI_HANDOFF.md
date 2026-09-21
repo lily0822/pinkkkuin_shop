@@ -3,12 +3,14 @@
 ## 基準
 - Branch：`community-orders`
 - 最新狀態：LINE 會員登入與社群暱稱綁定已實作，實際 HEAD 請以 `git log -1` 為準。
-- Preview：https://pinkkkuin-shop-git-community-orders-lilys-projects-2a8e834c.vercel.app
+- Community alias：https://pinkkkuin-community-orders.vercel.app
+- Git Preview：https://pinkkkuin-shop-git-community-orders-lilys-projects-2a8e834c.vercel.app
 - Root `/` 是獨立社群訂單頁，沒有商城 header/footer/cart。
 - Production 未動，不可自動部署。
+- `pinkkkuin-staging.vercel.app` 永遠屬於 `official-next` 購物網站；`community-orders` 不得更新該 alias。
 
 ## 目前有效功能
-- LINE Login 使用既有 `LINE_LOGIN_*` Preview 設定與既有 `/api/member/line/callback` URL；callback 只在 `community.*` OAuth state 時分流，商城會員 LINE 綁定流程維持原狀。
+- LINE Login 共用既有 channel credentials，但社群固定使用 `https://pinkkkuin-community-orders.vercel.app/api/community/line/callback`；商城仍使用 `/api/member/line/callback`，兩套 redirect/token exchange 分開。
 - 首次登入：LINE 授權後輸入社群暱稱並綁定。
 - 再次登入：由簽章 HttpOnly cookie 辨識 LINE 使用者，自動載入已綁定暱稱的訂單。
 - 可更換綁定暱稱；新暱稱必須存在於社群訂單，且一個暱稱只能綁定一個 LINE 使用者。
@@ -24,7 +26,7 @@ Staging 已執行：
 - `202609180004_community_remittance_submissions.sql`
 - `202609180005_community_shipment_requests.sql`
 
-新增、尚待在 Staging SQL Editor 執行：
+Staging 亦已執行：
 - `202609210001_community_line_bindings.sql`
 
 該 migration 只新增 `public.community_line_bindings`，RLS 開啟；anon/authenticated 無權限，service_role 只有 SELECT/INSERT/UPDATE，沒有 DELETE。Production 不可執行。
@@ -35,12 +37,11 @@ Staging 已執行：
 - 未登入 `/api/community/orders`：401
 - 社群 OAuth invalid-state callback 分流：PASS
 - 375 / 1440px：無 horizontal overflow
-- 真實 LINE OAuth callback、首次綁定、自動載入、更換綁定：需先套用新 Staging migration，再由真人 LINE 帳號完成 Preview 驗收。
+- 真實 LINE OAuth callback、首次綁定、自動載入、更換綁定：需由真人 LINE 帳號在 Community alias 完成最終驗收。
 
 ## 下一步
-1. 只在 Staging Supabase SQL Editor 執行 `202609210001_community_line_bindings.sql`。
-2. 在 Preview 用真人 LINE 完成：首次登入 → 綁定測試暱稱 → 重新開啟自動載入 → 更換為另一個存在的測試暱稱。
-3. 驗收後更新本檔結果；不要觸碰 Production。
+1. 在 Community alias 用真人 LINE 完成：首次登入 → 回到社群訂單頁 → 綁定測試暱稱 → 重新開啟自動載入 → 更換為另一個存在的測試暱稱。
+2. 驗收後更新本檔結果；不要觸碰 official-next Staging alias 或 Production。
 
 ## 注意
 - `.backend-product-publish` 是獨立 backend repo，本輪未修改。

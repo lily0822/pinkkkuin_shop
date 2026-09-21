@@ -4,10 +4,11 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   clearCommunityLineState,
   COMMUNITY_LINE_STATE_COOKIE,
+  exchangeCommunityLineCode,
   setCommunityLineSession,
   verifyCommunityLineState,
 } from "@/lib/community-line-auth";
-import { exchangeLineCode, fetchLineProfile } from "@/lib/line/login";
+import { fetchLineProfile } from "@/lib/line/login";
 
 function redirectHome(request: NextRequest, status: string) {
   return NextResponse.redirect(new URL(`/?line=${encodeURIComponent(status)}`, request.url));
@@ -23,7 +24,7 @@ export async function handleCommunityLineCallback(request: NextRequest) {
   }
 
   try {
-    const token = await exchangeLineCode(request.nextUrl.origin, code, verifiedState.codeVerifier);
+    const token = await exchangeCommunityLineCode(request.nextUrl.origin, code, verifiedState.codeVerifier);
     if (!token.access_token) throw new Error("missing access token");
     const profile = await fetchLineProfile(token.access_token);
     const response = redirectHome(request, "authenticated");

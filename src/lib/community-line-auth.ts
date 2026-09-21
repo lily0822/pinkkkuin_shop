@@ -8,7 +8,10 @@ import { createSupabaseServiceClient } from "@/lib/supabase/service";
 export const COMMUNITY_LINE_STATE_COOKIE = "pinkkkuin_community_line_state";
 export const COMMUNITY_LINE_SESSION_COOKIE = "pinkkkuin_community_line_session";
 export const COMMUNITY_LINE_STATE_MAX_AGE = 10 * 60;
+export const COMMUNITY_LINE_ORIGIN = "https://pinkkkuin-community-orders.vercel.app";
+export const COMMUNITY_LINE_REDIRECT_URI = `${COMMUNITY_LINE_ORIGIN}/api/community/line/callback`;
 const COMMUNITY_LINE_SESSION_MAX_AGE = 30 * 24 * 60 * 60;
+const LINE_TOKEN_URL = "https://api.line.me/oauth2/v2.1/token";
 
 type CommunityLineState = {
   state: string;
@@ -84,13 +87,13 @@ export function isCommunityLineState(value: string) {
 
 export function buildCommunityLineAuthorizeUrl(origin: string, state: CommunityLineState) {
   const config = getLineLoginConfig(origin);
-  if (!config.channelId || !config.channelSecret || !config.redirectUri) {
+  if (!config.channelId || !config.channelSecret) {
     throw new Error("LINE Login is not configured.");
   }
   const params = new URLSearchParams({
     response_type: "code",
     client_id: config.channelId,
-    redirect_uri: config.redirectUri,
+    redirect_uri: COMMUNITY_LINE_REDIRECT_URI,
     state: state.state,
     scope: "profile openid",
     nonce: state.nonce,
@@ -98,6 +101,27 @@ export function buildCommunityLineAuthorizeUrl(origin: string, state: CommunityL
     code_challenge_method: "S256",
   });
   return `https://access.line.me/oauth2/v2.1/authorize?${params.toString()}`;
+}
+
+export async function exchangeCommunityLineCode(origin: string, code: string, codeVerifier: string) {
+  const config = getLineLoginConfig(origin);
+  if (!config.channelId || !config.channelSecret) {
+    throw new Error("LINE Login is not configured.");
+  }
+  const response = await fetch(LINE_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: COMMUNITY_LINE_REDIRECT_URI,
+      client_id: config.channelId,
+      client_secret: config.channelSecret,
+      code_verifier: codeVerifier,
+    }),
+  });
+  if (!response.ok) throw new Error("LINE Login token exchange failed.");
+  return (await response.json()) as { access_token?: string };
 }
 
 export function setCommunityLineSession(response: NextResponse, request: NextRequest, lineUserId: string, displayName: string) {

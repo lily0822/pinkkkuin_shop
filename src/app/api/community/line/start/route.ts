@@ -5,13 +5,14 @@ import {
   COMMUNITY_LINE_STATE_MAX_AGE,
   createCommunityLineState,
 } from "@/lib/community-line-auth";
-import { isLineLoginConfigured } from "@/lib/line/login";
+import { getLineLoginConfig } from "@/lib/line/login";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  if (!isLineLoginConfigured(request.nextUrl.origin)) {
+  const config = getLineLoginConfig(request.nextUrl.origin);
+  if (!config.channelId || !config.channelSecret) {
     return NextResponse.redirect(new URL("/?line=not-configured", request.url));
   }
 
