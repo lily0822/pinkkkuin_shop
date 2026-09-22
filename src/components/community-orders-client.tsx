@@ -44,6 +44,16 @@ type CommunityOrderRow = {
   paymentRemainingAmount: number;
   paymentOverpaidAmount: number;
   paymentHistory: CommunityPaymentHistory[];
+  shipmentLocked: boolean;
+  shipmentEligible: boolean;
+  shipmentAllBoughtArrived: boolean;
+  shipmentPaid: boolean;
+  shipmentRequestId: string;
+  shipmentRequestStatus: string;
+  shipmentMethod: string;
+  shipmentMarketplaceUrl: string;
+  shipmentMarketplaceOrderRef: string;
+  shipmentSubmittedAt: string;
   arrivalStatus: string;
   orderStage: string;
   itemId: string;
@@ -77,6 +87,16 @@ type CommunityOrderGroup = {
   paymentRemainingAmount: number;
   paymentOverpaidAmount: number;
   paymentHistory: CommunityPaymentHistory[];
+  shipmentLocked: boolean;
+  shipmentEligible: boolean;
+  shipmentAllBoughtArrived: boolean;
+  shipmentPaid: boolean;
+  shipmentRequestId: string;
+  shipmentRequestStatus: string;
+  shipmentMethod: string;
+  shipmentMarketplaceUrl: string;
+  shipmentMarketplaceOrderRef: string;
+  shipmentSubmittedAt: string;
   arrivalStatus: string;
   orderStage: string;
   groupTotal: number;
@@ -136,6 +156,16 @@ function groupRows(rows: CommunityOrderRow[]): CommunityOrderGroup[] {
         paymentRemainingAmount: row.paymentRemainingAmount,
         paymentOverpaidAmount: row.paymentOverpaidAmount,
         paymentHistory: row.paymentHistory || [],
+        shipmentLocked: row.shipmentLocked,
+        shipmentEligible: row.shipmentEligible,
+        shipmentAllBoughtArrived: row.shipmentAllBoughtArrived,
+        shipmentPaid: row.shipmentPaid,
+        shipmentRequestId: row.shipmentRequestId,
+        shipmentRequestStatus: row.shipmentRequestStatus,
+        shipmentMethod: row.shipmentMethod,
+        shipmentMarketplaceUrl: row.shipmentMarketplaceUrl,
+        shipmentMarketplaceOrderRef: row.shipmentMarketplaceOrderRef,
+        shipmentSubmittedAt: row.shipmentSubmittedAt,
         arrivalStatus: row.arrivalStatus,
         orderStage: row.orderStage,
         groupTotal: row.groupTotal,
@@ -201,6 +231,7 @@ function OrderCard({
           type="checkbox"
           checked={checked}
           onChange={(event) => onToggle(event.target.checked)}
+          disabled={group.shipmentLocked}
           className="mt-1 h-5 w-5 shrink-0 accent-penguin-pink-dark"
           aria-label={`選擇 ${group.notebookName}`}
         />
@@ -242,6 +273,23 @@ function OrderCard({
           <div className="mt-3">
             <GroupStatusBadges group={group} />
           </div>
+          {group.shipmentLocked ? (
+            <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-700">
+              <p className="font-black">已申請出貨 · {communityShipmentStatusLabel(group.shipmentRequestStatus)}</p>
+              {group.shipmentMarketplaceUrl ? (
+                <a
+                  href={group.shipmentMarketplaceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-1 inline-flex font-black text-penguin-pink-dark underline underline-offset-2"
+                >
+                  前往賣貨便填寫取貨資料
+                </a>
+              ) : (
+                <p className="mt-1">賣貨便建立中</p>
+              )}
+            </div>
+          ) : null}
           <NotebookPaymentPanel group={group} nickname={nickname} onSubmitted={onPaymentSubmitted} />
         </div>
       </div>
@@ -443,6 +491,15 @@ function formatCommunityPaymentTime(value: string) {
   }).format(date);
 }
 
+function communityShipmentStatusLabel(value: string) {
+  return {
+    pending: "待處理",
+    accepted: "已建立寄件／已受理",
+    completed: "已完成",
+    cancelled: "已取消",
+  }[value] || value || "處理中";
+}
+
 export function CommunityOrdersClient() {
   const [nickname, setNickname] = useState("");
   const [searchedNickname, setSearchedNickname] = useState("");
@@ -450,7 +507,7 @@ export function CommunityOrdersClient() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [shipBlocked, setShipBlocked] = useState<string[] | null>(null);
+  const [faceToFaceNotice, setFaceToFaceNotice] = useState(false);
   const [shipmentOpen, setShipmentOpen] = useState(false);
   const [lineSession, setLineSession] = useState<CommunityLineSession | null>(null);
   const [lineLoading, setLineLoading] = useState(true);
@@ -458,7 +515,8 @@ export function CommunityOrdersClient() {
   const [bindingBusy, setBindingBusy] = useState(false);
   const [changingBinding, setChangingBinding] = useState(false);
 
-  const allSelected = groups !== null && groups.length > 0 && groups.every((group) => selected.has(group.orderId));
+  const selectableGroups = useMemo(() => (groups || []).filter((group) => !group.shipmentLocked), [groups]);
+  const allSelected = selectableGroups.length > 0 && selectableGroups.every((group) => selected.has(group.orderId));
 
   const runSearch = useCallback(async (value: string) => {
     const trimmed = value.trim();
@@ -474,7 +532,6 @@ export function CommunityOrdersClient() {
       const rows = Array.isArray(result.rows) ? (result.rows as CommunityOrderRow[]) : [];
       setGroups(groupRows(rows));
       setSelected(new Set());
-      setShipBlocked(null);
       setSearchedNickname(trimmed);
     } catch (err) {
       setError(err instanceof Error ? err.message : "查詢失敗，請稍後再試。");
@@ -560,7 +617,7 @@ export function CommunityOrdersClient() {
   }
 
   function toggleGroup(orderId: string, checked: boolean) {
-    setShipBlocked(null);
+    setFaceToFaceNotice(false);
     setSelected((prev) => {
       const next = new Set(prev);
       if (checked) next.add(orderId);
@@ -570,9 +627,8 @@ export function CommunityOrdersClient() {
   }
 
   function toggleAll(checked: boolean) {
-    if (!groups) return;
-    setShipBlocked(null);
-    setSelected(checked ? new Set(groups.map((group) => group.orderId)) : new Set());
+    setFaceToFaceNotice(false);
+    setSelected(checked ? new Set(selectableGroups.map((group) => group.orderId)) : new Set());
   }
 
   const selectedGroups = useMemo(() => {
@@ -580,13 +636,14 @@ export function CommunityOrdersClient() {
     return groups.filter((group) => selected.has(group.orderId));
   }, [groups, selected]);
 
+  const selectedNotArrived = selectedGroups.filter((group) => !group.shipmentAllBoughtArrived);
+  const selectedHasUnpaid = selectedGroups.some((group) => !group.shipmentPaid);
+  const sevenElevenEnabled = selectedGroups.length > 0 && selectedGroups.every((group) => group.shipmentEligible);
+  const faceToFaceEnabled = selectedGroups.length > 0 && selectedNotArrived.length === 0;
+
   function handleShipClick() {
-    const blocked = selectedGroups.filter((group) => group.arrivalStatus !== "arrived_taiwan");
-    if (blocked.length > 0) {
-      setShipBlocked(blocked.map((group) => group.notebookName));
-      return;
-    }
-    setShipBlocked(null);
+    if (!sevenElevenEnabled) return;
+    setFaceToFaceNotice(false);
     setShipmentOpen(true);
   }
 
@@ -736,20 +793,34 @@ export function CommunityOrdersClient() {
               <div className="flex gap-2">
                 <button
                   type="button"
-                  disabled={selectedGroups.length === 0}
+                  disabled={!sevenElevenEnabled}
                   onClick={handleShipClick}
                   className="inline-flex items-center gap-1.5 rounded-full border-2 border-penguin-pink-dark px-4 py-2 text-xs font-black text-penguin-pink-dark shadow-sm transition hover:bg-penguin-pink-light disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <PackageCheck size={14} />
-                  我想出貨
+                  7-11 出貨
+                </button>
+                <button
+                  type="button"
+                  disabled={!faceToFaceEnabled}
+                  onClick={() => setFaceToFaceNotice(true)}
+                  className="inline-flex items-center gap-1.5 rounded-full border-2 border-gray-300 px-4 py-2 text-xs font-black text-penguin-gray shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  面交
                 </button>
               </div>
             </div>
 
-            {shipBlocked ? (
+            {selectedNotArrived.length > 0 ? (
               <div className="hidden sm:block sm:my-3">
-                <ShipBlockedNotice names={shipBlocked} onDismiss={() => setShipBlocked(null)} />
+                <ShipBlockedNotice names={selectedNotArrived.map((group) => group.notebookName)} onDismiss={() => setSelected(new Set())} />
               </div>
+            ) : null}
+            {selectedGroups.length > 0 && selectedNotArrived.length === 0 && selectedHasUnpaid ? (
+              <p className="my-3 hidden text-sm font-black text-red-600 sm:block">有商品未付款，無法申請出貨</p>
+            ) : null}
+            {faceToFaceNotice ? (
+              <p className="my-3 hidden text-sm font-bold text-gray-500 sm:block">面交功能將於下一階段開放。</p>
             ) : null}
 
             <div className="grid gap-3 sm:grid-cols-2">
@@ -792,20 +863,34 @@ export function CommunityOrdersClient() {
           <div className="mt-2">
             <button
               type="button"
-              disabled={selectedGroups.length === 0}
+              disabled={!sevenElevenEnabled}
               onClick={handleShipClick}
               className="inline-flex w-full items-center justify-center gap-1.5 rounded-full border-2 border-penguin-pink-dark px-4 py-2.5 text-xs font-black text-penguin-pink-dark shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50"
             >
               <PackageCheck size={14} />
-              我想出貨
+              7-11 出貨
             </button>
+            <button
+              type="button"
+              disabled={!faceToFaceEnabled}
+              onClick={() => setFaceToFaceNotice(true)}
+              className="mt-2 inline-flex w-full items-center justify-center rounded-full border-2 border-gray-300 px-4 py-2.5 text-xs font-black text-penguin-gray disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              面交
+            </button>
+            {selectedGroups.length > 0 && selectedNotArrived.length === 0 && selectedHasUnpaid ? (
+              <p className="mt-2 text-center text-xs font-black text-red-600">有商品未付款，無法申請出貨</p>
+            ) : null}
+            {faceToFaceNotice ? (
+              <p className="mt-2 text-center text-xs font-bold text-gray-500">面交功能將於下一階段開放。</p>
+            ) : null}
           </div>
         </div>
       ) : null}
 
-      {shipBlocked && groups && groups.length > 0 ? (
+      {selectedNotArrived.length > 0 && groups && groups.length > 0 ? (
         <div className="fixed inset-x-4 bottom-28 z-40 sm:hidden">
-          <ShipBlockedNotice names={shipBlocked} onDismiss={() => setShipBlocked(null)} />
+          <ShipBlockedNotice names={selectedNotArrived.map((group) => group.notebookName)} onDismiss={() => setSelected(new Set())} />
         </div>
       ) : null}
 
@@ -814,6 +899,7 @@ export function CommunityOrdersClient() {
           nickname={searchedNickname}
           groups={selectedGroups}
           onClose={() => setShipmentOpen(false)}
+          onSubmitted={() => runSearch(searchedNickname)}
         />
       ) : null}
     </main>
@@ -843,10 +929,12 @@ function ShipmentRequestModal({
   nickname,
   groups,
   onClose,
+  onSubmitted,
 }: {
   nickname: string;
   groups: CommunityOrderGroup[];
   onClose: () => void;
+  onSubmitted: () => Promise<void>;
 }) {
   const [recipientName, setRecipientName] = useState("");
   const [phone, setPhone] = useState("");
@@ -881,6 +969,7 @@ function ShipmentRequestModal({
       });
       const result = await response.json().catch(() => null);
       if (!response.ok || !result?.ok) throw new Error(result?.error || "送出失敗，請稍後再試。");
+      await onSubmitted();
       setSuccess(true);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "送出失敗，請稍後再試。");
@@ -918,7 +1007,7 @@ function ShipmentRequestModal({
                 <div key={group.orderId} className="text-xs font-bold text-penguin-gray">
                   <p className="truncate">{group.notebookName}</p>
                   <ul className="mt-0.5 space-y-0.5 pl-3 text-[11px] font-medium text-gray-500">
-                    {group.items.map((item) => (
+                    {group.items.filter((item) => item.purchaseStatus === "bought").map((item) => (
                       <li key={item.itemId} className="truncate">
                         {item.productName}
                         {item.variantSpec ? `（${item.variantSpec}）` : ""} × {item.quantity}

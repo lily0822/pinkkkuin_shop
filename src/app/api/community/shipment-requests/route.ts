@@ -33,6 +33,9 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 function friendlyError(message: string) {
   if (message.includes("not_all_arrived")) return "所選系列中有商品尚未到貨，請重新確認。";
+  if (message.includes("not_all_paid")) return "有商品未付款，無法申請出貨";
+  if (message.includes("shipment_already_requested")) return "所選記事本已有出貨申請，請重新整理後再試。";
+  if (message.includes("no_bought_items")) return "所選記事本沒有可出貨的商品。";
   if (message.includes("order_nickname_mismatch")) return "訂單資料有誤，請重新查詢後再試。";
   return "送出失敗，請稍後再試。";
 }
