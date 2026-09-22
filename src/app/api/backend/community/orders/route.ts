@@ -168,3 +168,34 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "社群訂單更新失敗，請稍後再試。" }, { status: 500 });
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  const guard = await guardBackendRequest(request, true);
+  if (guard) return guard;
+  const rateLimit = await rateLimitResponse(request, "backend_community_orders_delete", 30);
+  if (rateLimit) return rateLimit;
+
+  let body: { orderId?: unknown };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ ok: false, error: "請提供正確的訂單資料。" }, { status: 400 });
+  }
+
+  const orderId = typeof body.orderId === "string" ? body.orderId.trim() : "";
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(orderId)) {
+    return NextResponse.json({ ok: false, error: "請提供正確的訂單資料。" }, { status: 400 });
+  }
+
+  try {
+    const supabase = createSupabaseServiceClient();
+    const { data, error } = await supabase.rpc("delete_community_order", { p_order_id: orderId });
+    if (error) throw error;
+    if (data !== true) {
+      return NextResponse.json({ ok: false, error: "找不到這筆社群訂單。" }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json({ ok: false, error: "社群訂單刪除失敗，請稍後再試。" }, { status: 500 });
+  }
+}
