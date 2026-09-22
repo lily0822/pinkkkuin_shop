@@ -54,6 +54,12 @@ type CommunityOrderRow = {
   shipmentMarketplaceUrl: string;
   shipmentMarketplaceOrderRef: string;
   shipmentSubmittedAt: string;
+  meetupEligible: boolean;
+  meetupPaymentMethod: string;
+  meetupDate: string;
+  meetupStartTime: string;
+  meetupEndTime: string;
+  meetupLocation: string;
   arrivalStatus: string;
   orderStage: string;
   itemId: string;
@@ -97,6 +103,12 @@ type CommunityOrderGroup = {
   shipmentMarketplaceUrl: string;
   shipmentMarketplaceOrderRef: string;
   shipmentSubmittedAt: string;
+  meetupEligible: boolean;
+  meetupPaymentMethod: string;
+  meetupDate: string;
+  meetupStartTime: string;
+  meetupEndTime: string;
+  meetupLocation: string;
   arrivalStatus: string;
   orderStage: string;
   groupTotal: number;
@@ -166,6 +178,12 @@ function groupRows(rows: CommunityOrderRow[]): CommunityOrderGroup[] {
         shipmentMarketplaceUrl: row.shipmentMarketplaceUrl,
         shipmentMarketplaceOrderRef: row.shipmentMarketplaceOrderRef,
         shipmentSubmittedAt: row.shipmentSubmittedAt,
+        meetupEligible: row.meetupEligible,
+        meetupPaymentMethod: row.meetupPaymentMethod,
+        meetupDate: row.meetupDate,
+        meetupStartTime: row.meetupStartTime,
+        meetupEndTime: row.meetupEndTime,
+        meetupLocation: row.meetupLocation,
         arrivalStatus: row.arrivalStatus,
         orderStage: row.orderStage,
         groupTotal: row.groupTotal,
@@ -231,7 +249,7 @@ function OrderCard({
           type="checkbox"
           checked={checked}
           onChange={(event) => onToggle(event.target.checked)}
-          disabled={group.shipmentLocked}
+          disabled={group.shipmentLocked || !group.shipmentAllBoughtArrived}
           className="mt-1 h-5 w-5 shrink-0 accent-penguin-pink-dark"
           aria-label={`選擇 ${group.notebookName}`}
         />
@@ -275,8 +293,15 @@ function OrderCard({
           </div>
           {group.shipmentLocked ? (
             <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-700">
-              <p className="font-black">已申請出貨 · {communityShipmentStatusLabel(group.shipmentRequestStatus)}</p>
-              {group.shipmentMarketplaceUrl ? (
+              <p className="font-black">
+                {group.shipmentMethod === "face_to_face" ? "已預約面交" : "已申請出貨"} · {communityShipmentStatusLabel(group.shipmentRequestStatus)}
+              </p>
+              {group.shipmentMethod === "face_to_face" ? (
+                <p className="mt-1">
+                  {group.meetupDate} {group.meetupStartTime.slice(0, 5)}～{group.meetupEndTime.slice(0, 5)} · {group.meetupLocation}
+                  <br />{group.meetupPaymentMethod === "pay_at_meetup" ? "面交付款" : "先匯款"}
+                </p>
+              ) : group.shipmentMarketplaceUrl ? (
                 <a
                   href={group.shipmentMarketplaceUrl}
                   target="_blank"
@@ -465,6 +490,7 @@ function NotebookPaymentPanel({
 }
 
 function communityPaymentBankLabel(value: string) {
+  if (value === "meetup") return "面交付款";
   return PAYMENT_BANK_OPTIONS.find((option) => option.value === value)?.label || value;
 }
 
@@ -495,6 +521,7 @@ function communityShipmentStatusLabel(value: string) {
   return {
     pending: "待處理",
     accepted: "已建立寄件／已受理",
+    confirmed: "已確認",
     completed: "已完成",
     cancelled: "已取消",
   }[value] || value || "處理中";
@@ -507,15 +534,18 @@ export function CommunityOrdersClient() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [faceToFaceNotice, setFaceToFaceNotice] = useState(false);
   const [shipmentOpen, setShipmentOpen] = useState(false);
+  const [meetupOpen, setMeetupOpen] = useState(false);
   const [lineSession, setLineSession] = useState<CommunityLineSession | null>(null);
   const [lineLoading, setLineLoading] = useState(true);
   const [lineError, setLineError] = useState("");
   const [bindingBusy, setBindingBusy] = useState(false);
   const [changingBinding, setChangingBinding] = useState(false);
 
-  const selectableGroups = useMemo(() => (groups || []).filter((group) => !group.shipmentLocked), [groups]);
+  const selectableGroups = useMemo(
+    () => (groups || []).filter((group) => !group.shipmentLocked && group.shipmentAllBoughtArrived),
+    [groups],
+  );
   const allSelected = selectableGroups.length > 0 && selectableGroups.every((group) => selected.has(group.orderId));
 
   const runSearch = useCallback(async (value: string) => {
@@ -617,7 +647,6 @@ export function CommunityOrdersClient() {
   }
 
   function toggleGroup(orderId: string, checked: boolean) {
-    setFaceToFaceNotice(false);
     setSelected((prev) => {
       const next = new Set(prev);
       if (checked) next.add(orderId);
@@ -627,7 +656,6 @@ export function CommunityOrdersClient() {
   }
 
   function toggleAll(checked: boolean) {
-    setFaceToFaceNotice(false);
     setSelected(checked ? new Set(selectableGroups.map((group) => group.orderId)) : new Set());
   }
 
@@ -639,12 +667,16 @@ export function CommunityOrdersClient() {
   const selectedNotArrived = selectedGroups.filter((group) => !group.shipmentAllBoughtArrived);
   const selectedHasUnpaid = selectedGroups.some((group) => !group.shipmentPaid);
   const sevenElevenEnabled = selectedGroups.length > 0 && selectedGroups.every((group) => group.shipmentEligible);
-  const faceToFaceEnabled = selectedGroups.length > 0 && selectedNotArrived.length === 0;
+  const faceToFaceEnabled = selectedGroups.length > 0 && selectedGroups.every((group) => group.meetupEligible);
 
   function handleShipClick() {
     if (!sevenElevenEnabled) return;
-    setFaceToFaceNotice(false);
     setShipmentOpen(true);
+  }
+
+  function handleMeetupClick() {
+    if (!faceToFaceEnabled) return;
+    setMeetupOpen(true);
   }
 
   return (
@@ -803,7 +835,7 @@ export function CommunityOrdersClient() {
                 <button
                   type="button"
                   disabled={!faceToFaceEnabled}
-                  onClick={() => setFaceToFaceNotice(true)}
+                  onClick={handleMeetupClick}
                   className="inline-flex items-center gap-1.5 rounded-full border-2 border-gray-300 px-4 py-2 text-xs font-black text-penguin-gray shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   面交
@@ -818,9 +850,6 @@ export function CommunityOrdersClient() {
             ) : null}
             {selectedGroups.length > 0 && selectedNotArrived.length === 0 && selectedHasUnpaid ? (
               <p className="my-3 hidden text-sm font-black text-red-600 sm:block">有商品未付款，無法申請出貨</p>
-            ) : null}
-            {faceToFaceNotice ? (
-              <p className="my-3 hidden text-sm font-bold text-gray-500 sm:block">面交功能將於下一階段開放。</p>
             ) : null}
 
             <div className="grid gap-3 sm:grid-cols-2">
@@ -873,16 +902,13 @@ export function CommunityOrdersClient() {
             <button
               type="button"
               disabled={!faceToFaceEnabled}
-              onClick={() => setFaceToFaceNotice(true)}
+              onClick={handleMeetupClick}
               className="mt-2 inline-flex w-full items-center justify-center rounded-full border-2 border-gray-300 px-4 py-2.5 text-xs font-black text-penguin-gray disabled:cursor-not-allowed disabled:opacity-50"
             >
               面交
             </button>
             {selectedGroups.length > 0 && selectedNotArrived.length === 0 && selectedHasUnpaid ? (
               <p className="mt-2 text-center text-xs font-black text-red-600">有商品未付款，無法申請出貨</p>
-            ) : null}
-            {faceToFaceNotice ? (
-              <p className="mt-2 text-center text-xs font-bold text-gray-500">面交功能將於下一階段開放。</p>
             ) : null}
           </div>
         </div>
@@ -899,6 +925,13 @@ export function CommunityOrdersClient() {
           nickname={searchedNickname}
           groups={selectedGroups}
           onClose={() => setShipmentOpen(false)}
+          onSubmitted={() => runSearch(searchedNickname)}
+        />
+      ) : null}
+      {meetupOpen ? (
+        <MeetupRequestModal
+          groups={selectedGroups}
+          onClose={() => setMeetupOpen(false)}
           onSubmitted={() => runSearch(searchedNickname)}
         />
       ) : null}
@@ -1059,6 +1092,91 @@ function ShipmentRequestModal({
               </button>
             </form>
           </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type MeetupSlot = { id: string; date: string; startTime: string; endTime: string; location: string };
+
+function MeetupRequestModal({ groups, onClose, onSubmitted }: {
+  groups: CommunityOrderGroup[];
+  onClose: () => void;
+  onSubmitted: () => Promise<void>;
+}) {
+  const [slots, setSlots] = useState<MeetupSlot[]>([]);
+  const [slotId, setSlotId] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"prepaid" | "pay_at_meetup">("prepaid");
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/community/meetup-requests", { cache: "no-store" })
+      .then(async (response) => {
+        const result = await response.json().catch(() => null);
+        if (!response.ok || !result?.ok) throw new Error(result?.error || "面交時段讀取失敗。");
+        if (active) {
+          const next = Array.isArray(result.slots) ? result.slots : [];
+          setSlots(next);
+          setSlotId(next[0]?.id || "");
+        }
+      })
+      .catch((reason) => active && setError(reason instanceof Error ? reason.message : "面交時段讀取失敗。"))
+      .finally(() => active && setLoading(false));
+    return () => { active = false; };
+  }, []);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!slotId || submitting) return;
+    setSubmitting(true); setError("");
+    try {
+      const response = await fetch("/api/community/meetup-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderIds: groups.map((group) => group.orderId), slotId, paymentMethod }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.ok) throw new Error(result?.error || "面交預約送出失敗。");
+      await onSubmitted();
+      onClose();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "面交預約送出失敗。");
+    } finally { setSubmitting(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-penguin-gray/40 sm:items-center" role="dialog" aria-modal="true">
+      <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-t-3xl border-2 border-penguin-peach bg-white p-5 shadow-2xl sm:rounded-3xl">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-black text-penguin-gray">預約面交</h2>
+          <button type="button" onClick={onClose} aria-label="關閉"><X size={20} /></button>
+        </div>
+        <div className="mb-4 rounded-2xl bg-penguin-cream/60 p-3 text-xs font-bold text-penguin-gray">
+          {groups.map((group) => <p key={group.orderId}>{group.notebookName}</p>)}
+        </div>
+        {loading ? <p className="text-sm font-bold text-gray-500">讀取面交時段中...</p> : (
+          <form onSubmit={submit} className="space-y-4">
+            <div>
+              <label className="mb-1 block text-xs font-black text-penguin-gray">面交時段</label>
+              <select value={slotId} onChange={(event) => setSlotId(event.target.value)} className="w-full rounded-xl border-2 border-penguin-peach p-3 text-sm font-bold text-penguin-gray">
+                {slots.length ? slots.map((slot) => <option key={slot.id} value={slot.id}>{slot.date} {slot.startTime}～{slot.endTime}｜{slot.location}</option>) : <option value="">目前沒有開放時段</option>}
+              </select>
+            </div>
+            <fieldset>
+              <legend className="mb-2 text-xs font-black text-penguin-gray">付款方式</legend>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => setPaymentMethod("prepaid")} className={`rounded-xl border-2 p-3 text-sm font-black ${paymentMethod === "prepaid" ? "border-penguin-pink-dark bg-penguin-pink-light" : "border-gray-200"}`}>先匯款</button>
+                <button type="button" onClick={() => setPaymentMethod("pay_at_meetup")} className={`rounded-xl border-2 p-3 text-sm font-black ${paymentMethod === "pay_at_meetup" ? "border-penguin-pink-dark bg-penguin-pink-light" : "border-gray-200"}`}>面交付款</button>
+              </div>
+            </fieldset>
+            {paymentMethod === "prepaid" ? <p className="text-xs font-bold text-gray-500">請沿用記事本內的付款功能完成匯款。</p> : <p className="text-xs font-black text-penguin-pink-dark">本次選擇：面交付款</p>}
+            {error ? <p className="text-xs font-bold text-red-500">{error}</p> : null}
+            <button type="submit" disabled={!slotId || submitting} className="w-full rounded-full bg-penguin-pink-dark px-4 py-3 text-sm font-black text-white disabled:opacity-50">{submitting ? "送出中..." : "送出面交預約"}</button>
+          </form>
         )}
       </div>
     </div>
