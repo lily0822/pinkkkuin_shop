@@ -8,29 +8,22 @@
 - Community frontend: `https://pinkkkuin-community-orders.vercel.app`
 - Production: `https://pinkkkuin-shop.vercel.app` — never deploy without explicit approval.
 
-## Community notebook and item status
+## Community orders
 
-- Shared backend source commit: `5a134b7` on `backend-staging`.
-- Shared API/migration feature commit: `e3434b8` on `official-next`.
-- Migration `202609220002_community_notebook_item_statuses.sql` is applied to Staging only.
-- `community_order_items.purchase_status` supports `bought` and `not_bought`.
-- `community_order_items.arrival_status` supports `not_arrived`, `arrived`, and `exception`.
-- Existing rows default to `bought` / `not_arrived`; no existing item was deleted.
-- Backend `社群訂單` includes notebook summaries and `整本設為已到貨`.
-- Whole-notebook arrival updates bought items only. Not-bought items remain unchanged.
-- Each item keeps independent purchase and arrival controls, including manual exception or not-arrived overrides after a notebook-wide update.
-- Existing payment, remittance, shipment, face-to-face, safe item deletion, and final-item order deletion flows remain unchanged.
-- Public/backend order APIs enrich existing RPC results with item statuses and a bought-only notebook total without changing legacy RPC signatures.
-
-## Staging data
-
-- Community migrations through `202609220002_community_notebook_item_statuses.sql` are applied to Staging.
-- These community migrations are not applied to Production.
+- Backend source commit: `5466240` on `backend-staging`.
+- Basic payment API/migration feature commit: `40eb180` on `official-next`.
+- Community frontend payment feature commit: `459f60f` on `community-orders`.
+- Staging migrations are applied through `202609220003_community_basic_payment_review.sql`; none of these community migrations are applied to Production.
+- Orders remain grouped by customer and notebook. `bought` items count toward the notebook payable total; `not_bought` items remain visible and are excluded.
+- Basic payment statuses are `unpaid`, `pending`, `approved`, and `rejected`.
+- Each submission is append-only. A rejected payment can be resubmitted as a new record; the rejected record is retained.
+- Backend payment review supports approval and rejection with a required reason. Approval marks the related notebook order paid; rejection restores it to unpaid.
+- Existing notebook grouping, purchase/arrival statuses, whole-notebook arrival, per-item exceptions, and safe item/order deletion remain in place.
 
 ## Deployment rules
 
 - `pinkkkuin-staging.vercel.app` belongs only to `official-next`.
-- `community-orders` must use `pinkkkuin-community-orders.vercel.app` and must never update the storefront Staging alias.
+- `community-orders` uses `pinkkkuin-community-orders.vercel.app` and must never update the storefront Staging alias.
 - Production and Production aliases remain untouched unless explicitly approved.
 
 ## Backend submodule safety
