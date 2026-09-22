@@ -1,26 +1,26 @@
-# AI Handoff — community-orders
+﻿# AI Handoff — community-orders
 
 ## Current baseline
 
-- Branch: `community-orders`
-- Community test frontend: `https://pinkkkuin-community-orders.vercel.app`
+- Branch: `community-orders`.
+- Community test frontend: `https://pinkkkuin-community-orders.vercel.app`.
 - Shared Staging backend: `https://pinkkkuin-staging.vercel.app/backend`, owned by `official-next`.
 - `pinkkkuin-staging.vercel.app` must never be updated from this branch.
 - Production must never be deployed without explicit approval.
 
-## Community payment flow
+## Community order flow
 
-- Backend source commit: `cb49a92` on `backend-staging`.
-- Shared API/migration feature commit: `dcbbb7f` on `official-next`.
-- Community frontend feature commit: `ce5af7e`.
-- Staging migrations are applied through `202609220004_community_payment_accumulation_refunds.sql`; none are applied to Production.
-- One customer × one notebook is one payment unit; `not_bought` items are excluded from the payable total.
-- The frontend shows payable total, cumulative received, remaining top-up, overpaid amount, and every payment/refund record with status and time.
-- Underpayment becomes `topup_required` and accepts a new append-only submission.
-- Exact cumulative payment becomes `approved` after backend review.
-- Overpayment becomes `overpaid_pending_refund`; backend refund completion adds a separate refund record and becomes `refund_completed`.
-- Rejected submissions keep their reason and can be resubmitted without overwriting history.
-- Existing LINE binding, notebook grouping, item purchase/arrival states, shipment flow, and safe deletion remain unchanged.
+- Backend source: `681b30a` on `backend-staging`.
+- Shared shipment API/migration feature: `6c3957a` on `official-next`.
+- Community shipment frontend feature: `4d3064d`.
+- Staging migrations are applied through `202609220005_community_seven_eleven_shipments.sql`; none are applied to Production.
+- One customer × one notebook remains the payment unit. `not_bought` items remain visible and are excluded from payable and shipment-arrival checks.
+- Payment supports unpaid, pending review, rejection, top-up, paid, overpaid pending refund, and refund completed with append-only payment/refund history.
+- Customers may select multiple eligible notebooks for one 7-11 request. Every selected notebook must be paid and all `bought` items must be arrived.
+- Submitted, accepted, and completed requests lock included notebooks. Cancelled requests release the lock.
+- The frontend displays `已申請出貨` and the request status. It shows `賣貨便建立中` until a URL exists, then displays `前往賣貨便填寫取貨資料`.
+- Face-to-face remains a reserved button/state only; no scheduling or location workflow is implemented.
+- Existing LINE binding, notebook grouping, purchase/arrival states, payment/refund history, and safe deletion remain unchanged.
 
 ## Deployment rules
 
