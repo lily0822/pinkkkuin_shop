@@ -31,6 +31,7 @@ async function rateLimited(request: NextRequest) {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LAST5_RE = /^[0-9]{5}$/;
+const ALLOWED_BANKS = new Set(["ctbc", "cathay", "fubon"]);
 
 export async function POST(request: NextRequest) {
   const binding = await getCommunityLineBinding(request);
@@ -55,7 +56,7 @@ export async function POST(request: NextRequest) {
     ? body.orderIds.filter((id): id is string => typeof id === "string" && UUID_RE.test(id))
     : [];
 
-  if (!bank || !LAST5_RE.test(accountLast5) || !orderIds.length || !Number.isFinite(amount) || amount <= 0) {
+  if (!ALLOWED_BANKS.has(bank) || !LAST5_RE.test(accountLast5) || orderIds.length !== 1 || !Number.isFinite(amount) || amount <= 0) {
     return NextResponse.json({ ok: false, error: "請確認匯款資料是否正確。" }, { status: 400 });
   }
 

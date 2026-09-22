@@ -1,13 +1,21 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Link2, Search, Wallet, PackageCheck, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, Link2, Search, PackageCheck, RefreshCw, X } from "lucide-react";
 import { formatPrice } from "@/lib/products";
 
 type CommunityOrderRow = {
   orderId: string;
   notebookName: string;
   paymentStatus: string;
+  paymentSubmissionId: string;
+  paymentReviewStatus: "unpaid" | "pending" | "approved" | "rejected";
+  paymentRejectionReason: string;
+  paymentBank: string;
+  paymentAccountLast5: string;
+  paymentSubmittedAmount: number;
+  paymentExpectedAmount: number;
+  paymentSubmittedAt: string;
   arrivalStatus: string;
   orderStage: string;
   itemId: string;
@@ -29,6 +37,14 @@ type CommunityOrderGroup = {
   orderId: string;
   notebookName: string;
   paymentStatus: string;
+  paymentSubmissionId: string;
+  paymentReviewStatus: "unpaid" | "pending" | "approved" | "rejected";
+  paymentRejectionReason: string;
+  paymentBank: string;
+  paymentAccountLast5: string;
+  paymentSubmittedAmount: number;
+  paymentExpectedAmount: number;
+  paymentSubmittedAt: string;
   arrivalStatus: string;
   orderStage: string;
   groupTotal: number;
@@ -48,12 +64,6 @@ type CommunityLineSession = {
   };
 };
 
-const PAYMENT_STATUS_LABEL: Record<string, string> = {
-  unpaid: "待匯款",
-  paid: "已匯款",
-  in_person: "面交付",
-};
-
 const ARRIVAL_STATUS_LABEL: Record<string, string> = {
   not_shipped: "未出貨",
   shipped_japan: "日本出貨",
@@ -66,7 +76,11 @@ const ORDER_STAGE_LABEL: Record<string, string> = {
   in_person: "面交",
 };
 
-const BANK_OPTIONS = ["國泰世華銀行", "台新銀行", "玉山銀行", "中國信託銀行", "郵局"];
+const PAYMENT_BANK_OPTIONS = [
+  { value: "ctbc", label: "中信", logo: "中" },
+  { value: "cathay", label: "國泰", logo: "國" },
+  { value: "fubon", label: "富邦", logo: "富" },
+];
 
 function groupRows(rows: CommunityOrderRow[]): CommunityOrderGroup[] {
   const groups: CommunityOrderGroup[] = [];
@@ -78,6 +92,14 @@ function groupRows(rows: CommunityOrderRow[]): CommunityOrderGroup[] {
         orderId: row.orderId,
         notebookName: row.notebookName,
         paymentStatus: row.paymentStatus,
+        paymentSubmissionId: row.paymentSubmissionId,
+        paymentReviewStatus: row.paymentReviewStatus,
+        paymentRejectionReason: row.paymentRejectionReason,
+        paymentBank: row.paymentBank,
+        paymentAccountLast5: row.paymentAccountLast5,
+        paymentSubmittedAmount: row.paymentSubmittedAmount,
+        paymentExpectedAmount: row.paymentExpectedAmount,
+        paymentSubmittedAt: row.paymentSubmittedAt,
         arrivalStatus: row.arrivalStatus,
         orderStage: row.orderStage,
         groupTotal: row.groupTotal,
@@ -114,11 +136,9 @@ function StatusBadge({ label, tone }: { label: string; tone: "gray" | "amber" | 
 function GroupStatusBadges({ group }: { group: CommunityOrderGroup }) {
   const snipe = snipeSummary(group.items);
   const arrivalTone = group.arrivalStatus === "arrived_taiwan" ? "green" : "gray";
-  const paymentTone = group.paymentStatus === "paid" ? "green" : group.paymentStatus === "in_person" ? "blue" : "amber";
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <StatusBadge label={`搶購 ${snipe.label}`} tone={snipe.tone} />
-      <StatusBadge label={`匯款 ${PAYMENT_STATUS_LABEL[group.paymentStatus] || group.paymentStatus}`} tone={paymentTone} />
       <StatusBadge label={`到貨 ${ARRIVAL_STATUS_LABEL[group.arrivalStatus] || group.arrivalStatus}`} tone={arrivalTone} />
       <StatusBadge label={`下單 ${ORDER_STAGE_LABEL[group.orderStage] || group.orderStage}`} tone="purple" />
     </div>
@@ -129,10 +149,14 @@ function OrderCard({
   group,
   checked,
   onToggle,
+  nickname,
+  onPaymentSubmitted,
 }: {
   group: CommunityOrderGroup;
   checked: boolean;
   onToggle: (checked: boolean) => void;
+  nickname: string;
+  onPaymentSubmitted: () => Promise<void>;
 }) {
   return (
     <article className="rounded-2xl border-2 border-penguin-peach bg-white p-4 shadow-sm sm:p-5">
@@ -178,17 +202,128 @@ function OrderCard({
               <span>有買到商品合計</span>
               <span className="tabular-nums">{formatPrice(group.boughtTotal)}</span>
             </div>
-            <div className="flex items-center justify-between font-black text-penguin-pink-dark">
-              <span>匯款金額</span>
-              <span className="tabular-nums">{formatPrice(group.remitAmount)}</span>
-            </div>
           </div>
           <div className="mt-3">
             <GroupStatusBadges group={group} />
           </div>
+          <NotebookPaymentPanel group={group} nickname={nickname} onSubmitted={onPaymentSubmitted} />
         </div>
       </div>
     </article>
+  );
+}
+
+function NotebookPaymentPanel({
+  group,
+  nickname,
+  onSubmitted,
+}: {
+  group: CommunityOrderGroup;
+  nickname: string;
+  onSubmitted: () => Promise<void>;
+}) {
+  const [bank, setBank] = useState("ctbc");
+  const [amount, setAmount] = useState(String(group.boughtTotal));
+  const [last5, setLast5] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const status = group.paymentReviewStatus || "unpaid";
+  const canSubmit = (status === "unpaid" || status === "rejected") && group.boughtTotal > 0;
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const amountNumber = Number(amount);
+    if (!canSubmit || submitting || !Number.isFinite(amountNumber) || amountNumber <= 0 || !/^\d{5}$/.test(last5)) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      const response = await fetch("/api/community/remittances", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nickname, orderIds: [group.orderId], bank, accountLast5: last5, amount: amountNumber }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.ok) throw new Error(result?.error || "付款資料送出失敗，請稍後再試。");
+      await onSubmitted();
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "付款資料送出失敗，請稍後再試。");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-2xl border border-penguin-peach bg-penguin-cream/45 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-black text-penguin-gray">應付總額</span>
+        <span className="text-base font-black tabular-nums text-penguin-pink-dark">{formatPrice(group.boughtTotal)}</span>
+      </div>
+
+      {status === "pending" ? (
+        <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-black text-amber-700">付款資料已送出，等待審核</div>
+      ) : status === "approved" ? (
+        <div className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700">付款已核准</div>
+      ) : group.boughtTotal <= 0 ? (
+        <p className="mt-3 text-xs font-bold text-gray-500">目前沒有需要付款的商品。</p>
+      ) : (
+        <form onSubmit={handleSubmit} className="mt-3 space-y-3">
+          {status === "rejected" ? (
+            <div className="rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-600">
+              <p className="font-black">審核退回</p>
+              <p className="mt-0.5">原因：{group.paymentRejectionReason || "請重新確認付款資料。"}</p>
+            </div>
+          ) : null}
+          <div>
+            <p className="mb-1.5 text-xs font-black text-penguin-gray">選擇匯款銀行</p>
+            <div className="grid grid-cols-3 gap-2">
+              {PAYMENT_BANK_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setBank(option.value)}
+                  className={`flex min-w-0 items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2 text-xs font-black transition ${bank === option.value ? "border-penguin-pink-dark bg-penguin-pink-light text-penguin-pink-dark" : "border-penguin-peach bg-white text-penguin-gray"}`}
+                >
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white text-[10px] shadow-sm" aria-hidden="true">{option.logo}</span>
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="text-xs font-black text-penguin-gray">
+              實際匯款金額
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
+                className="mt-1 h-10 w-full rounded-xl border-2 border-penguin-peach bg-white px-3 text-sm font-bold tabular-nums outline-none focus:border-penguin-pink-dark"
+              />
+            </label>
+            <label className="text-xs font-black text-penguin-gray">
+              匯款後 5 碼
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={5}
+                value={last5}
+                onChange={(event) => setLast5(event.target.value.replace(/\D/g, "").slice(0, 5))}
+                className="mt-1 h-10 w-full rounded-xl border-2 border-penguin-peach bg-white px-3 text-sm font-bold tabular-nums outline-none focus:border-penguin-pink-dark"
+              />
+            </label>
+          </div>
+          {error ? <p className="text-xs font-bold text-red-500">{error}</p> : null}
+          <button
+            type="submit"
+            disabled={submitting || !/^\d{5}$/.test(last5) || !Number.isFinite(Number(amount)) || Number(amount) <= 0}
+            className="w-full rounded-full bg-penguin-pink-dark px-4 py-2.5 text-sm font-black text-white transition hover:bg-penguin-pink disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {submitting ? "送出中..." : status === "rejected" ? "重新送出付款資料" : "送出付款資料"}
+          </button>
+        </form>
+      )}
+    </div>
   );
 }
 
@@ -200,7 +335,6 @@ export function CommunityOrdersClient() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [shipBlocked, setShipBlocked] = useState<string[] | null>(null);
-  const [remittanceOpen, setRemittanceOpen] = useState(false);
   const [shipmentOpen, setShipmentOpen] = useState(false);
   const [lineSession, setLineSession] = useState<CommunityLineSession | null>(null);
   const [lineLoading, setLineLoading] = useState(true);
@@ -330,11 +464,6 @@ export function CommunityOrdersClient() {
     return groups.filter((group) => selected.has(group.orderId));
   }, [groups, selected]);
 
-  const selectedRemitTotal = useMemo(
-    () => selectedGroups.reduce((sum, group) => sum + group.remitAmount, 0),
-    [selectedGroups],
-  );
-
   function handleShipClick() {
     const blocked = selectedGroups.filter((group) => group.arrivalStatus !== "arrived_taiwan");
     if (blocked.length > 0) {
@@ -343,11 +472,6 @@ export function CommunityOrdersClient() {
     }
     setShipBlocked(null);
     setShipmentOpen(true);
-  }
-
-  function handleRemittanceClick() {
-    setShipBlocked(null);
-    setRemittanceOpen(true);
   }
 
   return (
@@ -497,15 +621,6 @@ export function CommunityOrdersClient() {
                 <button
                   type="button"
                   disabled={selectedGroups.length === 0}
-                  onClick={handleRemittanceClick}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-penguin-pink-dark px-4 py-2 text-xs font-black text-white shadow-sm transition hover:bg-penguin-pink disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Wallet size={14} />
-                  我要匯款
-                </button>
-                <button
-                  type="button"
-                  disabled={selectedGroups.length === 0}
                   onClick={handleShipClick}
                   className="inline-flex items-center gap-1.5 rounded-full border-2 border-penguin-pink-dark px-4 py-2 text-xs font-black text-penguin-pink-dark shadow-sm transition hover:bg-penguin-pink-light disabled:cursor-not-allowed disabled:opacity-50"
                 >
@@ -528,6 +643,8 @@ export function CommunityOrdersClient() {
                   group={group}
                   checked={selected.has(group.orderId)}
                   onToggle={(checked) => toggleGroup(group.orderId, checked)}
+                  nickname={searchedNickname}
+                  onPaymentSubmitted={() => runSearch(searchedNickname)}
                 />
               ))}
             </div>
@@ -554,28 +671,14 @@ export function CommunityOrdersClient() {
               />
               全選
             </label>
-            <div className="min-w-0 text-right">
-              <p className="text-[11px] font-bold text-gray-500">已選 {selectedGroups.length} 個系列</p>
-              <p className="truncate text-sm font-black text-penguin-pink-dark">
-                匯款總金額 {formatPrice(selectedRemitTotal)}
-              </p>
-            </div>
+            <p className="text-xs font-black text-penguin-gray">已選 {selectedGroups.length} 個記事本</p>
           </div>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              disabled={selectedGroups.length === 0}
-              onClick={handleRemittanceClick}
-              className="inline-flex items-center justify-center gap-1.5 rounded-full bg-penguin-pink-dark px-4 py-2.5 text-xs font-black text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Wallet size={14} />
-              我要匯款
-            </button>
+          <div className="mt-2">
             <button
               type="button"
               disabled={selectedGroups.length === 0}
               onClick={handleShipClick}
-              className="inline-flex items-center justify-center gap-1.5 rounded-full border-2 border-penguin-pink-dark px-4 py-2.5 text-xs font-black text-penguin-pink-dark shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-full border-2 border-penguin-pink-dark px-4 py-2.5 text-xs font-black text-penguin-pink-dark shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50"
             >
               <PackageCheck size={14} />
               我想出貨
@@ -588,15 +691,6 @@ export function CommunityOrdersClient() {
         <div className="fixed inset-x-4 bottom-28 z-40 sm:hidden">
           <ShipBlockedNotice names={shipBlocked} onDismiss={() => setShipBlocked(null)} />
         </div>
-      ) : null}
-
-      {remittanceOpen ? (
-        <RemittanceModal
-          nickname={searchedNickname}
-          groups={selectedGroups}
-          expectedTotal={selectedRemitTotal}
-          onClose={() => setRemittanceOpen(false)}
-        />
       ) : null}
 
       {shipmentOpen ? (
@@ -625,179 +719,6 @@ function ShipBlockedNotice({ names, onDismiss }: { names: string[]; onDismiss: (
       <button type="button" onClick={onDismiss} aria-label="關閉提示" className="shrink-0 text-red-400 hover:text-red-600">
         <X size={16} />
       </button>
-    </div>
-  );
-}
-
-function RemittanceModal({
-  nickname,
-  groups,
-  expectedTotal,
-  onClose,
-}: {
-  nickname: string;
-  groups: CommunityOrderGroup[];
-  expectedTotal: number;
-  onClose: () => void;
-}) {
-  const [bank, setBank] = useState(BANK_OPTIONS[0]);
-  const [last5, setLast5] = useState("");
-  const [amount, setAmount] = useState(String(expectedTotal));
-  const [confirmMismatch, setConfirmMismatch] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState("");
-  const [success, setSuccess] = useState(false);
-
-  const amountNumber = Number(amount);
-  const amountValid = Number.isFinite(amountNumber) && amountNumber > 0;
-  const last5Valid = /^[0-9]{5}$/.test(last5);
-  const mismatch = amountValid && amountNumber !== expectedTotal;
-
-  async function doSubmit() {
-    setSubmitting(true);
-    setSubmitError("");
-    try {
-      const response = await fetch("/api/community/remittances", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nickname,
-          orderIds: groups.map((group) => group.orderId),
-          bank,
-          accountLast5: last5,
-          amount: amountNumber,
-        }),
-      });
-      const result = await response.json().catch(() => null);
-      if (!response.ok || !result?.ok) throw new Error(result?.error || "送出失敗，請稍後再試。");
-      setSuccess(true);
-    } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "送出失敗，請稍後再試。");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!last5Valid || !amountValid) return;
-    if (mismatch && !confirmMismatch) {
-      setConfirmMismatch(true);
-      return;
-    }
-    doSubmit();
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-penguin-gray/40 sm:items-center" role="dialog" aria-modal="true">
-      <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-t-3xl border-2 border-penguin-peach bg-white p-5 shadow-2xl sm:rounded-3xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-black text-penguin-gray">匯款資訊</h2>
-          <button type="button" onClick={onClose} aria-label="關閉" className="text-gray-400 hover:text-penguin-pink-dark">
-            <X size={20} />
-          </button>
-        </div>
-
-        {success ? (
-          <div className="space-y-4 text-center">
-            <p className="text-sm font-bold text-penguin-gray">匯款資訊已送出，小企鵝確認後會盡快處理！</p>
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-full rounded-full bg-penguin-pink-dark px-4 py-3 text-sm font-black text-white shadow-md transition hover:bg-penguin-pink"
-            >
-              關閉
-            </button>
-          </div>
-        ) : (
-          <>
-            <div className="mb-4 space-y-1.5 rounded-2xl bg-penguin-cream/60 p-3">
-              {groups.map((group) => (
-                <div key={group.orderId} className="flex items-center justify-between text-xs font-bold text-penguin-gray">
-                  <span className="truncate pr-2">{group.notebookName}</span>
-                  <span className="shrink-0 tabular-nums">{formatPrice(group.remitAmount)}</span>
-                </div>
-              ))}
-              <div className="flex items-center justify-between border-t border-penguin-peach pt-1.5 text-sm font-black text-penguin-pink-dark">
-                <span>系統應匯總金額</span>
-                <span className="tabular-nums">{formatPrice(expectedTotal)}</span>
-              </div>
-            </div>
-
-            {!confirmMismatch ? (
-              <form onSubmit={handleSubmit} className="space-y-3">
-                <div>
-                  <label className="mb-1 block text-xs font-black text-penguin-gray">老闆娘的哪家銀行</label>
-                  <select
-                    value={bank}
-                    onChange={(event) => setBank(event.target.value)}
-                    className="h-11 w-full rounded-xl border-2 border-penguin-peach bg-white px-3 text-sm font-bold text-penguin-gray outline-none focus:border-penguin-pink-dark"
-                  >
-                    {BANK_OPTIONS.map((option) => (
-                      <option key={option} value={option}>{option}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-black text-penguin-gray">你的後五碼</label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={5}
-                    value={last5}
-                    onChange={(event) => setLast5(event.target.value.replace(/\D/g, "").slice(0, 5))}
-                    placeholder="請輸入帳號後五碼"
-                    className="h-11 w-full rounded-xl border-2 border-penguin-peach bg-white px-3 text-sm font-bold tabular-nums text-penguin-gray outline-none focus:border-penguin-pink-dark"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-black text-penguin-gray">匯款金額</label>
-                  <input
-                    type="number"
-                    value={amount}
-                    onChange={(event) => setAmount(event.target.value)}
-                    className="h-11 w-full rounded-xl border-2 border-penguin-peach bg-white px-3 text-sm font-bold tabular-nums text-penguin-gray outline-none focus:border-penguin-pink-dark"
-                  />
-                </div>
-                {submitError ? <p className="text-xs font-bold text-red-500">{submitError}</p> : null}
-                <button
-                  type="submit"
-                  disabled={!last5Valid || !amountValid || submitting}
-                  className="w-full rounded-full bg-penguin-pink-dark px-4 py-3 text-sm font-black text-white shadow-md transition hover:bg-penguin-pink disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {submitting ? "送出中..." : "送出匯款資訊"}
-                </button>
-              </form>
-            ) : (
-              <div className="space-y-3">
-                <div className="flex items-start gap-2 rounded-2xl border-2 border-amber-300 bg-amber-50 p-3 text-xs font-bold text-amber-700">
-                  <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-                  <p>
-                    你填寫的金額 {formatPrice(amountNumber)} 與系統應匯金額 {formatPrice(expectedTotal)} 不同，確定要送出嗎？
-                  </p>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setConfirmMismatch(false)}
-                    className="rounded-full border-2 border-penguin-peach px-4 py-3 text-sm font-black text-penguin-gray transition hover:bg-penguin-pink-light"
-                  >
-                    返回修改
-                  </button>
-                  <button
-                    type="button"
-                    disabled={submitting}
-                    onClick={doSubmit}
-                    className="rounded-full bg-penguin-pink-dark px-4 py-3 text-sm font-black text-white shadow-md transition hover:bg-penguin-pink disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {submitting ? "送出中..." : "確定送出"}
-                  </button>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-      </div>
     </div>
   );
 }
