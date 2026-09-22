@@ -17,7 +17,10 @@ type CommunityOrderRow = {
   unitPrice: number;
   itemSubtotal: number;
   snipeStatus: string;
+  purchaseStatus: "bought" | "not_bought";
+  itemArrivalStatus: "not_arrived" | "arrived" | "exception";
   groupTotal: number;
+  boughtTotal: number;
   remitAmount: number;
   groupFirst: boolean;
 };
@@ -29,6 +32,7 @@ type CommunityOrderGroup = {
   arrivalStatus: string;
   orderStage: string;
   groupTotal: number;
+  boughtTotal: number;
   remitAmount: number;
   items: CommunityOrderRow[];
 };
@@ -77,6 +81,7 @@ function groupRows(rows: CommunityOrderRow[]): CommunityOrderGroup[] {
         arrivalStatus: row.arrivalStatus,
         orderStage: row.orderStage,
         groupTotal: row.groupTotal,
+        boughtTotal: row.boughtTotal,
         remitAmount: row.remitAmount,
         items: [],
       };
@@ -130,7 +135,7 @@ function OrderCard({
   onToggle: (checked: boolean) => void;
 }) {
   return (
-    <article className="rounded-2xl border-2 border-penguin-peach bg-white p-4 shadow-sm">
+    <article className="rounded-2xl border-2 border-penguin-peach bg-white p-4 shadow-sm sm:p-5">
       <div className="flex items-start gap-3">
         <input
           type="checkbox"
@@ -140,24 +145,38 @@ function OrderCard({
           aria-label={`選擇 ${group.notebookName}`}
         />
         <div className="min-w-0 flex-1">
-          <p className="truncate font-black text-penguin-gray">{group.notebookName}</p>
+          <p className="text-base font-black text-penguin-gray">{group.notebookName}</p>
           <ul className="mt-2 divide-y divide-dashed divide-penguin-peach/70">
             {group.items.map((item) => (
-              <li key={item.itemId} className="flex items-start justify-between gap-2 py-1.5 text-xs first:pt-0">
-                <div className="min-w-0">
+              <li key={item.itemId} className="grid gap-2 py-3 text-xs first:pt-1 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+                <div className="min-w-0 space-y-1">
                   <p className="font-bold text-penguin-gray">{item.productName}</p>
                   {item.variantSpec ? <p className="text-[11px] text-gray-400">{item.variantSpec}</p> : null}
+                  <div className="flex flex-wrap gap-1.5">
+                    <StatusBadge
+                      label={item.purchaseStatus === "not_bought" ? "沒買到" : "有買到"}
+                      tone={item.purchaseStatus === "not_bought" ? "red" : "green"}
+                    />
+                    {item.purchaseStatus === "bought" ? (
+                      <StatusBadge
+                        label={{ not_arrived: "未到貨", arrived: "已到貨", exception: "異常" }[item.itemArrivalStatus] || "未到貨"}
+                        tone={item.itemArrivalStatus === "arrived" ? "green" : item.itemArrivalStatus === "exception" ? "red" : "amber"}
+                      />
+                    ) : null}
+                  </div>
                 </div>
-                <p className="shrink-0 tabular-nums text-gray-500">
-                  {item.quantity} × {formatPrice(item.unitPrice)}
-                </p>
+                <div className="space-y-0.5 text-left tabular-nums text-gray-500 sm:text-right">
+                  <p>數量 {item.quantity}</p>
+                  <p>單價 {formatPrice(item.unitPrice)}</p>
+                  <p className="font-black text-penguin-gray">小計 {formatPrice(item.itemSubtotal)}</p>
+                </div>
               </li>
             ))}
           </ul>
           <div className="mt-2 space-y-0.5 border-t border-penguin-peach pt-2 text-sm">
             <div className="flex items-center justify-between font-black text-penguin-gray">
-              <span>系列商品總金額</span>
-              <span className="tabular-nums">{formatPrice(group.groupTotal)}</span>
+              <span>有買到商品合計</span>
+              <span className="tabular-nums">{formatPrice(group.boughtTotal)}</span>
             </div>
             <div className="flex items-center justify-between font-black text-penguin-pink-dark">
               <span>匯款金額</span>
@@ -502,69 +521,7 @@ export function CommunityOrdersClient() {
               </div>
             ) : null}
 
-            {/* Desktop table */}
-            <div className="hidden overflow-hidden rounded-b-3xl border-2 border-penguin-peach bg-white shadow-sm sm:block">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[720px] border-collapse text-left text-xs sm:text-sm">
-                  <thead>
-                    <tr className="border-b border-penguin-peach bg-penguin-pink-light/40 text-penguin-gray">
-                      <th className="w-10 px-3 py-2.5"></th>
-                      <th className="px-3 py-2.5 font-black">記事本名稱</th>
-                      <th className="px-3 py-2.5 font-black">下單商品</th>
-                      <th className="px-3 py-2.5 text-right font-black">數量</th>
-                      <th className="px-3 py-2.5 text-right font-black">單價</th>
-                      <th className="px-3 py-2.5 text-right font-black">總金額</th>
-                      <th className="px-3 py-2.5 text-right font-black">系列商品總金額</th>
-                      <th className="px-3 py-2.5 text-right font-black">匯款金額</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {groups.map((group) =>
-                      group.items.map((item, index) => (
-                        <tr
-                          key={item.itemId}
-                          className={`${index ? "border-t border-dashed border-penguin-peach/70" : "border-t border-penguin-peach"}`}
-                        >
-                          {index === 0 ? (
-                            <td className="px-3 py-2.5 align-top" rowSpan={group.items.length}>
-                              <input
-                                type="checkbox"
-                                checked={selected.has(group.orderId)}
-                                onChange={(event) => toggleGroup(group.orderId, event.target.checked)}
-                                className="h-5 w-5 accent-penguin-pink-dark"
-                                aria-label={`選擇 ${group.notebookName}`}
-                              />
-                            </td>
-                          ) : null}
-                          {index === 0 ? (
-                            <td className="px-3 py-2.5 align-top font-bold text-penguin-gray" rowSpan={group.items.length}>
-                              {group.notebookName}
-                            </td>
-                          ) : null}
-                          <td className="px-3 py-2.5 text-penguin-gray">{item.productName}</td>
-                          <td className="px-3 py-2.5 text-right tabular-nums text-penguin-gray">{item.quantity}</td>
-                          <td className="px-3 py-2.5 text-right tabular-nums text-penguin-gray">{formatPrice(item.unitPrice)}</td>
-                          <td className="px-3 py-2.5 text-right tabular-nums text-penguin-gray">{formatPrice(item.itemSubtotal)}</td>
-                          {index === 0 ? (
-                            <td className="px-3 py-2.5 text-right align-top font-black tabular-nums text-penguin-gray" rowSpan={group.items.length}>
-                              {formatPrice(group.groupTotal)}
-                            </td>
-                          ) : null}
-                          {index === 0 ? (
-                            <td className="px-3 py-2.5 text-right align-top font-black tabular-nums text-penguin-pink-dark" rowSpan={group.items.length}>
-                              {formatPrice(group.remitAmount)}
-                            </td>
-                          ) : null}
-                        </tr>
-                      )),
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Mobile cards */}
-            <div className="space-y-3 sm:hidden">
+            <div className="grid gap-3 sm:grid-cols-2">
               {groups.map((group) => (
                 <OrderCard
                   key={group.orderId}
