@@ -8,25 +8,19 @@
 - `pinkkkuin-staging.vercel.app` must never be updated from this branch.
 - Production must never be deployed without explicit approval.
 
-## Community frontend and payments
+## Community payment flow
 
-- LINE Login remains isolated from the storefront and returns to the community frontend.
-- Approved nickname bindings automatically load the customer’s community orders.
-- Basic payment feature commit: `459f60f`.
-- One customer × one notebook is one payment unit.
-- Each notebook card shows the bought-only payable total and offers 中信、國泰、富邦 payment submission with amount and account last five digits.
-- `not_bought` items remain visible and are excluded from the payable total.
-- Payment states are 未付款、待審核、已付款、審核退回. Rejection reasons are shown and rejected payments can be resubmitted.
-- Resubmission creates a new append-only record and does not overwrite the rejected record.
-- Existing notebook grouping, purchase/arrival statuses, shipment flow, and safe deletion behavior remain unchanged.
-
-## Shared backend and Staging data
-
-- Backend source commit: `5466240` on `backend-staging`.
-- Shared API/migration feature commit: `40eb180` on `official-next`.
-- Staging migrations are applied through `202609220003_community_basic_payment_review.sql`.
-- Community migrations are not applied to Production.
-- Backend payment review supports approval and rejection with a required reason.
+- Backend source commit: `cb49a92` on `backend-staging`.
+- Shared API/migration feature commit: `dcbbb7f` on `official-next`.
+- Community frontend feature commit: `ce5af7e`.
+- Staging migrations are applied through `202609220004_community_payment_accumulation_refunds.sql`; none are applied to Production.
+- One customer × one notebook is one payment unit; `not_bought` items are excluded from the payable total.
+- The frontend shows payable total, cumulative received, remaining top-up, overpaid amount, and every payment/refund record with status and time.
+- Underpayment becomes `topup_required` and accepts a new append-only submission.
+- Exact cumulative payment becomes `approved` after backend review.
+- Overpayment becomes `overpaid_pending_refund`; backend refund completion adds a separate refund record and becomes `refund_completed`.
+- Rejected submissions keep their reason and can be resubmitted without overwriting history.
+- Existing LINE binding, notebook grouping, item purchase/arrival states, shipment flow, and safe deletion remain unchanged.
 
 ## Deployment rules
 
