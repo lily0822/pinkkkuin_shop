@@ -8,6 +8,7 @@ import {
   shouldRequireBackendAuth,
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
+import { enrichCommunityOrderRows } from "@/lib/community-order-items";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -99,9 +100,11 @@ export async function GET(request: NextRequest) {
 
     const rows = Array.isArray(data) ? data : [];
     const total = Number(rows[0]?.total_count || 0);
+    const mappedRows = rows.map((row) => mapRow(row as Record<string, unknown>));
+    const enrichedRows = await enrichCommunityOrderRows(supabase, mappedRows);
     return NextResponse.json({
       ok: true,
-      rows: rows.map((row) => mapRow(row as Record<string, unknown>)),
+      rows: enrichedRows,
       pagination: {
         page,
         page_size: pageSize,

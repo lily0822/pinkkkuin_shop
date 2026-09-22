@@ -13,6 +13,8 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const ALLOWED_SNIPE_STATUSES = new Set(["pending", "won", "lost"]);
+const ALLOWED_PURCHASE_STATUSES = new Set(["bought", "not_bought"]);
+const ALLOWED_ITEM_ARRIVAL_STATUSES = new Set(["not_arrived", "arrived", "exception"]);
 
 async function guardBackendRequest(request: NextRequest) {
   const runtime = getBackendRuntime();
@@ -46,29 +48,58 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ ok: false, error: "請提供正確的商品資料。" }, { status: 400 });
   }
 
-  let body: { snipeStatus?: unknown };
+  let body: { snipeStatus?: unknown; purchaseStatus?: unknown; itemArrivalStatus?: unknown };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ ok: false, error: "請提供正確的搶購狀態。" }, { status: 400 });
   }
 
-  const snipeStatus = typeof body.snipeStatus === "string" ? body.snipeStatus.trim() : "";
-  if (!ALLOWED_SNIPE_STATUSES.has(snipeStatus)) {
+  const snipeStatus = typeof body.snipeStatus === "string" ? body.snipeStatus.trim() : null;
+  const purchaseStatus = typeof body.purchaseStatus === "string" ? body.purchaseStatus.trim() : null;
+  const itemArrivalStatus = typeof body.itemArrivalStatus === "string" ? body.itemArrivalStatus.trim() : null;
+  if (snipeStatus !== null && !ALLOWED_SNIPE_STATUSES.has(snipeStatus)) {
     return NextResponse.json({ ok: false, error: "請提供正確的搶購狀態。" }, { status: 400 });
+  }
+  if (purchaseStatus !== null && !ALLOWED_PURCHASE_STATUSES.has(purchaseStatus)) {
+    return NextResponse.json({ ok: false, error: "請提供正確的購買狀態。" }, { status: 400 });
+  }
+  if (itemArrivalStatus !== null && !ALLOWED_ITEM_ARRIVAL_STATUSES.has(itemArrivalStatus)) {
+    return NextResponse.json({ ok: false, error: "請提供正確的到貨狀態。" }, { status: 400 });
+  }
+  if (snipeStatus === null && purchaseStatus === null && itemArrivalStatus === null) {
+    return NextResponse.json({ ok: false, error: "請提供要更新的商品狀態。" }, { status: 400 });
   }
 
   try {
     const supabase = createSupabaseServiceClient();
-    const { error } = await supabase.rpc("backend_update_community_order_item", {
-      p_item_id: itemId,
-      p_snipe_status: snipeStatus,
-    });
-    if (error) throw error;
+    if (snipeStatus !== null) {
+      const { error } = await supabase.rpc("backend_update_community_order_item", {
+        p_item_id: itemId,
+        p_snipe_status: snipeStatus,
+      });
+      if (error) throw error;
+    }
 
-    return NextResponse.json({ ok: true, snipeStatus });
+    if (purchaseStatus !== null || itemArrivalStatus !== null) {
+      const updates: Record<string, string> = {};
+      if (purchaseStatus !== null) updates.purchase_status = purchaseStatus;
+      if (itemArrivalStatus !== null) updates.arrival_status = itemArrivalStatus;
+      const { data, error } = await supabase
+        .from("community_order_items")
+        .update(updates)
+        .eq("id", itemId)
+        .select("id")
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) {
+        return NextResponse.json({ ok: false, error: "找不到這項商品。" }, { status: 404 });
+      }
+    }
+
+    return NextResponse.json({ ok: true, snipeStatus, purchaseStatus, itemArrivalStatus });
   } catch {
-    return NextResponse.json({ ok: false, error: "搶購狀態更新失敗，請稍後再試。" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "商品狀態更新失敗，請稍後再試。" }, { status: 500 });
   }
 }
 
