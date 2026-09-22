@@ -4,18 +4,46 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Link2, Search, PackageCheck, RefreshCw, X } from "lucide-react";
 import { formatPrice } from "@/lib/products";
 
+type CommunityPaymentStatus =
+  | "unpaid"
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "topup_required"
+  | "overpaid_pending_refund"
+  | "refund_completed";
+
+type CommunityPaymentHistory = {
+  id: string;
+  bank: string;
+  accountLast5: string;
+  amount: number;
+  expectedAmount: number;
+  status: Exclude<CommunityPaymentStatus, "unpaid">;
+  rejectionReason: string;
+  submittedAt: string;
+  reviewedAt: string;
+  refundedAt: string;
+  refundAmount: number;
+  refundCompletedAt: string;
+};
+
 type CommunityOrderRow = {
   orderId: string;
   notebookName: string;
   paymentStatus: string;
   paymentSubmissionId: string;
-  paymentReviewStatus: "unpaid" | "pending" | "approved" | "rejected";
+  paymentReviewStatus: CommunityPaymentStatus;
   paymentRejectionReason: string;
   paymentBank: string;
   paymentAccountLast5: string;
   paymentSubmittedAmount: number;
   paymentExpectedAmount: number;
   paymentSubmittedAt: string;
+  paymentCumulativeReceived: number;
+  paymentRemainingAmount: number;
+  paymentOverpaidAmount: number;
+  paymentHistory: CommunityPaymentHistory[];
   arrivalStatus: string;
   orderStage: string;
   itemId: string;
@@ -38,13 +66,17 @@ type CommunityOrderGroup = {
   notebookName: string;
   paymentStatus: string;
   paymentSubmissionId: string;
-  paymentReviewStatus: "unpaid" | "pending" | "approved" | "rejected";
+  paymentReviewStatus: CommunityPaymentStatus;
   paymentRejectionReason: string;
   paymentBank: string;
   paymentAccountLast5: string;
   paymentSubmittedAmount: number;
   paymentExpectedAmount: number;
   paymentSubmittedAt: string;
+  paymentCumulativeReceived: number;
+  paymentRemainingAmount: number;
+  paymentOverpaidAmount: number;
+  paymentHistory: CommunityPaymentHistory[];
   arrivalStatus: string;
   orderStage: string;
   groupTotal: number;
@@ -100,6 +132,10 @@ function groupRows(rows: CommunityOrderRow[]): CommunityOrderGroup[] {
         paymentSubmittedAmount: row.paymentSubmittedAmount,
         paymentExpectedAmount: row.paymentExpectedAmount,
         paymentSubmittedAt: row.paymentSubmittedAt,
+        paymentCumulativeReceived: row.paymentCumulativeReceived,
+        paymentRemainingAmount: row.paymentRemainingAmount,
+        paymentOverpaidAmount: row.paymentOverpaidAmount,
+        paymentHistory: row.paymentHistory || [],
         arrivalStatus: row.arrivalStatus,
         orderStage: row.orderStage,
         groupTotal: row.groupTotal,
@@ -223,12 +259,17 @@ function NotebookPaymentPanel({
   onSubmitted: () => Promise<void>;
 }) {
   const [bank, setBank] = useState("ctbc");
-  const [amount, setAmount] = useState(String(group.boughtTotal));
+  const [amount, setAmount] = useState(String(group.paymentRemainingAmount || group.boughtTotal));
   const [last5, setLast5] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const status = group.paymentReviewStatus || "unpaid";
-  const canSubmit = (status === "unpaid" || status === "rejected") && group.boughtTotal > 0;
+  const canSubmit = (status === "unpaid" || status === "rejected" || status === "topup_required")
+    && group.paymentRemainingAmount > 0;
+
+  useEffect(() => {
+    if (canSubmit) setAmount(String(group.paymentRemainingAmount || group.boughtTotal));
+  }, [canSubmit, group.boughtTotal, group.paymentRemainingAmount]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -254,19 +295,38 @@ function NotebookPaymentPanel({
 
   return (
     <div className="mt-4 rounded-2xl border border-penguin-peach bg-penguin-cream/45 p-3">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-black text-penguin-gray">應付總額</span>
-        <span className="text-base font-black tabular-nums text-penguin-pink-dark">{formatPrice(group.boughtTotal)}</span>
+      <div className="grid gap-2 text-xs sm:grid-cols-2">
+        <div className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2">
+          <span className="font-black text-penguin-gray">應付總額</span>
+          <span className="font-black tabular-nums text-penguin-pink-dark">{formatPrice(group.boughtTotal)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2">
+          <span className="font-black text-penguin-gray">累計已收</span>
+          <span className="font-black tabular-nums text-penguin-gray">{formatPrice(group.paymentCumulativeReceived)}</span>
+        </div>
       </div>
 
       {status === "pending" ? (
         <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-black text-amber-700">付款資料已送出，等待審核</div>
       ) : status === "approved" ? (
         <div className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700">付款已核准</div>
+      ) : status === "overpaid_pending_refund" ? (
+        <div className="mt-3 rounded-xl bg-sky-50 px-3 py-2 text-xs font-black text-sky-700">
+          多匯待退款：{formatPrice(group.paymentOverpaidAmount)}
+        </div>
+      ) : status === "refund_completed" ? (
+        <div className="mt-3 rounded-xl bg-violet-50 px-3 py-2 text-xs font-black text-violet-700">
+          多匯退款已完成：{formatPrice(group.paymentOverpaidAmount)}
+        </div>
       ) : group.boughtTotal <= 0 ? (
         <p className="mt-3 text-xs font-bold text-gray-500">目前沒有需要付款的商品。</p>
       ) : (
         <form onSubmit={handleSubmit} className="mt-3 space-y-3">
+          {status === "topup_required" ? (
+            <div className="rounded-xl bg-orange-50 px-3 py-2 text-xs font-bold text-orange-700">
+              尚需補款 <span className="font-black">{formatPrice(group.paymentRemainingAmount)}</span>
+            </div>
+          ) : null}
           {status === "rejected" ? (
             <div className="rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-600">
               <p className="font-black">審核退回</p>
@@ -319,12 +379,68 @@ function NotebookPaymentPanel({
             disabled={submitting || !/^\d{5}$/.test(last5) || !Number.isFinite(Number(amount)) || Number(amount) <= 0}
             className="w-full rounded-full bg-penguin-pink-dark px-4 py-2.5 text-sm font-black text-white transition hover:bg-penguin-pink disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {submitting ? "送出中..." : status === "rejected" ? "重新送出付款資料" : "送出付款資料"}
+            {submitting ? "送出中..." : status === "topup_required" ? "送出補款資料" : status === "rejected" ? "重新送出付款資料" : "送出付款資料"}
           </button>
         </form>
       )}
+
+      {group.paymentHistory.length > 0 ? (
+        <div className="mt-4 border-t border-penguin-peach pt-3">
+          <p className="text-xs font-black text-penguin-gray">付款紀錄</p>
+          <div className="mt-2 space-y-2">
+            {group.paymentHistory.map((payment) => (
+              <div key={payment.id} className="rounded-xl bg-white px-3 py-2 text-[11px] text-gray-500">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-black text-penguin-gray">
+                    {communityPaymentBankLabel(payment.bank)} · 後五碼 {payment.accountLast5}
+                  </span>
+                  <span className="font-black tabular-nums text-penguin-gray">{formatPrice(payment.amount)}</span>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+                  <span>送出 {formatCommunityPaymentTime(payment.submittedAt)}</span>
+                  <span className="font-black">{communityPaymentStatusLabel(payment.status)}</span>
+                </div>
+                {payment.reviewedAt ? <p className="mt-1">審核 {formatCommunityPaymentTime(payment.reviewedAt)}</p> : null}
+                {payment.rejectionReason ? <p className="mt-1 text-red-500">退回原因：{payment.rejectionReason}</p> : null}
+                {payment.refundAmount > 0 ? (
+                  <p className="mt-1 text-violet-600">
+                    退款 {formatPrice(payment.refundAmount)} · {formatCommunityPaymentTime(payment.refundCompletedAt)}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
+}
+
+function communityPaymentBankLabel(value: string) {
+  return PAYMENT_BANK_OPTIONS.find((option) => option.value === value)?.label || value;
+}
+
+function communityPaymentStatusLabel(value: CommunityPaymentHistory["status"]) {
+  return {
+    pending: "待審核",
+    approved: "已付款",
+    rejected: "審核退回",
+    topup_required: "需補款",
+    overpaid_pending_refund: "多匯待退款",
+    refund_completed: "退款完成",
+  }[value];
+}
+
+function formatCommunityPaymentTime(value: string) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("zh-TW", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 
 export function CommunityOrdersClient() {
