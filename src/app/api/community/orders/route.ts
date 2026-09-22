@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
-import { enrichCommunityOrderRows } from "@/lib/community-order-items";
+import { enrichCommunityOrderRows, enrichCommunityPaymentRows } from "@/lib/community-order-items";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -69,7 +69,8 @@ export async function GET(request: NextRequest) {
 
     const rows = Array.isArray(data) ? data : [];
     const mappedRows = rows.map((row) => mapRow(row as Record<string, unknown>));
-    return NextResponse.json({ ok: true, rows: await enrichCommunityOrderRows(supabase, mappedRows) });
+    const itemRows = await enrichCommunityOrderRows(supabase, mappedRows);
+    return NextResponse.json({ ok: true, rows: await enrichCommunityPaymentRows(supabase, itemRows) });
   } catch {
     return NextResponse.json({ ok: false, error: "查詢失敗，請稍後再試。" }, { status: 500 });
   }

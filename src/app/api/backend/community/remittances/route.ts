@@ -4,6 +4,7 @@ import {
   backendAuthJsonError,
   getBackendRuntime,
   isBackendSessionValid,
+  isSameOriginMutation,
   shouldRequireBackendAuth,
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
@@ -11,7 +12,7 @@ import { backendRateLimit } from "@/lib/backend-security";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-async function guardBackendRequest(request: NextRequest) {
+async function guardBackendRequest(request: NextRequest, mutation = false) {
   const runtime = getBackendRuntime();
   if (runtime === "unknown") {
     return new NextResponse("Not found", {
@@ -21,6 +22,7 @@ async function guardBackendRequest(request: NextRequest) {
   }
   if (!shouldRequireBackendAuth()) return null;
   if (!(await isBackendSessionValid(request))) return backendAuthJsonError();
+  if (mutation && !isSameOriginMutation(request)) return backendAuthJsonError("請從後台頁面操作。", 403);
   return null;
 }
 
@@ -53,9 +55,52 @@ export async function GET(request: NextRequest) {
         amount: Number(row.amount || 0),
         expectedAmount: Number(row.expected_amount || 0),
         submittedAt: String(row.submitted_at || ""),
+        status: String(row.status || "pending"),
+        rejectionReason: String(row.rejection_reason || ""),
+        reviewedAt: String(row.reviewed_at || ""),
       })),
     });
   } catch {
     return NextResponse.json({ ok: false, error: "匯款回報讀取失敗，請稍後再試。" }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  const guard = await guardBackendRequest(request, true);
+  if (guard) return guard;
+
+  const rate = await backendRateLimit(request, "backend_community_remittances_review", 60);
+  if (!rate.ok) {
+    return NextResponse.json(
+      { ok: false, error: "操作太頻繁，請稍後再試。" },
+      { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } },
+    );
+  }
+
+  let body: { submissionId?: unknown; decision?: unknown; reason?: unknown };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ ok: false, error: "請提供正確的審核資料。" }, { status: 400 });
+  }
+
+  const submissionId = typeof body.submissionId === "string" ? body.submissionId.trim() : "";
+  const decision = body.decision === "approved" || body.decision === "rejected" ? body.decision : "";
+  const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 500) : "";
+  if (!submissionId || !decision || (decision === "rejected" && !reason)) {
+    return NextResponse.json({ ok: false, error: "請提供完整的審核資料。" }, { status: 400 });
+  }
+
+  try {
+    const supabase = createSupabaseServiceClient();
+    const { data, error } = await supabase.rpc("backend_review_community_remittance", {
+      p_submission_id: submissionId,
+      p_decision: decision,
+      p_reason: decision === "rejected" ? reason : null,
+    });
+    if (error) throw error;
+    return NextResponse.json({ ok: true, result: data });
+  } catch {
+    return NextResponse.json({ ok: false, error: "付款審核失敗，請稍後再試。" }, { status: 500 });
   }
 }
