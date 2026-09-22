@@ -11,7 +11,7 @@
 ## Shared backend
 
 - Backend source branch: `backend-staging` (in `workspace.git`, checked out detached at `.backend-product-publish`)
-- Backend commit: `109148e`
+- Backend commit: `84d6c4e`
 - The local `backend-staging` branch inside `.backend-product-publish` has diverged and must not be checked out. Backend UI work is committed in detached HEAD and pushed with `git push origin HEAD:backend-staging`.
 - `社群管理` contains `社群訂單` and `社群名單`; existing order/import/remittance/shipment flows remain unchanged.
 - `社群名單` uses two standard tables. Approved bindings have separate LINE-name and nickname filters, nickname editing, and confirmed unbinding, plus 綁定時間 (`createdAt`) and 最後更新時間 (`updatedAt`) columns — both already existed on `community_line_bindings`, no migration.
@@ -21,7 +21,7 @@
 - `社群訂單` table also has four status filter dropdowns (匯款/到貨/下單/搶購狀態, combinable with AND logic) that filter only the already-loaded page of rows client-side; no new API was added and it does not reach across pages.
 - `社群訂單` toolbar has 手動新增 (opens a modal for notebook/nickname/product/spec/qty/price, reusing `/api/backend/community/import` POST with a single-row array — statuses fall back to the same DB defaults Excel import already relies on, no new API).
 - `社群訂單` table's 4 inline status dropdowns use a new `.community-order-status-select` class (rounded/bordered/custom chevron, matches the filter-row look) instead of the shared `.storefront-order-status-select` (left alone — that class is also used by the unrelated 訂單管理 page).
-- `社群訂單` table has an 操作 column with 編輯 and 刪除. 刪除 requires a confirmation, then calls the authenticated same-origin `DELETE /api/backend/community/orders`; the route validates the UUID and calls the Staging-only `delete_community_order(uuid)` SECURITY DEFINER RPC. Success reloads the table immediately. The RPC deletes only the selected order and its items.
+- Every item row in `社群訂單` has 編輯 and 刪除. 刪除 requires confirmation, then calls the authenticated same-origin `DELETE /api/backend/community/order-items/[id]`; the route validates the item UUID and calls `delete_community_order_item(uuid)`. Other items keep the parent order and totals are recalculated by the existing list RPC; deleting the final item also deletes the empty parent order. Historical remittance/shipment `order_ids` arrays remain unchanged.
 - All tables on the `社群訂單` page (main order table, import-batch/remittance/shipment tables) default to centered headers/cells, except 記事本名稱/社群暱稱/下單商品 which stay left-aligned; scoped to `#section-community-orders` so other pages are unaffected.
 - Backend module and submenu order can be changed from the top-right `調整模塊順序` modal.
 - Module order is shared across administrators through the existing `schedule_settings` row with type `backend-module-order`; it is not stored in browser storage.
@@ -37,8 +37,8 @@ Checked only — not implemented, since it needs schema changes:
 
 ## Staging data
 
-- Community migrations through `202609210003_community_orders_safe_delete.sql` are applied to Staging.
-- `202609210003_community_orders_safe_delete.sql` has not been applied to Production.
+- Community migrations through `202609220001_community_order_item_safe_delete.sql` are applied to Staging.
+- `202609210003_community_orders_safe_delete.sql` and `202609220001_community_order_item_safe_delete.sql` have not been applied to Production.
 - Migration files do not execute automatically in Production.
 
 ## Rules

@@ -71,3 +71,34 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ ok: false, error: "搶購狀態更新失敗，請稍後再試。" }, { status: 500 });
   }
 }
+
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const guard = await guardBackendRequest(request);
+  if (guard) return guard;
+
+  const rate = await backendRateLimit(request, "backend_community_order_items_delete", 30);
+  if (!rate.ok) {
+    return NextResponse.json(
+      { ok: false, error: "操作太頻繁，請稍後再試。" },
+      { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } },
+    );
+  }
+
+  const { id } = await params;
+  const itemId = id?.trim() || "";
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(itemId)) {
+    return NextResponse.json({ ok: false, error: "請提供正確的商品資料。" }, { status: 400 });
+  }
+
+  try {
+    const supabase = createSupabaseServiceClient();
+    const { data, error } = await supabase.rpc("delete_community_order_item", { p_item_id: itemId });
+    if (error) throw error;
+    if (data !== true) {
+      return NextResponse.json({ ok: false, error: "找不到這筆商品。" }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json({ ok: false, error: "商品刪除失敗，請稍後再試。" }, { status: 500 });
+  }
+}
