@@ -3,39 +3,29 @@
 ## Current baseline
 
 - Branch: `community-orders`
+- Community test frontend: `https://pinkkkuin-community-orders.vercel.app`
+- Shared Staging backend: `https://pinkkkuin-staging.vercel.app/backend`, owned by `official-next`.
+- Storefront Staging alias `pinkkkuin-staging.vercel.app` must never be updated from this branch.
+- Production must never be deployed without explicit approval.
 
-**Staging (test)**
-- 商城前台: `https://pinkkkuin-staging.vercel.app`
-- 共用後台: `https://pinkkkuin-staging.vercel.app/backend` (owned and deployed by `official-next`; this branch must never be aliased to or described as this entry)
-- 社群訂單前台: `https://pinkkkuin-community-orders.vercel.app` (this branch's own alias; its own `/backend` is not a test or admin entry point)
+## Community frontend
 
-**Production**
-- 商城前台: `https://pinkkkuin-shop.vercel.app`
-- 商城後台: `https://pinkkkuin-shop.vercel.app/backend`
-- Production must not be deployed without explicit approval.
+- LINE Login remains isolated from the storefront and returns to the community frontend.
+- Nickname applications require backend approval; approved bindings automatically load the user’s community orders.
+- Community notebook/item-status feature commit: `0e9be59`.
+- Orders are grouped as one card per customer and notebook.
+- Each item shows product, variant, quantity, unit price, subtotal, purchase status, and arrival status.
+- Purchase status is `有買到` or `沒買到`; arrival status is `未到貨`, `已到貨`, or `異常` for bought items.
+- Each notebook card shows `有買到商品合計`, excluding not-bought items.
+- Existing payment/remittance/shipment selection and submission logic is unchanged.
 
-## Community LINE flow
+## Shared backend and Staging data
 
-- Community LINE Login starts at `/api/community/line/start`.
-- Its signed OAuth state includes `source: community-orders` and `returnTo: /`.
-- Its OAuth redirect URI is `https://pinkkkuin-community-orders.vercel.app/api/community/line/callback`.
-- Community callback always redirects to `https://pinkkkuin-community-orders.vercel.app/`; it never derives the destination from a storefront callback host.
-- The storefront `/api/member/line/start` and member callback behavior are unchanged.
-- First-time LINE users continue to nickname review; approved users load their saved binding and community orders automatically.
-
-## Existing accepted features
-
-- Nickname applications remain pending until backend approval; only approved nicknames can query orders.
-- Approval only depends on review state (`pending`) and nickname-conflict checks; it does not require the nickname to already have a community order. A nickname with zero orders can be approved and moves to the approved list immediately.
-- `查詢訂單` remains separate from nickname submission, and its own "查無訂單" message is unaffected by approval logic.
-- Community import, orders, remittance, and shipment flows remain unchanged.
-- Shared backend `社群名單` and module ordering remain owned and deployed by `official-next` (see entry points above).
-- The nickname-approval order-lookup fix was applied identically on `official-next` (commit `80a6473`) and deployed to the real Staging backend, `https://pinkkkuin-staging.vercel.app/backend`. This branch also carries the same source fix (commit `291b3ca`) so the two stay in sync, but `official-next` is the branch of record for that endpoint.
-
-## Staging data
-
-- Community migrations through `202609210002_community_line_binding_reviews.sql` are applied to Staging.
-- The nickname-approval fix adds no migration and changes no environment or permissions.
+- Shared backend source commit: `5a134b7` on `backend-staging`.
+- Shared API/migration commit: `e3434b8` on `official-next`.
+- Migration `202609220002_community_notebook_item_statuses.sql` is applied to Staging only.
+- The backend notebook management area supports notebook summaries, whole-notebook arrival, and per-item overrides.
+- Existing safe item/order deletion behavior remains unchanged.
 
 ## Deployment rules
 
@@ -43,12 +33,9 @@
 - Never update `pinkkkuin-staging.vercel.app` from this branch.
 - Never deploy Production without explicit approval.
 
-## Submodule safety rule (`.backend-product-publish`)
+## Backend submodule safety
 
-- `git checkout <branch>` only updates the superproject's recorded submodule pointer; it does NOT update the submodule's actual checked-out files. Any branch that serves `/backend` reads live from `.backend-product-publish` at build time, so a stale checkout silently ships the wrong backend UI.
-- Never assume the submodule commit left in the working tree by a previous branch is correct for the branch you're now on.
-- Before any build or deploy that touches `/backend`, verify these two match:
-  1. The commit the current branch records for `.backend-product-publish` (`git ls-tree HEAD .backend-product-publish`).
-  2. The submodule's actual current HEAD (`git -C .backend-product-publish rev-parse HEAD`).
-- If they differ, sync first (`git submodule update --init .backend-product-publish`) and re-verify before building or deploying. Only proceed once they match.
-- Do not touch the local `backend-staging` branch inside `.backend-product-publish` — it has diverged locally. Keep working there in detached HEAD (the state `git submodule update` puts it in).
+- `.backend-product-publish` is a separate repository.
+- Before a build/deploy involving `/backend`, confirm the parent gitlink and nested repo HEAD match.
+- Work on detached HEAD and push backend changes with `git push origin HEAD:backend-staging`.
+- Do not check out the diverged local `backend-staging` branch.
