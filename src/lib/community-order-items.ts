@@ -44,6 +44,20 @@ type CommunityShipmentRequestRow = {
   submitted_at: string;
 };
 
+type CommunityMeetupRequestRow = {
+  id: string;
+  order_ids: string[];
+  payment_method: string;
+  status: string;
+  submitted_at: string;
+  community_meetup_slots: {
+    meetup_date: string;
+    start_time: string;
+    end_time: string;
+    location: string;
+  } | null;
+};
+
 const ACCEPTED_PAYMENT_STATUSES = new Set([
   "approved",
   "topup_required",
@@ -178,6 +192,7 @@ export async function enrichCommunityShipmentRows<T extends {
 }>(supabase: SupabaseClient, rows: T[]) {
   const orderIds = [...new Set(rows.map((row) => row.orderId).filter(Boolean))];
   const activeByOrderId = new Map<string, CommunityShipmentRequestRow>();
+  const meetupByOrderId = new Map<string, CommunityMeetupRequestRow>();
 
   if (orderIds.length > 0) {
     const { data, error } = await supabase
@@ -190,6 +205,19 @@ export async function enrichCommunityShipmentRows<T extends {
     for (const request of (data || []) as CommunityShipmentRequestRow[]) {
       for (const orderId of request.order_ids || []) {
         if (orderIds.includes(orderId) && !activeByOrderId.has(orderId)) activeByOrderId.set(orderId, request);
+      }
+    }
+
+    const { data: meetupData, error: meetupError } = await supabase
+      .from("community_meetup_requests")
+      .select("id,order_ids,payment_method,status,submitted_at,community_meetup_slots(meetup_date,start_time,end_time,location)")
+      .overlaps("order_ids", orderIds)
+      .neq("status", "cancelled")
+      .order("submitted_at", { ascending: false });
+    if (meetupError) throw meetupError;
+    for (const request of (meetupData || []) as unknown as CommunityMeetupRequestRow[]) {
+      for (const orderId of request.order_ids || []) {
+        if (orderIds.includes(orderId) && !meetupByOrderId.has(orderId)) meetupByOrderId.set(orderId, request);
       }
     }
   }
@@ -205,20 +233,27 @@ export async function enrichCommunityShipmentRows<T extends {
 
   return rows.map((row) => {
     const request = activeByOrderId.get(row.orderId);
+    const meetup = meetupByOrderId.get(row.orderId);
     const bought = boughtStateByOrderId.get(row.orderId) || { count: 0, allArrived: false };
     const paid = row.paymentStatus === "paid";
     return {
       ...row,
-      shipmentLocked: Boolean(request),
-      shipmentEligible: !request && bought.count > 0 && bought.allArrived && paid,
+      shipmentLocked: Boolean(request || meetup),
+      shipmentEligible: !request && !meetup && bought.count > 0 && bought.allArrived && paid,
+      meetupEligible: !request && !meetup && bought.count > 0 && bought.allArrived,
       shipmentAllBoughtArrived: bought.count > 0 && bought.allArrived,
       shipmentPaid: paid,
-      shipmentRequestId: request?.id || "",
-      shipmentRequestStatus: request?.status || "",
-      shipmentMethod: request?.shipping_method || "",
+      shipmentRequestId: request?.id || meetup?.id || "",
+      shipmentRequestStatus: request?.status || meetup?.status || "",
+      shipmentMethod: request?.shipping_method || (meetup ? "face_to_face" : ""),
       shipmentMarketplaceUrl: request?.marketplace_url || "",
       shipmentMarketplaceOrderRef: request?.marketplace_order_ref || "",
       shipmentSubmittedAt: request?.submitted_at || "",
+      meetupPaymentMethod: meetup?.payment_method || "",
+      meetupDate: meetup?.community_meetup_slots?.meetup_date || "",
+      meetupStartTime: meetup?.community_meetup_slots?.start_time || "",
+      meetupEndTime: meetup?.community_meetup_slots?.end_time || "",
+      meetupLocation: meetup?.community_meetup_slots?.location || "",
     };
   });
 }
