@@ -34,6 +34,16 @@ type CommunityPaymentRefundRow = {
   completed_at: string;
 };
 
+type CommunityShipmentRequestRow = {
+  id: string;
+  order_ids: string[];
+  shipping_method: string;
+  status: string;
+  marketplace_url: string | null;
+  marketplace_order_ref: string | null;
+  submitted_at: string;
+};
+
 const ACCEPTED_PAYMENT_STATUSES = new Set([
   "approved",
   "topup_required",
@@ -156,6 +166,59 @@ export async function enrichCommunityPaymentRows<T extends { orderId: string; bo
           refundCompletedAt: refund?.completed_at || "",
         };
       }),
+    };
+  });
+}
+
+export async function enrichCommunityShipmentRows<T extends {
+  orderId: string;
+  paymentStatus?: string;
+  purchaseStatus?: string;
+  itemArrivalStatus?: string;
+}>(supabase: SupabaseClient, rows: T[]) {
+  const orderIds = [...new Set(rows.map((row) => row.orderId).filter(Boolean))];
+  const activeByOrderId = new Map<string, CommunityShipmentRequestRow>();
+
+  if (orderIds.length > 0) {
+    const { data, error } = await supabase
+      .from("community_shipment_requests")
+      .select("id,order_ids,shipping_method,status,marketplace_url,marketplace_order_ref,submitted_at")
+      .overlaps("order_ids", orderIds)
+      .neq("status", "cancelled")
+      .order("submitted_at", { ascending: false });
+    if (error) throw error;
+    for (const request of (data || []) as CommunityShipmentRequestRow[]) {
+      for (const orderId of request.order_ids || []) {
+        if (orderIds.includes(orderId) && !activeByOrderId.has(orderId)) activeByOrderId.set(orderId, request);
+      }
+    }
+  }
+
+  const boughtStateByOrderId = new Map<string, { count: number; allArrived: boolean }>();
+  for (const row of rows) {
+    if (row.purchaseStatus !== "bought") continue;
+    const current = boughtStateByOrderId.get(row.orderId) || { count: 0, allArrived: true };
+    current.count += 1;
+    current.allArrived = current.allArrived && row.itemArrivalStatus === "arrived";
+    boughtStateByOrderId.set(row.orderId, current);
+  }
+
+  return rows.map((row) => {
+    const request = activeByOrderId.get(row.orderId);
+    const bought = boughtStateByOrderId.get(row.orderId) || { count: 0, allArrived: false };
+    const paid = row.paymentStatus === "paid";
+    return {
+      ...row,
+      shipmentLocked: Boolean(request),
+      shipmentEligible: !request && bought.count > 0 && bought.allArrived && paid,
+      shipmentAllBoughtArrived: bought.count > 0 && bought.allArrived,
+      shipmentPaid: paid,
+      shipmentRequestId: request?.id || "",
+      shipmentRequestStatus: request?.status || "",
+      shipmentMethod: request?.shipping_method || "",
+      shipmentMarketplaceUrl: request?.marketplace_url || "",
+      shipmentMarketplaceOrderRef: request?.marketplace_order_ref || "",
+      shipmentSubmittedAt: request?.submitted_at || "",
     };
   });
 }

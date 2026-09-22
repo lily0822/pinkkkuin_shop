@@ -12,7 +12,7 @@ import { backendRateLimit } from "@/lib/backend-security";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const ALLOWED_STATUSES = new Set(["pending", "processed", "cancelled"]);
+const ALLOWED_STATUSES = new Set(["pending", "accepted", "completed", "cancelled"]);
 
 async function guardBackendRequest(request: NextRequest) {
   const runtime = getBackendRuntime();
@@ -46,7 +46,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ ok: false, error: "請提供正確的出貨申請資料。" }, { status: 400 });
   }
 
-  let body: { status?: unknown };
+  let body: { status?: unknown; marketplaceUrl?: unknown; marketplaceOrderRef?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -54,19 +54,26 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
 
   const status = typeof body.status === "string" ? body.status.trim() : "";
+  const marketplaceUrl = typeof body.marketplaceUrl === "string" ? body.marketplaceUrl.trim().slice(0, 1000) : "";
+  const marketplaceOrderRef = typeof body.marketplaceOrderRef === "string" ? body.marketplaceOrderRef.trim().slice(0, 200) : "";
   if (!ALLOWED_STATUSES.has(status)) {
     return NextResponse.json({ ok: false, error: "請提供正確的狀態。" }, { status: 400 });
+  }
+  if (marketplaceUrl && !/^https:\/\//i.test(marketplaceUrl)) {
+    return NextResponse.json({ ok: false, error: "賣貨便連結必須使用 HTTPS。" }, { status: 400 });
   }
 
   try {
     const supabase = createSupabaseServiceClient();
-    const { error } = await supabase.rpc("backend_update_community_shipment_status", {
+    const { data, error } = await supabase.rpc("backend_update_community_shipment_status", {
       p_id: requestId,
       p_status: status,
+      p_marketplace_url: marketplaceUrl || null,
+      p_marketplace_order_ref: marketplaceOrderRef || null,
     });
     if (error) throw error;
 
-    return NextResponse.json({ ok: true, status });
+    return NextResponse.json({ ok: true, status, result: data });
   } catch {
     return NextResponse.json({ ok: false, error: "狀態更新失敗，請稍後再試。" }, { status: 500 });
   }
