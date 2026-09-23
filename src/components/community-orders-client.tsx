@@ -390,26 +390,23 @@ function DesktopOrderCard({
                 {group.paymentReviewStatus === "rejected" ? <span className="text-red-600">{group.paymentRejectionReason || "請重新確認付款資料"}</span> : null}
               </div>
             </div>
-            <div className="shrink-0 text-right">
-              <p className="text-[10px] font-bold text-gray-500">商品總金額</p>
-              <p className="text-base font-black tabular-nums text-penguin-gray">{formatPrice(group.boughtTotal)}</p>
-            </div>
+            <p className="shrink-0 whitespace-nowrap text-sm font-black tabular-nums text-penguin-gray">總金額 {formatPrice(group.boughtTotal)}</p>
           </div>
 
           <ul className="mt-3 divide-y divide-dashed divide-penguin-peach/80 border-t border-penguin-peach/80">
             {group.items.map((item) => (
-              <li key={item.itemId} className="grid grid-cols-[minmax(0,1.45fr)_auto_auto_auto_auto] items-center gap-x-3 py-2 text-[11px] text-penguin-gray">
-                <span className="min-w-0 truncate font-bold" title={item.variantSpec ? `${item.productName}｜${item.variantSpec}` : item.productName}>
-                  {item.productName}{item.variantSpec ? `｜${item.variantSpec}` : ""}
-                </span>
-                <span className="whitespace-nowrap">×{item.quantity}</span>
+              <li key={item.itemId} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-4 py-2 text-[11px] text-penguin-gray">
+                <div className="flex min-w-0 items-baseline gap-1.5">
+                  <span className="min-w-0 truncate font-bold" title={item.variantSpec ? `${item.productName}｜${item.variantSpec}` : item.productName}>
+                    {item.productName}{item.variantSpec ? `｜${item.variantSpec}` : ""}
+                  </span>
+                  <span className="shrink-0 whitespace-nowrap">×{item.quantity}</span>
+                  {item.purchaseStatus === "bought" ? <span className="shrink-0 whitespace-nowrap">單價 {formatPrice(item.unitPrice)}</span> : null}
+                </div>
                 {item.purchaseStatus === "not_bought" ? (
-                  <span className="col-span-2 whitespace-nowrap font-bold text-gray-400">不計入付款</span>
+                  <span className="whitespace-nowrap font-bold text-gray-400">不計入總額</span>
                 ) : (
-                  <>
-                    <span className="whitespace-nowrap">單價 {formatPrice(item.unitPrice)}</span>
-                    <span className="whitespace-nowrap font-black">小計 {formatPrice(item.itemSubtotal)}</span>
-                  </>
+                  <span className="whitespace-nowrap font-black">小計 {formatPrice(item.itemSubtotal)}</span>
                 )}
                 <span className={`whitespace-nowrap rounded-full px-2 py-0.5 font-black ${item.purchaseStatus === "not_bought" || item.itemArrivalStatus === "exception" ? "bg-red-100 text-red-600" : item.itemArrivalStatus === "arrived" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
                   {desktopItemStatus(item)}
@@ -513,18 +510,18 @@ function DesktopCombinedPaymentPanel({
     <form onSubmit={submit} className="rounded-2xl border-2 border-rose-200 bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h3 className="text-sm font-black text-penguin-gray">付款資料</h3>
+          <h3 className="text-lg font-black text-penguin-gray">付款資料</h3>
           <p className="mt-0.5 text-[11px] font-bold text-gray-500">{groups.length ? `已選 ${groups.length} 個系列` : "請先選擇要付款的系列"}</p>
         </div>
         <div className="text-right">
-          <p className="text-[10px] font-bold text-gray-500">本次應付總額</p>
+          <p className="text-[10px] font-bold text-gray-500">本次匯款總額</p>
           <p className="text-xl font-black tabular-nums text-penguin-pink-dark">{formatPrice(total)}</p>
         </div>
       </div>
       <dl className="mt-3 grid grid-cols-3 gap-2 rounded-xl bg-rose-50 px-3 py-2 text-[11px] font-bold text-gray-600">
         <div><dt>商品總金額</dt><dd className="mt-0.5 font-black tabular-nums text-penguin-gray">{formatPrice(productTotal)}</dd></div>
-        <div><dt>記事本折抵</dt><dd className="mt-0.5 font-black tabular-nums text-penguin-pink-dark">-{formatPrice(discountTotal)}{!isExistingBatch && groups.length ? `（${groups.length} 本 × NT$20）` : ""}</dd></div>
-        <div><dt>本次匯款</dt><dd className="mt-0.5 font-black tabular-nums text-penguin-gray">{formatPrice(total)}</dd></div>
+        <div><dt>賣貨便各系列留 20</dt><dd className="mt-0.5 font-black tabular-nums text-penguin-pink-dark">-{formatPrice(discountTotal)}{!isExistingBatch && groups.length ? `（${groups.length} 本 × NT$20）` : ""}</dd></div>
+        <div><dt>本次匯款總額</dt><dd className="mt-0.5 font-black tabular-nums text-penguin-gray">{formatPrice(total)}</dd></div>
       </dl>
       {!validSelection && groups.length ? <p className="mt-2 text-xs font-bold text-red-500">補款需完整選取同一付款批次的全部記事本，且不可混入其他批次。</p> : null}
       <div className="mt-3 grid grid-cols-3 gap-2">
@@ -535,8 +532,8 @@ function DesktopCombinedPaymentPanel({
         ))}
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <label className="text-xs font-black text-penguin-gray">實際匯款金額<input type="number" min="1" step="1" value={amount} onChange={(event) => setAmount(event.target.value)} className="mt-1 h-10 w-full rounded-xl border-2 border-penguin-peach px-3 text-sm font-bold tabular-nums outline-none focus:border-penguin-pink-dark" /></label>
-        <label className="text-xs font-black text-penguin-gray">匯款後 5 碼<input type="text" inputMode="numeric" maxLength={5} value={last5} onChange={(event) => setLast5(event.target.value.replace(/\D/g, "").slice(0, 5))} className="mt-1 h-10 w-full rounded-xl border-2 border-penguin-peach px-3 text-sm font-bold tabular-nums outline-none focus:border-penguin-pink-dark" /></label>
+        <label className="text-xs font-black text-penguin-gray">實際匯款金額（必填）<input type="number" min="1" step="1" value={amount} onChange={(event) => setAmount(event.target.value)} className="mt-1 h-10 w-full rounded-xl border-2 border-penguin-peach px-3 text-sm font-bold tabular-nums outline-none focus:border-penguin-pink-dark" /></label>
+        <label className="text-xs font-black text-penguin-gray">匯款後 5 碼（必填）<input type="text" inputMode="numeric" maxLength={5} value={last5} onChange={(event) => setLast5(event.target.value.replace(/\D/g, "").slice(0, 5))} className="mt-1 h-10 w-full rounded-xl border-2 border-penguin-peach px-3 text-sm font-bold tabular-nums outline-none focus:border-penguin-pink-dark" /></label>
       </div>
       {error ? <p className="mt-2 text-xs font-bold text-red-500">{error}</p> : null}
       <button type="submit" disabled={!validSelection || total <= 0 || submitting || !/^\d{5}$/.test(last5) || !Number.isFinite(Number(amount)) || Number(amount) <= 0} className="mt-3 w-full rounded-full bg-penguin-pink-dark px-4 py-2.5 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50">
@@ -1113,12 +1110,12 @@ export function CommunityOrdersClient() {
           </div>
         ) : (
           <section className="mt-8 pb-28 sm:pb-0">
-            <div className="hidden items-start gap-6 lg:grid lg:grid-cols-2">
+            <div className="mx-auto hidden max-w-6xl items-start gap-6 lg:grid lg:grid-cols-2">
               <section className="min-w-0">
-                <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl border-2 border-rose-200 bg-rose-50/70 px-4 py-3">
+                <div className="mb-3 flex items-center justify-between gap-3 px-1 py-1.5">
                   <div>
-                    <h2 className="text-lg font-black text-penguin-gray">未付款</h2>
-                    <p className="text-[11px] font-bold text-gray-500">選擇要一起提交付款的系列</p>
+                    <h2 className="inline-flex rounded-full border-2 border-rose-300 bg-white px-4 py-1.5 text-lg font-black text-rose-600">未付款</h2>
+                    <p className="mt-1 text-[11px] font-bold text-gray-500">選擇要一起提交付款的系列</p>
                   </div>
                   <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-black text-penguin-gray">
                     <input
@@ -1155,11 +1152,11 @@ export function CommunityOrdersClient() {
               </section>
 
               <section className="min-w-0">
-                <div className="mb-3 rounded-2xl border-2 border-emerald-200 bg-emerald-50/70 px-4 py-3">
+                <div className="mb-3 px-1 py-1.5">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <h2 className="text-lg font-black text-penguin-gray">已付款</h2>
-                      <p className="text-[11px] font-bold text-gray-500">只可選擇已到貨且未鎖定的系列</p>
+                      <h2 className="inline-flex rounded-full border-2 border-emerald-300 bg-white px-4 py-1.5 text-lg font-black text-emerald-700">已付款</h2>
+                      <p className="mt-1 text-[11px] font-bold text-gray-500">只可選擇已到貨且未鎖定的系列</p>
                     </div>
                     <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-black text-penguin-gray">
                       <input
@@ -1172,7 +1169,7 @@ export function CommunityOrdersClient() {
                       全選可出貨
                     </label>
                   </div>
-                  <div className="mt-3 flex items-center justify-between gap-3 border-t border-emerald-200 pt-3">
+                  <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/55 px-3 py-2.5">
                     <p className="text-xs font-black text-penguin-gray">已選 {selectedDesktopPaidGroups.length} 個系列</p>
                     <div className="flex gap-2">
                       <button
