@@ -1,7 +1,7 @@
 "use client";
 
 import { Dispatch, FormEvent, SetStateAction, useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Link2, Search, PackageCheck, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, Link2, Search, PackageCheck, ReceiptText, RefreshCw, X } from "lucide-react";
 import { formatPrice } from "@/lib/products";
 
 type CommunityPaymentStatus =
@@ -366,6 +366,11 @@ function DesktopOrderCard({
   onToggle: (checked: boolean) => void;
 }) {
   const paymentLabel = desktopPaymentStatusLabel(group.paymentReviewStatus);
+  const paymentTone = group.paymentReviewStatus === "pending"
+    ? "bg-[#fff4d6] text-penguin-gray"
+    : tone === "paid"
+      ? "bg-emerald-100 text-emerald-700"
+      : "bg-rose-100 text-rose-700";
   return (
     <article className={`p-4 transition-colors ${tone === "paid" ? (checked ? "bg-emerald-100/90" : "bg-emerald-50/35") : (checked ? "bg-rose-100/90" : "bg-rose-50/35")}`}>
       <div className="flex items-start gap-3">
@@ -382,7 +387,7 @@ function DesktopOrderCard({
             <div className="min-w-0">
               <h3 className="truncate text-sm font-black text-penguin-gray">{group.notebookName}</h3>
               <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] font-bold">
-                <span className={`rounded-full px-2 py-0.5 ${tone === "paid" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
+                <span className={`rounded-full px-2 py-0.5 ${paymentTone}`}>
                   {tone === "paid" ? "已付款" : paymentLabel}
                 </span>
                 {tone === "paid" && !group.shipmentAllBoughtArrived ? <span className="text-amber-700">等待到貨</span> : null}
@@ -601,7 +606,7 @@ function NotebookPaymentPanel({
       </div>
 
       {status === "pending" ? (
-        <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-black text-amber-700">付款資料已送出，等待審核</div>
+        <div className="mt-3 rounded-full bg-[#fff4d6] px-3 py-2 text-xs font-black text-penguin-gray">付款資料已送出，等待審核</div>
       ) : status === "approved" ? (
         <div className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700">付款已核准</div>
       ) : status === "overpaid_pending_refund" ? (
@@ -743,6 +748,143 @@ function formatCommunityPaymentTime(value: string) {
   }).format(date);
 }
 
+function paymentStatusClass(status: CommunityPaymentStatus) {
+  return {
+    unpaid: "bg-gray-100 text-gray-600",
+    pending: "bg-[#fff4d6] text-penguin-gray",
+    approved: "bg-emerald-100 text-emerald-700",
+    rejected: "bg-red-100 text-red-700",
+    topup_required: "bg-orange-100 text-orange-700",
+    overpaid_pending_refund: "bg-sky-100 text-sky-700",
+    refund_completed: "bg-violet-100 text-violet-700",
+  }[status];
+}
+
+function PaymentHistoryModal({ groups, onClose }: { groups: CommunityOrderGroup[]; onClose: () => void }) {
+  const batches = useMemo(() => {
+    const byBatch = new Map<string, {
+      id: string;
+      notebookNames: string[];
+      productTotal: number;
+      discountTotal: number;
+      payableTotal: number;
+      actualAmount: number;
+      bank: string;
+      accountLast5: string;
+      submittedAt: string;
+      status: CommunityPaymentStatus;
+      rejectionReason: string;
+      history: CommunityPaymentHistory[];
+    }>();
+
+    for (const group of groups) {
+      if (!group.paymentHistory.length) continue;
+      const batchId = group.paymentBatchId || group.paymentSubmissionId || group.orderId;
+      let batch = byBatch.get(batchId);
+      if (!batch) {
+        batch = {
+          id: batchId,
+          notebookNames: [],
+          productTotal: 0,
+          discountTotal: 0,
+          payableTotal: group.paymentExpectedAmount || group.paymentPayableAmount,
+          actualAmount: group.paymentSubmittedAmount,
+          bank: group.paymentBank,
+          accountLast5: group.paymentAccountLast5,
+          submittedAt: group.paymentSubmittedAt,
+          status: group.paymentReviewStatus,
+          rejectionReason: group.paymentRejectionReason,
+          history: [],
+        };
+        byBatch.set(batchId, batch);
+      }
+      if (!batch.notebookNames.includes(group.notebookName)) {
+        batch.notebookNames.push(group.notebookName);
+        batch.productTotal += group.paymentProductTotal;
+        batch.discountTotal += group.paymentDiscountAmount;
+      }
+      for (const payment of group.paymentHistory) {
+        if (!batch.history.some((item) => item.id === payment.id)) batch.history.push(payment);
+      }
+    }
+
+    return [...byBatch.values()]
+      .map((batch) => ({
+        ...batch,
+        history: batch.history.sort((a, b) => Date.parse(b.submittedAt) - Date.parse(a.submittedAt)),
+      }))
+      .sort((a, b) => Date.parse(b.submittedAt) - Date.parse(a.submittedAt));
+  }, [groups]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-penguin-gray/40 p-0 sm:items-center sm:p-5" role="dialog" aria-modal="true" aria-label="匯款紀錄" onMouseDown={onClose}>
+      <div className="max-h-[88vh] w-full max-w-3xl overflow-y-auto rounded-t-3xl bg-penguin-cream p-5 shadow-xl sm:rounded-3xl sm:p-6" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-black text-penguin-pink-dark">PAYMENT HISTORY</p>
+            <h2 className="text-xl font-black text-penguin-gray">匯款紀錄</h2>
+          </div>
+          <button type="button" onClick={onClose} aria-label="關閉匯款紀錄" className="rounded-full border border-penguin-peach bg-white p-2 text-penguin-gray">
+            <X size={18} />
+          </button>
+        </div>
+
+        {batches.length === 0 ? (
+          <div className="mt-5 rounded-2xl border border-penguin-peach bg-white px-4 py-8 text-center text-sm font-bold text-gray-500">目前沒有匯款紀錄</div>
+        ) : (
+          <div className="mt-5 space-y-4">
+            {batches.map((batch) => (
+              <section key={batch.id} className="rounded-2xl border border-penguin-peach bg-white p-4">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-bold text-gray-500">{formatCommunityPaymentTime(batch.submittedAt)}</p>
+                    <p className="mt-1 text-sm font-black text-penguin-gray">{batch.notebookNames.join("、")}</p>
+                  </div>
+                  <span className={`rounded-full px-3 py-1 text-xs font-black ${paymentStatusClass(batch.status)}`}>
+                    {desktopPaymentStatusLabel(batch.status)}
+                  </span>
+                </div>
+                <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-3">
+                  <div><dt className="text-gray-400">商品總金額</dt><dd className="font-black text-penguin-gray">{formatPrice(batch.productTotal)}</dd></div>
+                  <div><dt className="text-gray-400">賣貨便各系列留 20</dt><dd className="font-black text-penguin-gray">-{formatPrice(batch.discountTotal)}</dd></div>
+                  <div><dt className="text-gray-400">應付總額</dt><dd className="font-black text-penguin-gray">{formatPrice(batch.payableTotal)}</dd></div>
+                  <div><dt className="text-gray-400">實際匯款金額</dt><dd className="font-black text-penguin-gray">{formatPrice(batch.actualAmount)}</dd></div>
+                  <div><dt className="text-gray-400">銀行</dt><dd className="font-black text-penguin-gray">{communityPaymentBankLabel(batch.bank)}</dd></div>
+                  <div><dt className="text-gray-400">匯款後 5 碼</dt><dd className="font-black text-penguin-gray">{batch.accountLast5 || "—"}</dd></div>
+                </dl>
+                {batch.rejectionReason ? <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-700">退回原因：{batch.rejectionReason}</p> : null}
+                <div className="mt-3 border-t border-dashed border-penguin-peach pt-3">
+                  <p className="text-xs font-black text-penguin-gray">歷次付款／補款／退款</p>
+                  <div className="mt-2 space-y-2">
+                    {batch.history.map((payment) => (
+                      <div key={payment.id} className="rounded-xl bg-penguin-cream/70 px-3 py-2 text-[11px] text-gray-500">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span>{formatCommunityPaymentTime(payment.submittedAt)} · {communityPaymentBankLabel(payment.bank)} · 後五碼 {payment.accountLast5}</span>
+                          <span className="font-black text-penguin-gray">{formatPrice(payment.amount)} · {communityPaymentStatusLabel(payment.status)}</span>
+                        </div>
+                        {payment.rejectionReason ? <p className="mt-1 text-red-600">退回原因：{payment.rejectionReason}</p> : null}
+                        {payment.refundAmount > 0 ? <p className="mt-1 text-violet-700">退款 {formatPrice(payment.refundAmount)} · {formatCommunityPaymentTime(payment.refundCompletedAt)}</p> : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function communityShipmentStatusLabel(value: string) {
   return {
     pending: "待處理",
@@ -770,6 +912,7 @@ export function CommunityOrdersClient() {
   const [lineError, setLineError] = useState("");
   const [bindingBusy, setBindingBusy] = useState(false);
   const [changingBinding, setChangingBinding] = useState(false);
+  const [paymentHistoryOpen, setPaymentHistoryOpen] = useState(false);
 
   const selectableGroups = useMemo(
     () => (groups || []).filter((group) => !group.shipmentLocked && group.shipmentAllBoughtArrived),
@@ -1072,6 +1215,14 @@ export function CommunityOrdersClient() {
             <div className="flex flex-col gap-2 sm:flex-row lg:shrink-0">
               <button
                 type="button"
+                onClick={() => setPaymentHistoryOpen(true)}
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-full border-2 border-penguin-peach bg-white px-4 text-xs font-black text-penguin-pink-dark transition hover:bg-penguin-pink-light"
+              >
+                <ReceiptText size={14} />
+                匯款紀錄
+              </button>
+              <button
+                type="button"
                 disabled={loading}
                 onClick={() => lineSession.binding?.nickname && runSearch(lineSession.binding.nickname)}
                 className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-penguin-pink-dark px-6 text-sm font-black text-white transition hover:bg-penguin-pink disabled:cursor-not-allowed disabled:opacity-60"
@@ -1338,6 +1489,9 @@ export function CommunityOrdersClient() {
           onClose={() => setMeetupOpen(false)}
           onSubmitted={() => runSearch(searchedNickname)}
         />
+      ) : null}
+      {paymentHistoryOpen ? (
+        <PaymentHistoryModal groups={groups || []} onClose={() => setPaymentHistoryOpen(false)} />
       ) : null}
     </main>
   );
