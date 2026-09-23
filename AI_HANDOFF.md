@@ -2,32 +2,36 @@
 
 ## Current baseline
 
-- Branch: `community-orders`; desktop UI feature commit `3015e4b`.
-- Community frontend: `https://pinkkkuin-community-orders.vercel.app` → `dpl_KfWUTG18dBGfvFCbgrBBDRwKS1DU`.
-- Shared Staging backend: `https://pinkkkuin-staging.vercel.app/backend` → official-next deployment `dpl_2L5nEzTkU8thHTeockWxEixrHniH`, commit `ff71ba7`.
-- Backend source commit `970ffd4` is pushed to `backend-staging`.
-- `pinkkkuin-staging.vercel.app` belongs only to `official-next`; never update it from this branch.
-- Production is untouched and must never be deployed without explicit approval.
+- Branch: `community-orders`.
+- Latest feature commit: `179b838` (`Refine desktop community order grouping`).
+- Community frontend: `https://pinkkkuin-community-orders.vercel.app` → deployment `dpl_6goM8ekPixGtasHJazYXohb8gLBZ`.
+- Shared Staging backend remains `https://pinkkkuin-staging.vercel.app/backend` and belongs to `official-next`.
+- `pinkkkuin-staging.vercel.app` must never be updated from this branch.
+- Production is untouched and requires explicit authorization for any deployment or write.
 
-## Community order and payment flow
+## Community order desktop UI
 
-- Staging migrations are applied through `202609230001_community_multi_notebook_payment_batches.sql`; none are applied to Production.
-- A payment batch may contain multiple notebooks. New submissions persist a stable `batch_key` and one immutable snapshot row per notebook with product total, discount, and payable amount.
-- Each newly selected notebook receives a fixed discount of up to NT$20; payable never falls below NT$0. `not_bought` items remain visible and never enter product totals.
-- Top-ups stay in the same batch, keep every payment record, and use the discounted batch payable as their comparison base. Overpayments and refund records also remain batch-traceable.
-- Historical single-notebook submissions are grouped with their existing top-ups and receive no retroactive discount, preserving old accounting values.
-- Desktop community orders use independent unpaid and paid columns. Unpaid selection drives one payment panel and selected total; paid selection only allows fully arrived, unlocked notebooks and reuses existing 7-11/meetup flows.
-- Desktop columns are centered at `max-w-6xl`; unpaid/paid headings use outlined pills, item rows use compact name/quantity/unit-price → subtotal → status alignment, and the payment summary says `賣貨便各系列留 20`.
-- Mobile/tablet rendering remains on the existing layout.
-- Existing LINE binding, notebook grouping, bought/not_bought, arrival, shipment, meetup, cancellation locks, payment history, and safe item/order deletion remain in place.
+- Desktop uses centered equal-width unpaid and paid columns at `max-w-5xl`.
+- Each column has one shared rounded container; notebook sections are separated by soft dashed dividers.
+- Selecting a notebook highlights the whole section in its column color. Unpaid and paid selection states remain independent.
+- Bound nickname, `更新訂單`, and `更換綁定暱稱` share one desktop row, with actions aligned right.
+- A valid LINE binding automatically loads the customer's orders on page entry; `更新訂單` manually refreshes them.
+- Compact item rows and all existing payment, NT$20 per-notebook discount, top-up/refund, shipment, meetup, lock, and arrival behavior remain unchanged.
+- Mobile/tablet layout was not restructured by this change.
 
-## Verification status
+## Data and migrations
 
-- Community and official-next builds pass locally; backend inline JavaScript syntax passes.
-- Community deployment smoke: `/` 200, `/community-orders` 200, unauthenticated orders API 401.
-- Transactional Staging SQL E2E passed for 1/2/3 notebooks, NT$20 per-notebook discount, `not_bought` exclusion, multi-notebook submission, batch approval, top-up difference, overpayment, and refund completion.
-- The E2E script finished with `ROLLBACK`; no temporary orders, submissions, refunds, or snapshots were retained.
-- Community alias and shared Staging backend HTTP smoke pass; unauthenticated protected APIs still return 401.
+- Staging migrations are applied through `202609230001_community_multi_notebook_payment_batches.sql`.
+- No migration was added or executed for the desktop UI change.
+- Production migrations remain untouched.
+
+## Verification
+
+- `npm run build`: PASS.
+- `git diff --check`: PASS.
+- Desktop grouping, divider, selection highlight, automatic load, refresh wording, and same-row binding actions: PASS by code/build verification.
+- Git integration deployment `dpl_6goM8ekPixGtasHJazYXohb8gLBZ`: READY.
+- Community alias update: PASS.
 
 ## Deployment rules
 
