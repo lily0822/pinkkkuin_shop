@@ -194,6 +194,17 @@ export async function sendLineAdminFlex(
   });
 }
 
+export async function sendLineUserText(recipientUserId: string, text: string): Promise<LinePushResult> {
+  return sendLineMessageToUser(
+    recipientUserId,
+    {
+      type: "text",
+      text: truncateLineText(text),
+    },
+    "line_member_push",
+  );
+}
+
 export async function sendLineUserFlex(
   recipientUserId: string,
   altText: string,
