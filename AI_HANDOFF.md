@@ -1,35 +1,38 @@
-# AI Handoff — official-next
+# AI Handoff — Pinkkkuin Staging
 
 ## Current baseline
 
-- Branch: `official-next`; feature baseline commit `a53862b`.
-- Storefront Staging: `https://pinkkkuin-staging.vercel.app` → `dpl_2UBAYDLe166maYYrhFcFCxGqXBWS`.
-- Shared Staging backend: `https://pinkkkuin-staging.vercel.app/backend`.
-- Community frontend: `https://pinkkkuin-community-orders.vercel.app` → `dpl_73p2Ve6FZN1VebRisNqDQD1BwrYn` on separate `community-orders` commit `f5a6978`.
-- Backend source: `d2ca38d` on `backend-staging`.
-- Production: `https://pinkkkuin-shop.vercel.app`; untouched and never deploy without explicit approval.
+- `official-next` feature commit: `6db83f4`.
+- Storefront/shared backend Staging: `https://pinkkkuin-staging.vercel.app` → `dpl_EahhtMRJWcPJvPHbdPqboAezeJkX`.
+- Backend source commit: `411167a`, pushed to `backend-staging` and referenced by `official-next`.
+- `community-orders` feature commit: `ef03a07`.
+- Community frontend: `https://pinkkkuin-community-orders.vercel.app` → `dpl_7sHBk1fivMDXTRcDYPMq5WACQkyS`.
+- Production is untouched and requires explicit authorization for every deploy, migration, or write.
 
-## Community orders
+## Community payments
 
-- Staging migrations are applied through `202609220006_community_meetup_workflow.sql`; none are applied to Production.
-- One customer × one notebook is the payment unit. `not_bought` items remain visible and are excluded from payable, arrival, shipment, and meetup eligibility calculations.
-- Payment supports unpaid, review, rejection, top-up, paid, overpaid refund, and refund completion with append-only history.
-- 7-11 supports multiple paid, fully arrived notebooks. Statuses: `pending`, `accepted`, `completed`, `cancelled`; cancellation releases locks.
-- Meetup supports multiple fully arrived notebooks without requiring prepayment. Payment methods: `prepaid`, `pay_at_meetup`; statuses: `pending`, `confirmed`, `completed`, `cancelled`.
-- `pay_at_meetup` completion adds traceable approved remittance records and marks the included notebook orders paid. `prepaid` completion requires the orders to already be paid and creates no duplicate payment.
-- Active or completed shipment/meetup requests share one cross-workflow lock. Cancellation releases it; completion keeps it.
-- Backend can create/edit/open/close meetup slots and update meetup requests. Different dates may use different locations; no capacity limit is applied.
-- Full Staging E2E passed for multi-notebook shipment, unpaid meetup, prepaid meetup, pay-at-meetup, cancel/unlock, complete/lock, distinct locations, and not-arrived rejection. Temporary E2E data was fully removed (all verification counts `0`).
-- Existing notebook grouping, purchase/arrival states, whole-notebook arrival, per-item exceptions, payment/refund history, and safe item/order deletion remain in place.
+- Staging migrations remain applied through `202609230001_community_multi_notebook_payment_batches.sql`; no migration was added this round.
+- Multi-notebook payment batches, NT$20 per-notebook discount, top-ups, overpayment refunds, old single-notebook compatibility, shipment, meetup, and independent desktop selection remain unchanged.
+- Shared backend remittance API once again returns review status, cumulative received, remaining/overpaid amounts, rejection/refund metadata, and exposes the existing protected same-origin `PATCH` handler.
+- Pending batch review now shows the calculated action: `核准`, `需補款`, or `多匯待退款`; rejection still requires a reason. All actions use the existing batch-aware RPCs.
+- Backend import history is the final block on the community orders page.
 
-## Deployment rules
+## Verification
+
+- `official-next` build: PASS.
+- Backend inline JavaScript syntax: PASS.
+- Shared backend login page: PASS.
+- Unauthenticated remittance API guard: PASS.
+- No DB, migration, payment model, shipment, meetup, or Production changes.
+
+## Fixed deployment rules
 
 - `pinkkkuin-staging.vercel.app` belongs only to `official-next`.
 - `pinkkkuin-community-orders.vercel.app` belongs only to `community-orders`.
-- Production and Production aliases remain untouched unless explicitly approved.
+- Never deploy Production or run Production migrations without explicit approval.
 
 ## Backend submodule safety
 
 - `.backend-product-publish` is a separate repository.
-- Work on detached HEAD, commit there, then push with `git push origin HEAD:backend-staging`.
+- Work on detached HEAD and push with `git push origin HEAD:backend-staging`.
 - Do not check out the diverged local `backend-staging` branch.
