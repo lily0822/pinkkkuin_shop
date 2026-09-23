@@ -49,21 +49,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "操作太頻繁，請稍後再試。" }, { status: 429 });
   }
 
-  let body: { nickname?: unknown; orderIds?: unknown; recipientName?: unknown; phone?: unknown; pickupStore?: unknown };
+  let body: { orderIds?: unknown };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ ok: false, error: "請提供正確的出貨申請資料。" }, { status: 400 });
   }
 
-  const recipientName = typeof body.recipientName === "string" ? body.recipientName.trim().slice(0, 80) : "";
-  const phone = typeof body.phone === "string" ? body.phone.trim().slice(0, 40) : "";
-  const pickupStore = typeof body.pickupStore === "string" ? body.pickupStore.trim().slice(0, 120) : "";
   const orderIds = Array.isArray(body.orderIds)
     ? body.orderIds.filter((id): id is string => typeof id === "string" && UUID_RE.test(id))
     : [];
 
-  if (!recipientName || !phone || !pickupStore || !orderIds.length) {
+  if (!orderIds.length) {
     return NextResponse.json({ ok: false, error: "請確認出貨申請資料是否正確。" }, { status: 400 });
   }
 
@@ -72,9 +69,9 @@ export async function POST(request: NextRequest) {
     const { data, error } = await supabase.rpc("submit_community_shipment_request", {
       p_nickname: binding.nickname,
       p_order_ids: orderIds,
-      p_recipient_name: recipientName,
-      p_phone: phone,
-      p_pickup_store: pickupStore,
+      p_recipient_name: "由賣貨便填寫",
+      p_phone: "由賣貨便填寫",
+      p_pickup_store: "由賣貨便填寫",
     });
     if (error) throw error;
 

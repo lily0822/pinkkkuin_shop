@@ -1,7 +1,7 @@
 "use client";
 
 import { Dispatch, FormEvent, SetStateAction, useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Link2, Search, PackageCheck, ReceiptText, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, History, Link2, Search, PackageCheck, ReceiptText, RefreshCw, X } from "lucide-react";
 import { formatPrice } from "@/lib/products";
 
 type CommunityPaymentStatus =
@@ -60,6 +60,8 @@ type CommunityOrderRow = {
   shipmentMarketplaceUrl: string;
   shipmentMarketplaceOrderRef: string;
   shipmentSubmittedAt: string;
+  shipmentMarketplaceCreatedAt: string;
+  shipmentLineNotifiedAt: string;
   meetupEligible: boolean;
   meetupPaymentMethod: string;
   meetupDate: string;
@@ -114,6 +116,8 @@ type CommunityOrderGroup = {
   shipmentMarketplaceUrl: string;
   shipmentMarketplaceOrderRef: string;
   shipmentSubmittedAt: string;
+  shipmentMarketplaceCreatedAt: string;
+  shipmentLineNotifiedAt: string;
   meetupEligible: boolean;
   meetupPaymentMethod: string;
   meetupDate: string;
@@ -194,6 +198,8 @@ function groupRows(rows: CommunityOrderRow[]): CommunityOrderGroup[] {
         shipmentMarketplaceUrl: row.shipmentMarketplaceUrl,
         shipmentMarketplaceOrderRef: row.shipmentMarketplaceOrderRef,
         shipmentSubmittedAt: row.shipmentSubmittedAt,
+        shipmentMarketplaceCreatedAt: row.shipmentMarketplaceCreatedAt || "",
+        shipmentLineNotifiedAt: row.shipmentLineNotifiedAt || "",
         meetupEligible: row.meetupEligible,
         meetupPaymentMethod: row.meetupPaymentMethod,
         meetupDate: row.meetupDate,
@@ -310,7 +316,7 @@ function OrderCard({
           {group.shipmentLocked ? (
             <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-700">
               <p className="font-black">
-                {group.shipmentMethod === "face_to_face" ? "已預約面交" : "已申請出貨"} · {communityShipmentStatusLabel(group.shipmentRequestStatus)}
+                {communityFulfillmentProgressLabel(group)}
               </p>
               {group.shipmentMethod === "face_to_face" ? (
                 <p className="mt-1">
@@ -422,7 +428,7 @@ function DesktopOrderCard({
 
           {group.shipmentLocked ? (
             <div className="mt-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-bold text-sky-700">
-              <p className="font-black">{group.shipmentMethod === "face_to_face" ? "已預約面交" : "已申請出貨"} · {communityShipmentStatusLabel(group.shipmentRequestStatus)}</p>
+              <p className="font-black">{communityFulfillmentProgressLabel(group)}</p>
               {group.shipmentMethod === "face_to_face" ? (
                 <p>{group.meetupDate} {group.meetupStartTime.slice(0, 5)}～{group.meetupEndTime.slice(0, 5)} · {group.meetupLocation}</p>
               ) : null}
@@ -885,6 +891,86 @@ function PaymentHistoryModal({ groups, onClose }: { groups: CommunityOrderGroup[
   );
 }
 
+function formatHistoryDateTime(value: string) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("zh-TW", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+function OrderHistoryModal({ groups, onClose }: { groups: CommunityOrderGroup[]; onClose: () => void }) {
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-penguin-gray/40 p-0 sm:items-center sm:p-5" role="dialog" aria-modal="true" aria-label="歷史訂單" onMouseDown={onClose}>
+      <div className="max-h-[88vh] w-full max-w-6xl overflow-y-auto rounded-t-3xl bg-penguin-cream p-5 shadow-xl sm:rounded-3xl sm:p-6" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-black text-penguin-pink-dark">ORDER HISTORY</p>
+            <h2 className="text-xl font-black text-penguin-gray">歷史訂單</h2>
+          </div>
+          <button type="button" onClick={onClose} aria-label="關閉歷史訂單" className="rounded-full border border-penguin-peach bg-white p-2 text-penguin-gray">
+            <X size={18} />
+          </button>
+        </div>
+
+        {groups.length === 0 ? (
+          <div className="mt-5 rounded-2xl border border-penguin-peach bg-white px-4 py-8 text-center text-sm font-bold text-gray-500">目前沒有歷史訂單</div>
+        ) : (
+          <div className="mt-5 overflow-x-auto rounded-2xl border border-penguin-peach bg-white">
+            <table className="w-full min-w-[900px] border-collapse text-left text-xs text-penguin-gray">
+              <thead className="bg-penguin-cream/80 text-[11px] font-black">
+                <tr>
+                  <th className="px-4 py-3">系列名稱</th>
+                  <th className="px-4 py-3">商品名稱</th>
+                  <th className="px-4 py-3 text-right">數量</th>
+                  <th className="px-4 py-3 text-right">單價</th>
+                  <th className="px-4 py-3 text-right">小計</th>
+                  <th className="px-4 py-3">取貨方式</th>
+                  <th className="px-4 py-3">時間</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-dashed divide-penguin-peach">
+                {groups.flatMap((group) => {
+                  const items = group.items.filter((item) => item.purchaseStatus === "bought");
+                  const method = group.shipmentMethod === "face_to_face" ? "面交｜已完成" : "7-11 出貨｜已通知下單";
+                  const time = group.shipmentMethod === "face_to_face"
+                    ? `${group.meetupDate} ${group.meetupStartTime.slice(0, 5)}–${group.meetupEndTime.slice(0, 5)}`
+                    : formatHistoryDateTime(group.shipmentMarketplaceCreatedAt || group.shipmentLineNotifiedAt);
+                  return items.map((item, index) => (
+                    <tr key={`${group.orderId}:${item.itemId}`} className="align-top">
+                      <td className="px-4 py-3 font-black">{index === 0 ? group.notebookName : ""}</td>
+                      <td className="px-4 py-3 font-bold">{item.productName}{item.variantSpec ? `｜${item.variantSpec}` : ""}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">{item.quantity}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">{formatPrice(item.unitPrice)}</td>
+                      <td className="px-4 py-3 text-right font-black tabular-nums">{formatPrice(item.itemSubtotal)}</td>
+                      <td className="px-4 py-3 font-bold">{index === 0 ? method : ""}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{index === 0 ? time : ""}</td>
+                    </tr>
+                  ));
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function communityShipmentStatusLabel(value: string) {
   return {
     pending: "待處理",
@@ -893,6 +979,13 @@ function communityShipmentStatusLabel(value: string) {
     completed: "已完成",
     cancelled: "已取消",
   }[value] || value || "處理中";
+}
+
+function communityFulfillmentProgressLabel(group: CommunityOrderGroup) {
+  if (group.shipmentMethod === "face_to_face") {
+    return group.shipmentRequestStatus === "completed" ? "面交｜已完成" : "面交申請中";
+  }
+  return group.shipmentRequestStatus === "completed" ? "7-11 出貨｜已通知下單" : "7-11 出貨申請中";
 }
 
 export function CommunityOrdersClient() {
@@ -913,10 +1006,20 @@ export function CommunityOrdersClient() {
   const [bindingBusy, setBindingBusy] = useState(false);
   const [changingBinding, setChangingBinding] = useState(false);
   const [paymentHistoryOpen, setPaymentHistoryOpen] = useState(false);
+  const [orderHistoryOpen, setOrderHistoryOpen] = useState(false);
+
+  const historicalGroups = useMemo(
+    () => (groups || []).filter((group) => group.shipmentRequestStatus === "completed"),
+    [groups],
+  );
+  const activeGroups = useMemo(
+    () => (groups || []).filter((group) => group.shipmentRequestStatus !== "completed"),
+    [groups],
+  );
 
   const selectableGroups = useMemo(
-    () => (groups || []).filter((group) => !group.shipmentLocked && group.shipmentAllBoughtArrived),
-    [groups],
+    () => activeGroups.filter((group) => !group.shipmentLocked && group.shipmentAllBoughtArrived),
+    [activeGroups],
   );
   const allSelected = selectableGroups.length > 0 && selectableGroups.every((group) => selected.has(group.orderId));
 
@@ -1035,17 +1138,16 @@ export function CommunityOrdersClient() {
   }
 
   const selectedGroups = useMemo(() => {
-    if (!groups) return [];
-    return groups.filter((group) => selected.has(group.orderId));
-  }, [groups, selected]);
+    return activeGroups.filter((group) => selected.has(group.orderId));
+  }, [activeGroups, selected]);
 
   const desktopUnpaidGroups = useMemo(
-    () => (groups || []).filter((group) => !group.shipmentPaid),
-    [groups],
+    () => activeGroups.filter((group) => !group.shipmentPaid),
+    [activeGroups],
   );
   const desktopPaidGroups = useMemo(
-    () => (groups || []).filter((group) => group.shipmentPaid),
-    [groups],
+    () => activeGroups.filter((group) => group.shipmentPaid),
+    [activeGroups],
   );
   const desktopPayableGroups = useMemo(
     () => desktopUnpaidGroups.filter((group) => isPaymentSelectable(group)),
@@ -1215,6 +1317,15 @@ export function CommunityOrdersClient() {
             <div className="flex flex-col gap-2 sm:flex-row lg:shrink-0">
               <button
                 type="button"
+                disabled={loading}
+                onClick={() => lineSession.binding?.nickname && runSearch(lineSession.binding.nickname)}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-penguin-pink-dark px-6 text-sm font-black text-white transition hover:bg-penguin-pink disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <RefreshCw size={16} />
+                {loading ? "更新中..." : "更新訂單"}
+              </button>
+              <button
+                type="button"
                 onClick={() => setPaymentHistoryOpen(true)}
                 className="inline-flex h-11 items-center justify-center gap-1.5 rounded-full border-2 border-penguin-peach bg-white px-4 text-xs font-black text-penguin-pink-dark transition hover:bg-penguin-pink-light"
               >
@@ -1223,12 +1334,11 @@ export function CommunityOrdersClient() {
               </button>
               <button
                 type="button"
-                disabled={loading}
-                onClick={() => lineSession.binding?.nickname && runSearch(lineSession.binding.nickname)}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-penguin-pink-dark px-6 text-sm font-black text-white transition hover:bg-penguin-pink disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => setOrderHistoryOpen(true)}
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-full border-2 border-penguin-peach bg-white px-4 text-xs font-black text-penguin-pink-dark transition hover:bg-penguin-pink-light"
               >
-                <RefreshCw size={16} />
-                {loading ? "更新中..." : "更新訂單"}
+                <History size={14} />
+                歷史訂單
               </button>
               <button
                 type="button"
@@ -1407,7 +1517,7 @@ export function CommunityOrdersClient() {
             ) : null}
 
             <div className="grid gap-3 sm:grid-cols-2">
-              {groups.map((group) => (
+              {activeGroups.map((group) => (
                 <OrderCard
                   key={group.orderId}
                   group={group}
@@ -1430,7 +1540,7 @@ export function CommunityOrdersClient() {
       ) : null}
 
       {/* Mobile fixed action bar */}
-      {groups && groups.length > 0 ? (
+      {activeGroups.length > 0 ? (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t-2 border-penguin-peach bg-white/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-6px_20px_rgba(0,0,0,0.08)] backdrop-blur sm:hidden">
           <div className="flex items-center justify-between gap-3">
             <label className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 text-xs font-black text-penguin-gray">
@@ -1469,7 +1579,7 @@ export function CommunityOrdersClient() {
         </div>
       ) : null}
 
-      {selectedNotArrived.length > 0 && groups && groups.length > 0 ? (
+      {selectedNotArrived.length > 0 && activeGroups.length > 0 ? (
         <div className="fixed inset-x-4 bottom-28 z-40 sm:hidden">
           <ShipBlockedNotice names={selectedNotArrived.map((group) => group.notebookName)} onDismiss={() => setSelected(new Set())} />
         </div>
@@ -1477,7 +1587,6 @@ export function CommunityOrdersClient() {
 
       {shipmentOpen ? (
         <ShipmentRequestModal
-          nickname={searchedNickname}
           groups={fulfillmentGroups}
           onClose={() => setShipmentOpen(false)}
           onSubmitted={() => runSearch(searchedNickname)}
@@ -1492,6 +1601,9 @@ export function CommunityOrdersClient() {
       ) : null}
       {paymentHistoryOpen ? (
         <PaymentHistoryModal groups={groups || []} onClose={() => setPaymentHistoryOpen(false)} />
+      ) : null}
+      {orderHistoryOpen ? (
+        <OrderHistoryModal groups={historicalGroups} onClose={() => setOrderHistoryOpen(false)} />
       ) : null}
     </main>
   );
@@ -1517,32 +1629,22 @@ function ShipBlockedNotice({ names, onDismiss }: { names: string[]; onDismiss: (
 }
 
 function ShipmentRequestModal({
-  nickname,
   groups,
   onClose,
   onSubmitted,
 }: {
-  nickname: string;
   groups: CommunityOrderGroup[];
   onClose: () => void;
   onSubmitted: () => Promise<void>;
 }) {
-  const [recipientName, setRecipientName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [pickupStore, setPickupStore] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [success, setSuccess] = useState(false);
 
-  const recipientValid = recipientName.trim().length > 0;
-  const phoneValid = phone.trim().length >= 8;
-  const storeValid = pickupStore.trim().length > 0;
-  const formValid = recipientValid && phoneValid && storeValid;
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!formValid || submitting || submitted) return;
+    if (!groups.length || submitting || submitted) return;
     setSubmitting(true);
     setSubmitted(true);
     setSubmitError("");
@@ -1551,11 +1653,7 @@ function ShipmentRequestModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          nickname,
           orderIds: groups.map((group) => group.orderId),
-          recipientName: recipientName.trim(),
-          phone: phone.trim(),
-          pickupStore: pickupStore.trim(),
         }),
       });
       const result = await response.json().catch(() => null);
@@ -1582,7 +1680,7 @@ function ShipmentRequestModal({
 
         {success ? (
           <div className="space-y-4 text-center">
-            <p className="text-sm font-bold text-penguin-gray">出貨申請已送出，小企鵝確認後會盡快為你安排！</p>
+            <p className="text-sm font-bold text-penguin-gray">申請通過！1–2 天內會私訊賣場連結，感謝捧場 ♡</p>
             <button
               type="button"
               onClick={onClose}
@@ -1610,40 +1708,10 @@ function ShipmentRequestModal({
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-3">
-              <div>
-                <label className="mb-1 block text-xs font-black text-penguin-gray">收件人姓名</label>
-                <input
-                  type="text"
-                  value={recipientName}
-                  onChange={(event) => setRecipientName(event.target.value)}
-                  placeholder="請輸入收件人姓名"
-                  className="h-11 w-full rounded-xl border-2 border-penguin-peach bg-white px-3 text-sm font-bold text-penguin-gray outline-none focus:border-penguin-pink-dark"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-black text-penguin-gray">手機號碼</label>
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(event) => setPhone(event.target.value)}
-                  placeholder="請輸入手機號碼"
-                  className="h-11 w-full rounded-xl border-2 border-penguin-peach bg-white px-3 text-sm font-bold tabular-nums text-penguin-gray outline-none focus:border-penguin-pink-dark"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-black text-penguin-gray">取貨門市</label>
-                <input
-                  type="text"
-                  value={pickupStore}
-                  onChange={(event) => setPickupStore(event.target.value)}
-                  placeholder="例如：7-11 忠孝門市"
-                  className="h-11 w-full rounded-xl border-2 border-penguin-peach bg-white px-3 text-sm font-bold text-penguin-gray outline-none focus:border-penguin-pink-dark"
-                />
-              </div>
               {submitError ? <p className="text-xs font-bold text-red-500">{submitError}</p> : null}
               <button
                 type="submit"
-                disabled={!formValid || submitting || submitted}
+                disabled={!groups.length || submitting || submitted}
                 className="w-full rounded-full bg-penguin-pink-dark px-4 py-3 text-sm font-black text-white shadow-md transition hover:bg-penguin-pink disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {submitting ? "送出中..." : "送出出貨申請"}

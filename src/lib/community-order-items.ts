@@ -51,6 +51,8 @@ type CommunityShipmentRequestRow = {
   marketplace_url: string | null;
   marketplace_order_ref: string | null;
   submitted_at: string;
+  accepted_at: string | null;
+  completed_at: string | null;
 };
 
 type CommunityMeetupRequestRow = {
@@ -226,7 +228,7 @@ export async function enrichCommunityShipmentRows<T extends {
   if (orderIds.length > 0) {
     const { data, error } = await supabase
       .from("community_shipment_requests")
-      .select("id,order_ids,shipping_method,status,marketplace_url,marketplace_order_ref,submitted_at")
+      .select("id,order_ids,shipping_method,status,marketplace_url,marketplace_order_ref,submitted_at,accepted_at,completed_at")
       .overlaps("order_ids", orderIds)
       .neq("status", "cancelled")
       .order("submitted_at", { ascending: false });
@@ -278,6 +280,8 @@ export async function enrichCommunityShipmentRows<T extends {
       shipmentMarketplaceUrl: request?.marketplace_url || "",
       shipmentMarketplaceOrderRef: request?.marketplace_order_ref || "",
       shipmentSubmittedAt: request?.submitted_at || "",
+      shipmentMarketplaceCreatedAt: request?.accepted_at || "",
+      shipmentLineNotifiedAt: request?.completed_at || "",
       meetupPaymentMethod: meetup?.payment_method || "",
       meetupDate: meetup?.community_meetup_slots?.meetup_date || "",
       meetupStartTime: meetup?.community_meetup_slots?.start_time || "",
