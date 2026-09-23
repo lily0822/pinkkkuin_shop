@@ -2,28 +2,30 @@
 
 ## Current baseline
 
-- `official-next` feature commit: `6db83f4`.
-- Storefront/shared backend Staging: `https://pinkkkuin-staging.vercel.app` → `dpl_EahhtMRJWcPJvPHbdPqboAezeJkX`.
-- Backend source commit: `411167a`, pushed to `backend-staging` and referenced by `official-next`.
-- `community-orders` feature commit: `ef03a07`.
-- Community frontend: `https://pinkkkuin-community-orders.vercel.app` → `dpl_7sHBk1fivMDXTRcDYPMq5WACQkyS`.
+- `official-next` feature commit: `2bb4461`.
+- Storefront/shared backend Staging: `https://pinkkkuin-staging.vercel.app` → `dpl_3WR2sdTeVeY3Crdk1XuYMjajbYUk`.
+- Backend source commit: `5e5473d`, pushed to `backend-staging` and referenced by `official-next`.
+- `community-orders` feature commit: `34e08b3`.
+- Community frontend: `https://pinkkkuin-community-orders.vercel.app` → `dpl_FwxbBsGAVj1AdFB4995CmfvQLheb`.
 - Production is untouched and requires explicit authorization for every deploy, migration, or write.
 
-## Community payments
+## Fulfillment history
 
-- Staging migrations remain applied through `202609230001_community_multi_notebook_payment_batches.sql`; no migration was added this round.
-- Multi-notebook payment batches, NT$20 per-notebook discount, top-ups, overpayment refunds, old single-notebook compatibility, shipment, meetup, and independent desktop selection remain unchanged.
-- Shared backend remittance API once again returns review status, cumulative received, remaining/overpaid amounts, rejection/refund metadata, and exposes the existing protected same-origin `PATCH` handler.
-- Pending batch review now shows the calculated action: `核准`, `需補款`, or `多匯待退款`; rejection still requires a reason. All actions use the existing batch-aware RPCs.
-- Backend import history is the final block on the community orders page.
+- The 7-11 request modal only shows selected notebooks, bought product names, and quantities. Recipient, phone, and pickup-store inputs are removed; buyers complete them in the marketplace later.
+- Pending/accepted 7-11 requests remain in the paid area as `7-11 出貨申請中` and remain locked.
+- Pending/confirmed meetups remain in the paid area as `面交申請中` and remain locked.
+- Cancelled requests unlock their notebooks; completed requests remain locked.
+- Backend marketplace URL creation moves shipment status to `accepted` and records `accepted_at`.
+- Backend `送出 LINE 下單通知` moves shipment status to `completed` and records `completed_at`; it does not add LINE Messaging API integration.
+- Completed 7-11 and meetup requests leave the paid area and appear in the `歷史訂單` modal table.
+- 7-11 history shows `7-11 出貨｜已通知下單` and marketplace creation time; meetup history shows `面交｜已完成` and the selected appointment date/time.
 
-## Verification
+## Data and verification
 
-- `official-next` build: PASS.
-- Backend inline JavaScript syntax: PASS.
-- Shared backend login page: PASS.
-- Unauthenticated remittance API guard: PASS.
-- No DB, migration, payment model, shipment, meetup, or Production changes.
+- No migration was added. Existing `accepted_at`, `completed_at`, and meetup slot fields provide the required traceability.
+- Staging migrations remain applied through `202609230001_community_multi_notebook_payment_batches.sql`.
+- Community build: PASS. Backend inline JavaScript syntax: PASS.
+- Community route, shared backend route, and official-next Staging route: HTTP 200.
 
 ## Fixed deployment rules
 
