@@ -8,7 +8,6 @@ import {
   shouldRequireBackendAuth,
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
-import { notifyCommunityBought } from "@/lib/line/community-notifications";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -95,30 +94,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       if (error) throw error;
       if (!data) {
         return NextResponse.json({ ok: false, error: "找不到這項商品。" }, { status: 404 });
-      }
-    }
-
-    if (purchaseStatus === "bought") {
-      try {
-        const { data: itemRow } = await supabase
-          .from("community_order_items")
-          .select("product_name, order_id")
-          .eq("id", itemId)
-          .maybeSingle();
-        const orderId = itemRow?.order_id ? String(itemRow.order_id) : "";
-        if (orderId) {
-          const { data: orderRow } = await supabase
-            .from("community_orders")
-            .select("nickname")
-            .eq("id", orderId)
-            .maybeSingle();
-          const nickname = orderRow?.nickname ? String(orderRow.nickname) : "";
-          if (nickname) {
-            await notifyCommunityBought(itemId, nickname, String(itemRow?.product_name || ""));
-          }
-        }
-      } catch {
-        // Notification is best-effort and must never affect the status update response.
       }
     }
 

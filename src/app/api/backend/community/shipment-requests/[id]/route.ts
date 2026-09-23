@@ -8,7 +8,6 @@ import {
   shouldRequireBackendAuth,
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
-import { notifyCommunityMarketplaceReady } from "@/lib/line/community-notifications";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -66,21 +65,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   try {
     const supabase = createSupabaseServiceClient();
-
-    let shouldNotifyMarketplaceReady = false;
-    let nicknameForNotification = "";
-    if (marketplaceUrl) {
-      const { data: beforeRow } = await supabase
-        .from("community_shipment_requests")
-        .select("nickname, marketplace_url")
-        .eq("id", requestId)
-        .maybeSingle();
-      if (beforeRow && !String(beforeRow.marketplace_url || "").trim()) {
-        shouldNotifyMarketplaceReady = true;
-        nicknameForNotification = String(beforeRow.nickname || "");
-      }
-    }
-
     const { data, error } = await supabase.rpc("backend_update_community_shipment_status", {
       p_id: requestId,
       p_status: status,
@@ -88,14 +72,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       p_marketplace_order_ref: marketplaceOrderRef || null,
     });
     if (error) throw error;
-
-    if (shouldNotifyMarketplaceReady && nicknameForNotification) {
-      try {
-        await notifyCommunityMarketplaceReady(requestId, nicknameForNotification, marketplaceUrl);
-      } catch {
-        // Notification is best-effort and must never affect the status update response.
-      }
-    }
 
     return NextResponse.json({ ok: true, status, result: data });
   } catch {

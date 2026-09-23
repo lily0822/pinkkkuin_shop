@@ -8,7 +8,6 @@ import {
   shouldRequireBackendAuth,
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
-import { notifyCommunityNotebookArrived } from "@/lib/line/community-notifications";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -75,15 +74,7 @@ export async function PATCH(request: NextRequest) {
       p_notebook_name: notebookName,
     });
     if (error) throw error;
-    const updatedCount = Number(data || 0);
-    if (updatedCount > 0) {
-      try {
-        await notifyCommunityNotebookArrived(notebookName);
-      } catch {
-        // Notification is best-effort and must never affect the arrival update response.
-      }
-    }
-    return NextResponse.json({ ok: true, updatedCount });
+    return NextResponse.json({ ok: true, updatedCount: Number(data || 0) });
   } catch {
     return NextResponse.json({ ok: false, error: "記事本到貨狀態更新失敗，請稍後再試。" }, { status: 500 });
   }

@@ -4,14 +4,22 @@ import {
   backendAuthJsonError,
   getBackendRuntime,
   isBackendSessionValid,
+  isSameOriginMutation,
   shouldRequireBackendAuth,
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
+import {
+  COMMUNITY_LINE_NOTIFICATION_KINDS,
+  sendCommunityOrderNotifications,
+  type CommunityLineNotificationKind,
+} from "@/lib/line/community-notifications";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-async function guardBackendRequest(request: NextRequest) {
+const MAX_ORDER_IDS = 200;
+
+async function guardBackendRequest(request: NextRequest, mutation = false) {
   const runtime = getBackendRuntime();
   if (runtime === "unknown") {
     return new NextResponse("Not found", {
@@ -21,6 +29,7 @@ async function guardBackendRequest(request: NextRequest) {
   }
   if (!shouldRequireBackendAuth()) return null;
   if (!(await isBackendSessionValid(request))) return backendAuthJsonError();
+  if (mutation && !isSameOriginMutation(request)) return backendAuthJsonError("請從後台頁面操作。", 403);
   return null;
 }
 
@@ -61,5 +70,61 @@ export async function GET(request: NextRequest) {
     });
   } catch {
     return NextResponse.json({ ok: false, error: "LINE 通知紀錄讀取失敗，請稍後再試。" }, { status: 500 });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const guard = await guardBackendRequest(request, true);
+  if (guard) return guard;
+
+  const rate = await backendRateLimit(request, "backend_community_line_notifications_send", 20);
+  if (!rate.ok) {
+    return NextResponse.json(
+      { ok: false, error: "操作太頻繁，請稍後再試。" },
+      { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } },
+    );
+  }
+
+  let body: { orderIds?: unknown; kind?: unknown };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ ok: false, error: "請提供正確的通知資料。" }, { status: 400 });
+  }
+
+  const kind = typeof body.kind === "string" ? body.kind.trim() : "";
+  if (!COMMUNITY_LINE_NOTIFICATION_KINDS.includes(kind as CommunityLineNotificationKind)) {
+    return NextResponse.json({ ok: false, error: "請選擇正確的通知類型。" }, { status: 400 });
+  }
+
+  const orderIds = Array.isArray(body.orderIds)
+    ? Array.from(new Set(body.orderIds.filter((id): id is string => typeof id === "string" && Boolean(id.trim())).map((id) => id.trim())))
+    : [];
+  if (!orderIds.length) {
+    return NextResponse.json({ ok: false, error: "請至少勾選一筆訂單。" }, { status: 400 });
+  }
+  if (orderIds.length > MAX_ORDER_IDS) {
+    return NextResponse.json({ ok: false, error: `一次最多通知 ${MAX_ORDER_IDS} 筆訂單。` }, { status: 400 });
+  }
+
+  try {
+    const supabase = createSupabaseServiceClient();
+    const { data: orderRows, error } = await supabase
+      .from("community_orders")
+      .select("id, nickname")
+      .in("id", orderIds);
+    if (error) throw error;
+
+    const orders = (Array.isArray(orderRows) ? orderRows : [])
+      .map((row) => ({ orderId: String(row.id || ""), nickname: String(row.nickname || "") }))
+      .filter((row) => row.orderId && row.nickname);
+
+    const results = await sendCommunityOrderNotifications(kind as CommunityLineNotificationKind, orders);
+    const successCount = results.filter((result) => result.status === "sent").length;
+    const failedCount = results.length - successCount;
+
+    return NextResponse.json({ ok: true, results, successCount, failedCount });
+  } catch {
+    return NextResponse.json({ ok: false, error: "LINE 通知發送失敗，請稍後再試。" }, { status: 500 });
   }
 }
