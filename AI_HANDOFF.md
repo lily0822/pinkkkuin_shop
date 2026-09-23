@@ -3,9 +3,9 @@
 ## Current baseline
 
 - Branch: `official-next`.
-- Feature commit: `53bd743` (`Dedupe LINE batch notifications by recipient; reword result to 已送出`).
-- Storefront/shared backend Staging: `https://pinkkkuin-staging.vercel.app` → `dpl_FEPMNFnf59CBYmjh5A1XvHpR71jx`.
-- Backend source commit: `e28f04a`, pushed to `backend-staging` and referenced by `official-next`.
+- Feature commit: `8f93cf6` (`Add editable LINE notification message templates (no migration)`).
+- Storefront/shared backend Staging: `https://pinkkkuin-staging.vercel.app` → `dpl_FBigwXgTApW6htZ7yDLMgmkvSGrs`.
+- Backend source commit: `8924d8e`, pushed to `backend-staging` and referenced by `official-next`.
 - Community frontend feature commit: `acffd3d`.
 - Community frontend: `https://pinkkkuin-community-orders.vercel.app` → `dpl_AnTJSo68yt3fu5A5RS1cDfEnjxc6`.
 - Production is untouched and requires explicit authorization for every deploy, migration, or write.
@@ -21,11 +21,18 @@
 - Result tracking: every attempt (success or failure — no binding, no link, push disabled, provider error) upserts into `community_line_notifications` on `(kind, target_id)`, `target_id` = order id for all 3 kinds. Admin sees it in the 社群訂單 tab's "LINE 通知紀錄" panel (type / nickname / status pill / error / time), backed by `GET /api/backend/community/line-notifications` (unchanged). Pill wording: `未通知` / **`已送出`** (LINE API 發送請求成功 — tooltip makes clear this is not a read receipt, no "已讀" wording anywhere) / `失敗` (tooltip points at the 失敗原因 column).
 - Explicitly out of scope for v1 (per instructions): top-up, payment rejection, and meetup notifications.
 
+### Editable message templates (no migration)
+
+- `src/lib/line/community-notification-templates.ts` holds the 3 default templates verbatim as given, and reads/writes the admin-edited versions through `schedule_settings` (type=`community-line-notification-templates`, JSON in the `image` column) — the same generic-KV pattern `member-line-notifications` already uses. No new table.
+- `sendCommunityOrderNotifications` fetches the current saved template once per batch call and renders it per recipient group: `{{商品清單}}` becomes one `系列名稱｜商品名稱 ×數量` line per bought item (bought+arrived items for `kind='arrived'`) across every order in that recipient's group, `{{社群訂單連結}}` becomes the fixed `https://pinkkkuin-community-orders.vercel.app`, `{{賣貨便連結}}` becomes the resolved marketplace link (kind=`marketplace_ready` only). Whatever the admin last saved is what goes out — "以當下儲存的模板為準".
+- Admin UI: new "LINE 通知文案設定" card (above 通知紀錄) lists the 3 types, each with 編輯訊息 opening a modal — textarea, 3 insert-variable buttons, 恢復預設文案 (fills the textarea from the default, not saved until 儲存), 儲存 → `POST /api/backend/community/line-notification-templates`.
+- Batch send, LINE-user-id dedupe, and `community_line_notifications` logging are untouched by this round — only the message-content step changed.
+
 ### Blocked: migration not yet applied
 
 - `supabase/migrations/202609230002_community_line_notifications.sql` creates `community_line_notifications` (kind, target_id, nickname, line_user_id, status, error_message, sent_at; unique on `(kind, target_id)`; `service_role` gets select/insert/update only, no delete). This has **not** been run against any database yet — needs to be applied manually in the Staging SQL Editor. No further migration was needed for the manual-send rework — same table, `target_id` just always means "order id" now at the application level.
 - Until it's applied, clicking "LINE 通知" still won't error (the write to the log table is caught and logged like any other notification failure), but the 通知紀錄 panel will stay empty and re-clicking won't dedupe via the unique constraint.
-- Not yet end-to-end tested (migration pending, and no Staging nickname with an approved LINE binding was available this round). Once the migration is applied: pick a customer with an approved LINE binding, check their order row(s) in 訂單明細 (try selecting 2+ orders for the same customer to confirm the dedupe — only one LINE message should arrive), send each of the 3 notification types, confirm their LINE received it and the 通知紀錄 panel shows 已送出 for every selected order.
+- Not yet end-to-end tested (migration pending, and no Staging nickname with an approved LINE binding was available this round). Once the migration is applied: pick a customer with an approved LINE binding, check their order row(s) in 訂單明細 (try selecting 2+ orders for the same customer to confirm the dedupe — only one LINE message should arrive), send each of the 3 notification types, confirm their LINE received it (check the rendered {{商品清單}}/{{社群訂單連結}}/{{賣貨便連結}} look right) and the 通知紀錄 panel shows 已送出 for every selected order. Also try 編輯訊息 → change a template → send again → confirm the edited text (not the default) is what arrives.
 
 ## Current community admin UI
 
@@ -36,7 +43,7 @@
 - Notebook management and the order table edit the same purchase/arrival data and refresh together.
 - Editable status controls render as black-text pills. Purchase, payment, and arrival colors follow the current approved mapping.
 - Orders are grouped by the notebook's first source occurrence and keep the existing import/source row order using existing timestamps and IDs.
-- 社群訂單 tab: 手動新增 modal (reuses the Excel-import RPC with a single row, so status columns take the same DB defaults); batch status update card (separate from the search/filter card, sits directly above the order table); a "LINE 通知" batch control sits right below it (same row checkboxes, pick a type, send — see LINE notifications section above); 4 inline status dropdowns restyled to match the filter-row look; 操作 column with 編輯 (existing fields only — no real delete capability exists yet, was checked and reported, not built); page-wide centered table alignment except 記事本名稱/社群暱稱/下單商品; 待處理摘要 widget (待審核付款/需補款/待建立賣貨便/待面交確認, computed client-side from existing endpoints, no new API); LINE 通知紀錄 panel (read-only log of every send attempt).
+- 社群訂單 tab: 手動新增 modal (reuses the Excel-import RPC with a single row, so status columns take the same DB defaults); batch status update card (separate from the search/filter card, sits directly above the order table); a "LINE 通知" batch control sits right below it (same row checkboxes, pick a type, send — see LINE notifications section above); 4 inline status dropdowns restyled to match the filter-row look; 操作 column with 編輯 (existing fields only — no real delete capability exists yet, was checked and reported, not built); page-wide centered table alignment except 記事本名稱/社群暱稱/下單商品; 待處理摘要 widget (待審核付款/需補款/待建立賣貨便/待面交確認, computed client-side from existing endpoints, no new API); LINE 通知文案設定 card (編輯訊息 modal per type, see LINE notifications section above); LINE 通知紀錄 panel (read-only log of every send attempt).
 
 ## Current community frontend UI
 
