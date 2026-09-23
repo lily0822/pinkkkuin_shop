@@ -11,6 +11,12 @@ export const COMMUNITY_LINE_NOTIFICATION_KINDS: CommunityLineNotificationKind[] 
   "marketplace_ready",
 ];
 
+/** Kinds sendable from the general 訂單明細 batch notify control. 賣貨便可下單
+ * moved to a dedicated per-出貨申請 action (sendCommunityShipmentMarketplaceNotification)
+ * so it always uses that shipment request's own marketplace_url — never a
+ * manually-typed link. */
+export const COMMUNITY_LINE_BATCH_NOTIFICATION_KINDS: CommunityLineNotificationKind[] = ["bought", "arrived"];
+
 export type CommunityLineNotificationResult = {
   orderId: string;
   nickname: string;
@@ -45,24 +51,6 @@ async function getApprovedLineUserId(nickname: string): Promise<string> {
       .maybeSingle();
     if (error || !data) return "";
     return typeof data.line_user_id === "string" ? data.line_user_id.trim() : "";
-  } catch {
-    return "";
-  }
-}
-
-async function findMarketplaceUrlForOrder(orderId: string): Promise<string> {
-  try {
-    const supabase = createSupabaseServiceClient();
-    const { data, error } = await supabase
-      .from("community_shipment_requests")
-      .select("marketplace_url, submitted_at")
-      .contains("order_ids", [orderId])
-      .not("marketplace_url", "is", null)
-      .order("submitted_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (error || !data) return "";
-    return typeof data.marketplace_url === "string" ? data.marketplace_url.trim() : "";
   } catch {
     return "";
   }
@@ -154,9 +142,10 @@ async function buildProductList(orders: ResolvedOrder[], kind: CommunityLineNoti
  * Sends exactly one LINE message to this recipient (one API call), then
  * records + returns a result for every order in the group so the caller can
  * still show/track status per selected order even though only one message
- * went out. Never throws — every failure path (no marketplace link, push
- * disabled, network/provider error) is caught and recorded as "failed" with
- * a reason instead.
+ * went out. Never throws — every failure path (push disabled,
+ * network/provider error) is caught and recorded as "failed" with a reason
+ * instead. Only handles kind='bought'/'arrived' — 賣貨便可下單 has its own
+ * dedicated sendCommunityShipmentMarketplaceNotification below.
  */
 async function sendToLineUserGroup(
   kind: CommunityLineNotificationKind,
@@ -165,19 +154,8 @@ async function sendToLineUserGroup(
   template: string,
 ): Promise<CommunityLineNotificationResult[]> {
   try {
-    let marketplaceUrl = "";
-    if (kind === "marketplace_ready") {
-      for (const order of orders) {
-        marketplaceUrl = await findMarketplaceUrlForOrder(order.orderId);
-        if (marketplaceUrl) break;
-      }
-      if (!marketplaceUrl) {
-        return recordGroupResult(kind, lineUserId, orders, "failed", "找不到這些訂單的賣貨便連結");
-      }
-    }
-
     const productList = await buildProductList(orders, kind);
-    const text = renderCommunityLineTemplate(template, { productList, marketplaceUrl });
+    const text = renderCommunityLineTemplate(template, { productList });
     const sendResult = await sendLineUserText(lineUserId, text);
     if (sendResult.disabled) {
       return recordGroupResult(kind, lineUserId, orders, "failed", "LINE 推播未設定（缺少 LINE_CHANNEL_ACCESS_TOKEN）");
@@ -232,4 +210,79 @@ export async function sendCommunityOrderNotifications(
     results.push(...(await sendToLineUserGroup(kind, lineUserId, groupOrders, template)));
   }
   return results;
+}
+
+/**
+ * 賣貨便可下單, triggered from one specific 出貨申請 row (never from the
+ * general order-selection batch flow). Everything — buyer, shipped items,
+ * and the marketplace link — comes straight from that shipment request row;
+ * the admin never types a link in. Recorded under kind='marketplace_ready'
+ * with target_id = the shipment request id (this trigger is scoped to one
+ * shipment request, not one order), reusing the same
+ * community_line_notifications table, the same approved-binding lookup, and
+ * the same saved template as the general flow.
+ */
+export async function sendCommunityShipmentMarketplaceNotification(
+  shipmentRequestId: string,
+): Promise<CommunityLineNotificationResult> {
+  const kind: CommunityLineNotificationKind = "marketplace_ready";
+  let nickname = "";
+  try {
+    const supabase = createSupabaseServiceClient();
+    const { data: request, error } = await supabase
+      .from("community_shipment_requests")
+      .select("nickname, order_ids, marketplace_url")
+      .eq("id", shipmentRequestId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!request) {
+      const errorMessage = "找不到這筆出貨申請";
+      await recordNotification({ kind, targetId: shipmentRequestId, nickname: "", lineUserId: "", status: "failed", errorMessage });
+      return { orderId: shipmentRequestId, nickname: "", status: "failed", errorMessage };
+    }
+
+    nickname = String(request.nickname || "");
+    const marketplaceUrl = String(request.marketplace_url || "").trim();
+    const orderIds = (Array.isArray(request.order_ids) ? request.order_ids : []).map(String).filter(Boolean);
+
+    if (!marketplaceUrl) {
+      const errorMessage = "這筆出貨申請尚未建立賣貨便連結";
+      await recordNotification({ kind, targetId: shipmentRequestId, nickname, lineUserId: "", status: "failed", errorMessage });
+      return { orderId: shipmentRequestId, nickname, status: "failed", errorMessage };
+    }
+
+    const lineUserId = await getApprovedLineUserId(nickname);
+    if (!lineUserId) {
+      const errorMessage = "找不到已核准的 LINE 綁定";
+      await recordNotification({ kind, targetId: shipmentRequestId, nickname, lineUserId: "", status: "failed", errorMessage });
+      return { orderId: shipmentRequestId, nickname, status: "failed", errorMessage };
+    }
+
+    const templates = await getCommunityLineTemplates();
+    const productList = (await Promise.all(orderIds.map((orderId) => getOrderProductLines(orderId, kind))))
+      .flat()
+      .join("\n");
+    const text = renderCommunityLineTemplate(templates[kind], { productList, marketplaceUrl });
+
+    const sendResult = await sendLineUserText(lineUserId, text);
+    if (sendResult.disabled) {
+      const errorMessage = "LINE 推播未設定（缺少 LINE_CHANNEL_ACCESS_TOKEN）";
+      await recordNotification({ kind, targetId: shipmentRequestId, nickname, lineUserId, status: "failed", errorMessage });
+      return { orderId: shipmentRequestId, nickname, status: "failed", errorMessage };
+    }
+
+    await recordNotification({ kind, targetId: shipmentRequestId, nickname, lineUserId, status: "sent" });
+    logCommunityLine("community_line_notification_sent", {
+      kind,
+      line_user_id: lineUserId,
+      shipment_request_id: shipmentRequestId,
+      provider_message_id: sendResult.id,
+    });
+    return { orderId: shipmentRequestId, nickname, status: "sent" };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "傳送失敗";
+    logCommunityLine("community_line_notification_failed", { kind, shipment_request_id: shipmentRequestId, message: errorMessage });
+    await recordNotification({ kind, targetId: shipmentRequestId, nickname, lineUserId: "", status: "failed", errorMessage });
+    return { orderId: shipmentRequestId, nickname, status: "failed", errorMessage };
+  }
 }

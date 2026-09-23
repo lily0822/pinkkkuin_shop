@@ -9,7 +9,7 @@ import {
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
 import {
-  COMMUNITY_LINE_NOTIFICATION_KINDS,
+  COMMUNITY_LINE_BATCH_NOTIFICATION_KINDS,
   sendCommunityOrderNotifications,
   type CommunityLineNotificationKind,
 } from "@/lib/line/community-notifications";
@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
   }
 
   const kind = typeof body.kind === "string" ? body.kind.trim() : "";
-  if (!COMMUNITY_LINE_NOTIFICATION_KINDS.includes(kind as CommunityLineNotificationKind)) {
+  if (!COMMUNITY_LINE_BATCH_NOTIFICATION_KINDS.includes(kind as CommunityLineNotificationKind)) {
     return NextResponse.json({ ok: false, error: "請選擇正確的通知類型。" }, { status: 400 });
   }
 
