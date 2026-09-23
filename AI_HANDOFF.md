@@ -32,6 +32,18 @@
 - Community alias route and shared backend login route load successfully.
 - Existing payment, shipment, meetup, locking, history, safe deletion, and Excel import behavior was not changed.
 
+## Next round
+
+- Lock the frontend payment amount so customers cannot edit it.
+- Make the current amount due visually prominent.
+- Customers enter only the bank and the last five digits.
+- Add a reminder before payment submission.
+- Simplify frontend status wording.
+- Make operation success feedback clearer.
+- Add a short frontend process guide.
+- Add a pending-work summary to the backend.
+- Do not change the underpayment or overpayment flows yet.
+
 ## Fixed deployment rules
 
 - Deploy this branch only to its Git Preview and `pinkkkuin-community-orders.vercel.app`.
