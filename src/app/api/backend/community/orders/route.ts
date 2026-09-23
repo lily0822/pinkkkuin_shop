@@ -71,6 +71,7 @@ function mapRow(row: Record<string, unknown>) {
     quantity: Number(row.quantity || 0),
     unitPrice: Number(row.unit_price || 0),
     itemSubtotal: Number(row.item_subtotal || 0),
+    itemCreatedAt: String(row.item_created_at || ""),
     snipeStatus: String(row.snipe_status || "pending"),
     groupTotal: Number(row.group_total || 0),
     remitAmount: Number(row.remit_amount || 0),
@@ -101,7 +102,22 @@ export async function GET(request: NextRequest) {
     const rows = Array.isArray(data) ? data : [];
     const total = Number(rows[0]?.total_count || 0);
     const mappedRows = rows.map((row) => mapRow(row as Record<string, unknown>));
-    const enrichedRows = await enrichCommunityOrderRows(supabase, mappedRows);
+    const nicknames = [...new Set(mappedRows.map((row) => row.nickname).filter(Boolean))];
+    const lineNames = new Map<string, string>();
+    if (nicknames.length) {
+      const { data: bindings, error: bindingsError } = await supabase
+        .from("community_line_bindings")
+        .select("nickname,line_display_name")
+        .in("nickname", nicknames);
+      if (bindingsError) throw bindingsError;
+      for (const binding of bindings || []) {
+        lineNames.set(String(binding.nickname || "").trim().toLocaleLowerCase(), String(binding.line_display_name || "LINE 使用者"));
+      }
+    }
+    const enrichedRows = (await enrichCommunityOrderRows(supabase, mappedRows)).map((row) => ({
+      ...row,
+      lineDisplayName: lineNames.get(row.nickname.trim().toLocaleLowerCase()) || "LINE 使用者",
+    }));
     return NextResponse.json({
       ok: true,
       rows: enrichedRows,

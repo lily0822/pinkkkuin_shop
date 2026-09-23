@@ -70,11 +70,24 @@ export async function GET(request: NextRequest) {
 
     const rows = Array.isArray(data) ? data : [];
     const total = Number(rows[0]?.total_count || 0);
+    const nicknames = [...new Set(rows.map((row) => String(row.nickname || "")).filter(Boolean))];
+    const lineNames = new Map<string, string>();
+    if (nicknames.length) {
+      const { data: bindings, error: bindingsError } = await supabase
+        .from("community_line_bindings")
+        .select("nickname,line_display_name")
+        .in("nickname", nicknames);
+      if (bindingsError) throw bindingsError;
+      for (const binding of bindings || []) {
+        lineNames.set(String(binding.nickname || "").trim().toLocaleLowerCase(), String(binding.line_display_name || "LINE 使用者"));
+      }
+    }
     return NextResponse.json({
       ok: true,
       requests: rows.map((row) => ({
         id: String(row.id || ""),
         nickname: String(row.nickname || ""),
+        lineDisplayName: lineNames.get(String(row.nickname || "").trim().toLocaleLowerCase()) || "LINE 使用者",
         notebookNames: Array.isArray(row.notebook_names) ? row.notebook_names.map(String) : [],
         items: (Array.isArray(row.items) ? row.items : []).map((item: ShipmentItem) => ({
           productName: String(item.productName || ""),
