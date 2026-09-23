@@ -2,6 +2,7 @@ import "server-only";
 
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { sendLineUserText } from "./client";
+import { getCommunityLineTemplates, renderCommunityLineTemplate } from "./community-notification-templates";
 
 export type CommunityLineNotificationKind = "bought" | "arrived" | "marketplace_ready";
 export const COMMUNITY_LINE_NOTIFICATION_KINDS: CommunityLineNotificationKind[] = [
@@ -113,14 +114,40 @@ async function recordGroupResult(
   return results;
 }
 
-function messageForKind(kind: CommunityLineNotificationKind, marketplaceUrl: string) {
-  if (kind === "bought") {
-    return "【小企鵝選物】提醒您完成匯款喔！請前往社群訂單頁面查看付款資訊 ♡";
+async function getOrderProductLines(orderId: string, kind: CommunityLineNotificationKind): Promise<string[]> {
+  try {
+    const supabase = createSupabaseServiceClient();
+    const { data: orderRow } = await supabase
+      .from("community_orders")
+      .select("notebook_name")
+      .eq("id", orderId)
+      .maybeSingle();
+    const notebookName = orderRow?.notebook_name ? String(orderRow.notebook_name).trim() : "—";
+
+    let itemsQuery = supabase
+      .from("community_order_items")
+      .select("product_name, quantity, purchase_status, arrival_status")
+      .eq("order_id", orderId)
+      .eq("purchase_status", "bought");
+    if (kind === "arrived") itemsQuery = itemsQuery.eq("arrival_status", "arrived");
+
+    const { data: itemRows } = await itemsQuery;
+    return (Array.isArray(itemRows) ? itemRows : []).map((row) => {
+      const productName = row.product_name ? String(row.product_name).trim() : "—";
+      const quantity = Number(row.quantity || 0) || 1;
+      return `${notebookName}｜${productName} ×${quantity}`;
+    });
+  } catch {
+    return [];
   }
-  if (kind === "arrived") {
-    return "【小企鵝選物】您訂購的商品已到貨！請回社群訂單頁面選擇這次要一起出貨或面交的系列 ♡";
+}
+
+async function buildProductList(orders: ResolvedOrder[], kind: CommunityLineNotificationKind): Promise<string> {
+  const lines: string[] = [];
+  for (const order of orders) {
+    lines.push(...(await getOrderProductLines(order.orderId, kind)));
   }
-  return `【小企鵝選物】您的賣貨便連結已建立完成，請點擊以下連結下單：\n${marketplaceUrl}`;
+  return lines.join("\n");
 }
 
 /**
@@ -135,6 +162,7 @@ async function sendToLineUserGroup(
   kind: CommunityLineNotificationKind,
   lineUserId: string,
   orders: ResolvedOrder[],
+  template: string,
 ): Promise<CommunityLineNotificationResult[]> {
   try {
     let marketplaceUrl = "";
@@ -148,7 +176,9 @@ async function sendToLineUserGroup(
       }
     }
 
-    const sendResult = await sendLineUserText(lineUserId, messageForKind(kind, marketplaceUrl));
+    const productList = await buildProductList(orders, kind);
+    const text = renderCommunityLineTemplate(template, { productList, marketplaceUrl });
+    const sendResult = await sendLineUserText(lineUserId, text);
     if (sendResult.disabled) {
       return recordGroupResult(kind, lineUserId, orders, "failed", "LINE 推播未設定（缺少 LINE_CHANNEL_ACCESS_TOKEN）");
     }
@@ -178,6 +208,9 @@ export async function sendCommunityOrderNotifications(
   kind: CommunityLineNotificationKind,
   orders: { orderId: string; nickname: string }[],
 ): Promise<CommunityLineNotificationResult[]> {
+  const templates = await getCommunityLineTemplates();
+  const template = templates[kind];
+
   const unresolved: CommunityLineNotificationResult[] = [];
   const groups = new Map<string, ResolvedOrder[]>();
 
@@ -196,7 +229,7 @@ export async function sendCommunityOrderNotifications(
 
   const results: CommunityLineNotificationResult[] = [...unresolved];
   for (const [lineUserId, groupOrders] of groups) {
-    results.push(...(await sendToLineUserGroup(kind, lineUserId, groupOrders)));
+    results.push(...(await sendToLineUserGroup(kind, lineUserId, groupOrders, template)));
   }
   return results;
 }
