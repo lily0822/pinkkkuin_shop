@@ -2,28 +2,35 @@
 
 ## Current baseline
 
-- Branch: `community-orders`; feature commit `34e08b3`.
-- Community frontend: `https://pinkkkuin-community-orders.vercel.app` → `dpl_FwxbBsGAVj1AdFB4995CmfvQLheb`.
-- Shared Staging backend: `https://pinkkkuin-staging.vercel.app/backend` → official-next deployment `dpl_3WR2sdTeVeY3Crdk1XuYMjajbYUk`.
-- Shared backend source commit: `5e5473d`; official-next feature commit: `2bb4461`.
+- Branch: `community-orders`.
+- Feature commit: `61b8f53` (`Refine community order desktop UI`).
+- Community frontend: `https://pinkkkuin-community-orders.vercel.app` → `dpl_EXWhZEzwcRbrW1JRv7kMZeUo6Jyb`.
+- Shared Staging backend: `https://pinkkkuin-staging.vercel.app/backend` → official-next deployment `dpl_ETGRMmF3pGwu8LCmzRJTxDut7uhT`.
+- Shared backend source commit: `d0f8064`; official-next feature commit: `ebf8f4e`.
 - Production is untouched and requires explicit authorization for every deploy, migration, or write.
 
-## Fulfillment history
+## Current frontend UI
 
-- The 7-11 request modal only shows selected notebooks, bought product names, and quantities. Recipient, phone, and pickup-store inputs are removed.
-- A successful request displays `申請通過！1–2 天內會私訊賣場連結，感謝捧場 ♡`.
-- Pending/accepted 7-11 requests stay in the paid area as `7-11 出貨申請中`; pending/confirmed meetups stay as `面交申請中`.
-- These notebooks are disabled and cannot be selected again. Cancelled requests unlock them; completed requests remain locked.
-- `歷史訂單` is a modal table with series, product, quantity, unit price, subtotal, fulfillment method, and time.
-- Only completed fulfillment appears in history: 7-11 after the backend marks LINE ordering notice sent, and meetup after completion.
-- 7-11 history uses marketplace creation time; meetup history uses the selected appointment date/time.
+- Desktop binding/action card uses the same `lg:max-w-5xl` boundary as the unpaid + paid main content.
+- General order cards use a white background without decorative borders; buttons, status pills, and the unpaid/paid section styling are preserved.
+- `7-11 出貨申請中` and `面交申請中` appear before the corresponding notebook title.
+- Desktop unpaid and paid selections, multi-notebook payment, NT$20 per-notebook discount, top-up/refund, and fulfillment actions are unchanged.
+- Mobile layout was not refactored.
 
-## Data and verification
+## Shared backend state
 
-- No migration was added. Existing shipment `accepted_at`/`completed_at` and meetup slot fields are reused.
-- Staging migrations remain applied through `202609230001_community_multi_notebook_payment_batches.sql`.
-- Community build: PASS. Community alias route: HTTP 200.
-- Multi-notebook payments, NT$20 discount, top-ups/refunds, selection, shipment/meetup locks, and payment history remain unchanged.
+- Shipment request customer cells show only LINE display name and bound community nickname.
+- Community order main table is titled `訂單明細`; duplicate `搶購狀態` and `商品到貨` columns are removed.
+- Notebook management is an accordion keyed by notebook name and edits the same purchase/arrival status data as the main order table.
+- Editable status controls render as black-text pills using the approved purchase/payment/arrival colors.
+- Notebook groups and rows preserve existing Excel/source order through existing timestamps and IDs; no schema change was added.
+
+## Verification
+
+- No migration was added. Staging migrations remain applied through `202609230001_community_multi_notebook_payment_batches.sql`.
+- Community build: PASS. Root build: PASS. Backend inline JavaScript syntax: PASS.
+- Community alias route and shared backend login route load successfully.
+- Existing payment, shipment, meetup, locking, history, safe deletion, and Excel import behavior was not changed.
 
 ## Fixed deployment rules
 
