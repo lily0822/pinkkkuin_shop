@@ -17,6 +17,8 @@ export type CommunityLineNotificationResult = {
   errorMessage?: string;
 };
 
+type ResolvedOrder = { orderId: string; nickname: string; lineUserId: string };
+
 function logCommunityLine(event: string, details: Record<string, unknown>) {
   console.warn(
     JSON.stringify({
@@ -96,6 +98,21 @@ async function recordNotification(params: {
   }
 }
 
+async function recordGroupResult(
+  kind: CommunityLineNotificationKind,
+  lineUserId: string,
+  orders: ResolvedOrder[],
+  status: "sent" | "failed",
+  errorMessage?: string,
+): Promise<CommunityLineNotificationResult[]> {
+  const results: CommunityLineNotificationResult[] = [];
+  for (const order of orders) {
+    await recordNotification({ kind, targetId: order.orderId, nickname: order.nickname, lineUserId, status, errorMessage });
+    results.push({ orderId: order.orderId, nickname: order.nickname, status, errorMessage });
+  }
+  return results;
+}
+
 function messageForKind(kind: CommunityLineNotificationKind, marketplaceUrl: string) {
   if (kind === "bought") {
     return "【小企鵝選物】提醒您完成匯款喔！請前往社群訂單頁面查看付款資訊 ♡";
@@ -107,60 +124,79 @@ function messageForKind(kind: CommunityLineNotificationKind, marketplaceUrl: str
 }
 
 /**
- * Manual, admin-triggered batch notification for one order. Never throws —
- * every failure path (no marketplace link, no approved binding, LINE push
- * disabled, network/provider error) is caught, recorded to
- * community_line_notifications, and returned as a per-order result so the
- * caller can show success/fail counts without the request ever failing.
+ * Sends exactly one LINE message to this recipient (one API call), then
+ * records + returns a result for every order in the group so the caller can
+ * still show/track status per selected order even though only one message
+ * went out. Never throws — every failure path (no marketplace link, push
+ * disabled, network/provider error) is caught and recorded as "failed" with
+ * a reason instead.
  */
-export async function sendCommunityOrderNotification(
+async function sendToLineUserGroup(
   kind: CommunityLineNotificationKind,
-  orderId: string,
-  nickname: string,
-): Promise<CommunityLineNotificationResult> {
+  lineUserId: string,
+  orders: ResolvedOrder[],
+): Promise<CommunityLineNotificationResult[]> {
   try {
     let marketplaceUrl = "";
     if (kind === "marketplace_ready") {
-      marketplaceUrl = await findMarketplaceUrlForOrder(orderId);
+      for (const order of orders) {
+        marketplaceUrl = await findMarketplaceUrlForOrder(order.orderId);
+        if (marketplaceUrl) break;
+      }
       if (!marketplaceUrl) {
-        const errorMessage = "找不到這筆訂單的賣貨便連結";
-        await recordNotification({ kind, targetId: orderId, nickname, lineUserId: "", status: "failed", errorMessage });
-        return { orderId, nickname, status: "failed", errorMessage };
+        return recordGroupResult(kind, lineUserId, orders, "failed", "找不到這些訂單的賣貨便連結");
       }
     }
 
-    const lineUserId = await getApprovedLineUserId(nickname);
-    if (!lineUserId) {
-      const errorMessage = "找不到已核准的 LINE 綁定";
-      await recordNotification({ kind, targetId: orderId, nickname, lineUserId: "", status: "failed", errorMessage });
-      return { orderId, nickname, status: "failed", errorMessage };
+    const sendResult = await sendLineUserText(lineUserId, messageForKind(kind, marketplaceUrl));
+    if (sendResult.disabled) {
+      return recordGroupResult(kind, lineUserId, orders, "failed", "LINE 推播未設定（缺少 LINE_CHANNEL_ACCESS_TOKEN）");
     }
 
-    const result = await sendLineUserText(lineUserId, messageForKind(kind, marketplaceUrl));
-    if (result.disabled) {
-      const errorMessage = "LINE 推播未設定（缺少 LINE_CHANNEL_ACCESS_TOKEN）";
-      await recordNotification({ kind, targetId: orderId, nickname, lineUserId, status: "failed", errorMessage });
-      return { orderId, nickname, status: "failed", errorMessage };
-    }
-
-    await recordNotification({ kind, targetId: orderId, nickname, lineUserId, status: "sent" });
-    logCommunityLine("community_line_notification_sent", { kind, target_id: orderId, provider_message_id: result.id });
-    return { orderId, nickname, status: "sent" };
+    logCommunityLine("community_line_notification_sent", {
+      kind,
+      line_user_id: lineUserId,
+      order_ids: orders.map((order) => order.orderId),
+      provider_message_id: sendResult.id,
+    });
+    return recordGroupResult(kind, lineUserId, orders, "sent");
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "傳送失敗";
-    logCommunityLine("community_line_notification_failed", { kind, target_id: orderId, message: errorMessage });
-    await recordNotification({ kind, targetId: orderId, nickname, lineUserId: "", status: "failed", errorMessage });
-    return { orderId, nickname, status: "failed", errorMessage };
+    logCommunityLine("community_line_notification_failed", { kind, line_user_id: lineUserId, message: errorMessage });
+    return recordGroupResult(kind, lineUserId, orders, "failed", errorMessage);
   }
 }
 
+/**
+ * Manual, admin-triggered batch notification. Deduplicates by LINE user id
+ * first — if several selected orders belong to the same bound customer,
+ * only one LINE message is sent to them, but a result (and a
+ * community_line_notifications row) is still recorded for every selected
+ * order so the admin can see status per order.
+ */
 export async function sendCommunityOrderNotifications(
   kind: CommunityLineNotificationKind,
   orders: { orderId: string; nickname: string }[],
 ): Promise<CommunityLineNotificationResult[]> {
-  const results: CommunityLineNotificationResult[] = [];
+  const unresolved: CommunityLineNotificationResult[] = [];
+  const groups = new Map<string, ResolvedOrder[]>();
+
   for (const order of orders) {
-    results.push(await sendCommunityOrderNotification(kind, order.orderId, order.nickname));
+    const lineUserId = await getApprovedLineUserId(order.nickname);
+    if (!lineUserId) {
+      const errorMessage = "找不到已核准的 LINE 綁定";
+      await recordNotification({ kind, targetId: order.orderId, nickname: order.nickname, lineUserId: "", status: "failed", errorMessage });
+      unresolved.push({ orderId: order.orderId, nickname: order.nickname, status: "failed", errorMessage });
+      continue;
+    }
+    const group = groups.get(lineUserId) || [];
+    group.push({ orderId: order.orderId, nickname: order.nickname, lineUserId });
+    groups.set(lineUserId, group);
+  }
+
+  const results: CommunityLineNotificationResult[] = [...unresolved];
+  for (const [lineUserId, groupOrders] of groups) {
+    results.push(...(await sendToLineUserGroup(kind, lineUserId, groupOrders)));
   }
   return results;
 }
