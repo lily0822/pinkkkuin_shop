@@ -2,8 +2,8 @@
 
 ## Current baseline
 
-- Branch: `community-orders`; feature commit `0c4a630`.
-- Community frontend: `https://pinkkkuin-community-orders.vercel.app` → `dpl_RwKP6jwMkb8pJnRfgwfuBVe2xFpa`.
+- Branch: `community-orders`; desktop UI feature commit `3015e4b`.
+- Community frontend: `https://pinkkkuin-community-orders.vercel.app` → `dpl_KfWUTG18dBGfvFCbgrBBDRwKS1DU`.
 - Shared Staging backend: `https://pinkkkuin-staging.vercel.app/backend` → official-next deployment `dpl_2L5nEzTkU8thHTeockWxEixrHniH`, commit `ff71ba7`.
 - Backend source commit `970ffd4` is pushed to `backend-staging`.
 - `pinkkkuin-staging.vercel.app` belongs only to `official-next`; never update it from this branch.
@@ -17,6 +17,7 @@
 - Top-ups stay in the same batch, keep every payment record, and use the discounted batch payable as their comparison base. Overpayments and refund records also remain batch-traceable.
 - Historical single-notebook submissions are grouped with their existing top-ups and receive no retroactive discount, preserving old accounting values.
 - Desktop community orders use independent unpaid and paid columns. Unpaid selection drives one payment panel and selected total; paid selection only allows fully arrived, unlocked notebooks and reuses existing 7-11/meetup flows.
+- Desktop columns are centered at `max-w-6xl`; unpaid/paid headings use outlined pills, item rows use compact name/quantity/unit-price → subtotal → status alignment, and the payment summary says `賣貨便各系列留 20`.
 - Mobile/tablet rendering remains on the existing layout.
 - Existing LINE binding, notebook grouping, bought/not_bought, arrival, shipment, meetup, cancellation locks, payment history, and safe item/order deletion remain in place.
 
