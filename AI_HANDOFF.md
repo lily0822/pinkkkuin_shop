@@ -3,9 +3,9 @@
 ## Current baseline
 
 - Branch: `official-next`.
-- Feature commit: `0e47618` (`Move 賣貨便可下單 notification to a dedicated per-shipment-request action`).
-- Storefront/shared backend Staging: `https://pinkkkuin-staging.vercel.app` → `dpl_4ruvgb15w9bkybGvQSS3VMvc8fVK`.
-- Backend source commit: `d971ee6`, pushed to `backend-staging` and referenced by `official-next`.
+- Feature commit: `231c82f` (`Bump backend submodule: preserve notebook accordion state on refresh`).
+- Storefront/shared backend Staging: `https://pinkkkuin-staging.vercel.app` → `dpl_EWq3HqHoY8522DExMWh4wxywMNdW`.
+- Backend source commit: `8506751`, pushed to `backend-staging` and referenced by `official-next`.
 - Community frontend feature commit: `acffd3d`.
 - Community frontend: `https://pinkkkuin-community-orders.vercel.app` → `dpl_AnTJSo68yt3fu5A5RS1cDfEnjxc6`.
 - Production is untouched and requires explicit authorization for every deploy, migration, or write.
@@ -41,7 +41,7 @@
 - The main community order table is titled `訂單明細`; duplicate `搶購狀態` and `商品到貨` columns are removed.
 - Notes remain text inputs and visually align with adjacent status controls.
 - Notebook management is an accordion keyed by notebook name. Expanded rows show LINE name, nickname, product, variant, quantity, unit price, total, purchase status, and arrival status.
-- Notebook management and the order table edit the same purchase/arrival data and refresh together.
+- Notebook management and the order table edit the same purchase/arrival data (both read the single `communityOrders` array and both re-render on every `loadCommunityOrders`) and refresh together. `renderCommunityNotebooks()` now preserves which notebook `<details>` was expanded across re-renders (tracked via `data-notebook-name`) — previously every refresh (整本設為已到貨 included) silently collapsed all accordions even though the underlying data was already fresh, which looked like it needed a manual refresh. Pure render-state fix, no data/flow change.
 - Editable status controls render as black-text pills. Purchase, payment, and arrival colors follow the current approved mapping.
 - Orders are grouped by the notebook's first source occurrence and keep the existing import/source row order using existing timestamps and IDs.
 - 社群訂單 tab: 手動新增 modal (reuses the Excel-import RPC with a single row, so status columns take the same DB defaults); batch status update card (separate from the search/filter card, sits directly above the order table); a "LINE 通知" batch control sits right below it (same row checkboxes, pick 通知付款/到貨提醒, send — see LINE notifications section above); 4 inline status dropdowns restyled to match the filter-row look; 操作 column with 編輯 (existing fields only — no real delete capability exists yet, was checked and reported, not built); page-wide centered table alignment except 記事本名稱/社群暱稱/下單商品; 待處理摘要 widget (待審核付款/需補款/待建立賣貨便/待面交確認, computed client-side from existing endpoints, no new API); LINE 通知文案設定 card (編輯訊息 modal per type, see LINE notifications section above); LINE 通知紀錄 panel (read-only log of every send attempt); 出貨申請 table rows each get a 發送賣貨便通知 button when they have a marketplace_url (see LINE notifications section above), separate from the pre-existing 送出 LINE 下單通知 completion marker.
