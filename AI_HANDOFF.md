@@ -34,6 +34,18 @@
 - Community route and shared backend login route load successfully from their aliases.
 - Multi-notebook payment, NT$20 discount, top-up/refund, fulfillment locks, cancellation unlock, history, safe deletion, and Excel import logic were not changed.
 
+## Next round
+
+- Lock the frontend payment amount so customers cannot edit it.
+- Make the current amount due visually prominent.
+- Customers enter only the bank and the last five digits.
+- Add a reminder before payment submission.
+- Simplify frontend status wording.
+- Make operation success feedback clearer.
+- Add a short frontend process guide.
+- Add a pending-work summary to the backend.
+- Do not change the underpayment or overpayment flows yet.
+
 ## Fixed deployment rules
 
 - `pinkkkuin-staging.vercel.app` belongs only to `official-next`.
