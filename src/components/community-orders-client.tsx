@@ -484,28 +484,30 @@ function DesktopCombinedPaymentPanel({
     : Math.max(productTotal - discountTotal, 0);
   const submitOrderIds = isExistingBatch ? existingBatchOrderIds : selectedOrderIds;
   const [bank, setBank] = useState("ctbc");
-  const [amount, setAmount] = useState("0");
   const [last5, setLast5] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-
-  useEffect(() => setAmount(String(total)), [total]);
+  const [lastSubmittedIds, setLastSubmittedIds] = useState<string[]>([]);
+  // Selection clears to [] after a successful submit (see onSubmitted); once the
+  // customer picks a new series, groups becomes non-empty again and this flips back
+  // to the normal form on its own — no effect/timer needed to reset it.
+  const showJustSubmitted = lastSubmittedIds.length > 0 && groups.length === 0;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const amountNumber = Number(amount);
-    if (!validSelection || total <= 0 || submitting || !Number.isFinite(amountNumber) || amountNumber <= 0 || !/^\d{5}$/.test(last5)) return;
+    if (!validSelection || total <= 0 || submitting || !/^\d{5}$/.test(last5)) return;
     setSubmitting(true);
     setError("");
     try {
       const response = await fetch("/api/community/remittances", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nickname, orderIds: submitOrderIds, bank, accountLast5: last5, amount: amountNumber }),
+        body: JSON.stringify({ nickname, orderIds: submitOrderIds, bank, accountLast5: last5, amount: total }),
       });
       const result = await response.json().catch(() => null);
       if (!response.ok || !result?.ok) throw new Error(result?.error || "付款資料送出失敗，請稍後再試。");
       setLast5("");
+      setLastSubmittedIds(submitOrderIds);
       await onSubmitted();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "付款資料送出失敗，請稍後再試。");
@@ -514,22 +516,28 @@ function DesktopCombinedPaymentPanel({
     }
   }
 
+  if (showJustSubmitted) {
+    return (
+      <div className="rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-4 text-center shadow-sm">
+        <p className="text-sm font-black text-emerald-700">已收到您的付款資料 ♡</p>
+        <p className="mt-1 text-xs font-bold text-emerald-600">我們確認後會更新狀態，請耐心等候。</p>
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={submit} className="rounded-2xl border-2 border-rose-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h3 className="text-lg font-black text-penguin-gray">付款資料</h3>
-          <p className="mt-0.5 text-[11px] font-bold text-gray-500">{groups.length ? `已選 ${groups.length} 個系列` : "請先選擇要付款的系列"}</p>
-        </div>
-        <div className="text-right">
-          <p className="text-[10px] font-bold text-gray-500">本次匯款總額</p>
-          <p className="text-xl font-black tabular-nums text-penguin-pink-dark">{formatPrice(total)}</p>
-        </div>
+      <div>
+        <h3 className="text-lg font-black text-penguin-gray">付款資料</h3>
+        <p className="mt-0.5 text-[11px] font-bold text-gray-500">{groups.length ? `已選 ${groups.length} 個系列` : "請先選擇要付款的系列"}</p>
       </div>
-      <dl className="mt-3 grid grid-cols-3 gap-2 rounded-xl bg-rose-50 px-3 py-2 text-[11px] font-bold text-gray-600">
+      <div className="mt-3 rounded-2xl border-2 border-penguin-pink-dark bg-rose-50 px-4 py-3 text-center">
+        <p className="text-xs font-black text-penguin-gray">本次應匯款金額</p>
+        <p className="mt-0.5 text-3xl font-black tabular-nums text-penguin-pink-dark">{formatPrice(total)}</p>
+      </div>
+      <dl className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-rose-50 px-3 py-2 text-[11px] font-bold text-gray-600">
         <div><dt>商品總金額</dt><dd className="mt-0.5 font-black tabular-nums text-penguin-gray">{formatPrice(productTotal)}</dd></div>
         <div><dt>賣貨便各系列留 20</dt><dd className="mt-0.5 font-black tabular-nums text-penguin-pink-dark">-{formatPrice(discountTotal)}{!isExistingBatch && groups.length ? `（${groups.length} 本 × NT$20）` : ""}</dd></div>
-        <div><dt>本次匯款總額</dt><dd className="mt-0.5 font-black tabular-nums text-penguin-gray">{formatPrice(total)}</dd></div>
       </dl>
       {!validSelection && groups.length ? <p className="mt-2 text-xs font-bold text-red-500">補款需完整選取同一付款批次的全部記事本，且不可混入其他批次。</p> : null}
       <div className="mt-3 grid grid-cols-3 gap-2">
@@ -539,12 +547,10 @@ function DesktopCombinedPaymentPanel({
           </button>
         ))}
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <label className="text-xs font-black text-penguin-gray">實際匯款金額（必填）<input type="number" min="1" step="1" value={amount} onChange={(event) => setAmount(event.target.value)} className="mt-1 h-10 w-full rounded-xl border-2 border-penguin-peach px-3 text-sm font-bold tabular-nums outline-none focus:border-penguin-pink-dark" /></label>
-        <label className="text-xs font-black text-penguin-gray">匯款後 5 碼（必填）<input type="text" inputMode="numeric" maxLength={5} value={last5} onChange={(event) => setLast5(event.target.value.replace(/\D/g, "").slice(0, 5))} className="mt-1 h-10 w-full rounded-xl border-2 border-penguin-peach px-3 text-sm font-bold tabular-nums outline-none focus:border-penguin-pink-dark" /></label>
-      </div>
+      <label className="mt-3 block text-xs font-black text-penguin-gray">匯款後 5 碼（必填）<input type="text" inputMode="numeric" maxLength={5} value={last5} onChange={(event) => setLast5(event.target.value.replace(/\D/g, "").slice(0, 5))} className="mt-1 h-10 w-full rounded-xl border-2 border-penguin-peach px-3 text-sm font-bold tabular-nums outline-none focus:border-penguin-pink-dark" /></label>
       {error ? <p className="mt-2 text-xs font-bold text-red-500">{error}</p> : null}
-      <button type="submit" disabled={!validSelection || total <= 0 || submitting || !/^\d{5}$/.test(last5) || !Number.isFinite(Number(amount)) || Number(amount) <= 0} className="mt-3 w-full rounded-full bg-penguin-pink-dark px-4 py-2.5 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50">
+      <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">請確認匯款完成後再送出，避免對帳延誤。</p>
+      <button type="submit" disabled={!validSelection || total <= 0 || submitting || !/^\d{5}$/.test(last5)} className="mt-3 w-full rounded-full bg-penguin-pink-dark px-4 py-2.5 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50">
         {submitting ? "送出中..." : "送出付款資料"}
       </button>
     </form>
@@ -561,29 +567,24 @@ function NotebookPaymentPanel({
   onSubmitted: () => Promise<void>;
 }) {
   const [bank, setBank] = useState("ctbc");
-  const [amount, setAmount] = useState(String(group.paymentRemainingAmount || group.boughtTotal));
   const [last5, setLast5] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const status = group.paymentReviewStatus || "unpaid";
   const canSubmit = (status === "unpaid" || status === "rejected" || status === "topup_required")
     && group.paymentRemainingAmount > 0;
-
-  useEffect(() => {
-    if (canSubmit) setAmount(String(group.paymentRemainingAmount || group.boughtTotal));
-  }, [canSubmit, group.boughtTotal, group.paymentRemainingAmount]);
+  const payAmount = group.paymentRemainingAmount || group.boughtTotal;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const amountNumber = Number(amount);
-    if (!canSubmit || submitting || !Number.isFinite(amountNumber) || amountNumber <= 0 || !/^\d{5}$/.test(last5)) return;
+    if (!canSubmit || submitting || !/^\d{5}$/.test(last5)) return;
     setSubmitting(true);
     setError("");
     try {
       const response = await fetch("/api/community/remittances", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nickname, orderIds: group.paymentBatchOrderIds?.length ? group.paymentBatchOrderIds : [group.orderId], bank, accountLast5: last5, amount: amountNumber }),
+        body: JSON.stringify({ nickname, orderIds: group.paymentBatchOrderIds?.length ? group.paymentBatchOrderIds : [group.orderId], bank, accountLast5: last5, amount: payAmount }),
       });
       const result = await response.json().catch(() => null);
       if (!response.ok || !result?.ok) throw new Error(result?.error || "付款資料送出失敗，請稍後再試。");
@@ -609,7 +610,9 @@ function NotebookPaymentPanel({
       </div>
 
       {status === "pending" ? (
-        <div className="mt-3 rounded-full bg-[#fff4d6] px-3 py-2 text-xs font-black text-penguin-gray">付款資料已送出，等待審核</div>
+        <div className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-center text-xs font-black text-emerald-700">
+          已收到您的付款資料 ♡ 我們確認後會更新狀態
+        </div>
       ) : status === "approved" ? (
         <div className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700">付款已核准</div>
       ) : status === "overpaid_pending_refund" ? (
@@ -631,10 +634,14 @@ function NotebookPaymentPanel({
           ) : null}
           {status === "rejected" ? (
             <div className="rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-600">
-              <p className="font-black">審核退回</p>
+              <p className="font-black">請重新送出付款資料</p>
               <p className="mt-0.5">原因：{group.paymentRejectionReason || "請重新確認付款資料。"}</p>
             </div>
           ) : null}
+          <div className="rounded-2xl border-2 border-penguin-pink-dark bg-white px-4 py-3 text-center">
+            <p className="text-xs font-black text-penguin-gray">本次應匯款金額</p>
+            <p className="mt-0.5 text-3xl font-black tabular-nums text-penguin-pink-dark">{formatPrice(payAmount)}</p>
+          </div>
           <div>
             <p className="mb-1.5 text-xs font-black text-penguin-gray">選擇匯款銀行</p>
             <div className="grid grid-cols-3 gap-2">
@@ -651,34 +658,22 @@ function NotebookPaymentPanel({
               ))}
             </div>
           </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <label className="text-xs font-black text-penguin-gray">
-              實際匯款金額
-              <input
-                type="number"
-                min="1"
-                step="1"
-                value={amount}
-                onChange={(event) => setAmount(event.target.value)}
-                className="mt-1 h-10 w-full rounded-xl border-2 border-penguin-peach bg-white px-3 text-sm font-bold tabular-nums outline-none focus:border-penguin-pink-dark"
-              />
-            </label>
-            <label className="text-xs font-black text-penguin-gray">
-              匯款後 5 碼
-              <input
-                type="text"
-                inputMode="numeric"
-                maxLength={5}
-                value={last5}
-                onChange={(event) => setLast5(event.target.value.replace(/\D/g, "").slice(0, 5))}
-                className="mt-1 h-10 w-full rounded-xl border-2 border-penguin-peach bg-white px-3 text-sm font-bold tabular-nums outline-none focus:border-penguin-pink-dark"
-              />
-            </label>
-          </div>
+          <label className="block text-xs font-black text-penguin-gray">
+            匯款後 5 碼
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={5}
+              value={last5}
+              onChange={(event) => setLast5(event.target.value.replace(/\D/g, "").slice(0, 5))}
+              className="mt-1 h-10 w-full rounded-xl border-2 border-penguin-peach bg-white px-3 text-sm font-bold tabular-nums outline-none focus:border-penguin-pink-dark"
+            />
+          </label>
           {error ? <p className="text-xs font-bold text-red-500">{error}</p> : null}
+          <p className="rounded-xl bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">請確認匯款完成後再送出，避免對帳延誤。</p>
           <button
             type="submit"
-            disabled={submitting || !/^\d{5}$/.test(last5) || !Number.isFinite(Number(amount)) || Number(amount) <= 0}
+            disabled={submitting || !/^\d{5}$/.test(last5)}
             className="w-full rounded-full bg-penguin-pink-dark px-4 py-2.5 text-sm font-black text-white transition hover:bg-penguin-pink disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting ? "送出中..." : status === "topup_required" ? "送出補款資料" : status === "rejected" ? "重新送出付款資料" : "送出付款資料"}
@@ -725,9 +720,9 @@ function communityPaymentBankLabel(value: string) {
 
 function communityPaymentStatusLabel(value: CommunityPaymentHistory["status"]) {
   return {
-    pending: "待審核",
+    pending: "確認中",
     approved: "已付款",
-    rejected: "審核退回",
+    rejected: "請重新送出",
     topup_required: "需補款",
     overpaid_pending_refund: "多匯待退款",
     refund_completed: "退款完成",
@@ -1369,6 +1364,12 @@ export function CommunityOrdersClient() {
           </div>
         ) : (
           <section className="mt-8 pb-28 sm:pb-0">
+            <div className="mx-auto mb-5 flex max-w-5xl flex-wrap items-center justify-center gap-x-1.5 gap-y-1 rounded-full bg-white px-4 py-2 text-center text-[11px] font-black text-penguin-gray shadow-sm sm:text-xs">
+              <span>確認有買到</span><span className="text-penguin-pink-dark">→</span>
+              <span>匯款</span><span className="text-penguin-pink-dark">→</span>
+              <span>等待到貨</span><span className="text-penguin-pink-dark">→</span>
+              <span>申請出貨／面交</span>
+            </div>
             <div className="mx-auto hidden max-w-5xl items-start gap-6 lg:grid lg:grid-cols-2">
               <section className="min-w-0">
                 <div className="mb-3 flex items-center justify-between gap-3 px-1 py-1.5">
@@ -1734,6 +1735,7 @@ function MeetupRequestModal({ groups, onClose, onSubmitted }: {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -1765,7 +1767,7 @@ function MeetupRequestModal({ groups, onClose, onSubmitted }: {
       const result = await response.json().catch(() => null);
       if (!response.ok || !result?.ok) throw new Error(result?.error || "面交預約送出失敗。");
       await onSubmitted();
-      onClose();
+      setSuccess(true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "面交預約送出失敗。");
     } finally { setSubmitting(false); }
@@ -1778,6 +1780,19 @@ function MeetupRequestModal({ groups, onClose, onSubmitted }: {
           <h2 className="text-lg font-black text-penguin-gray">預約面交</h2>
           <button type="button" onClick={onClose} aria-label="關閉"><X size={20} /></button>
         </div>
+        {success ? (
+          <div className="space-y-4 text-center">
+            <p className="text-sm font-bold text-penguin-gray">面交預約成功！我們會依約定時段準備商品，感謝捧場 ♡</p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full rounded-full bg-penguin-pink-dark px-4 py-3 text-sm font-black text-white shadow-md transition hover:bg-penguin-pink"
+            >
+              關閉
+            </button>
+          </div>
+        ) : (
+        <>
         <div className="mb-4 rounded-2xl bg-penguin-cream/60 p-3 text-xs font-bold text-penguin-gray">
           {groups.map((group) => <p key={group.orderId}>{group.notebookName}</p>)}
         </div>
@@ -1800,6 +1815,8 @@ function MeetupRequestModal({ groups, onClose, onSubmitted }: {
             {error ? <p className="text-xs font-bold text-red-500">{error}</p> : null}
             <button type="submit" disabled={!slotId || submitting} className="w-full rounded-full bg-penguin-pink-dark px-4 py-3 text-sm font-black text-white disabled:opacity-50">{submitting ? "送出中..." : "送出面交預約"}</button>
           </form>
+        )}
+        </>
         )}
       </div>
     </div>
