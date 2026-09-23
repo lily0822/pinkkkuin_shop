@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { Dispatch, FormEvent, SetStateAction, useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Link2, Search, PackageCheck, RefreshCw, X } from "lucide-react";
 import { formatPrice } from "@/lib/products";
 
@@ -15,6 +15,7 @@ type CommunityPaymentStatus =
 
 type CommunityPaymentHistory = {
   id: string;
+  batchId: string;
   bank: string;
   accountLast5: string;
   amount: number;
@@ -33,6 +34,11 @@ type CommunityOrderRow = {
   notebookName: string;
   paymentStatus: string;
   paymentSubmissionId: string;
+  paymentBatchId: string;
+  paymentBatchOrderIds: string[];
+  paymentProductTotal: number;
+  paymentDiscountAmount: number;
+  paymentPayableAmount: number;
   paymentReviewStatus: CommunityPaymentStatus;
   paymentRejectionReason: string;
   paymentBank: string;
@@ -82,6 +88,11 @@ type CommunityOrderGroup = {
   notebookName: string;
   paymentStatus: string;
   paymentSubmissionId: string;
+  paymentBatchId: string;
+  paymentBatchOrderIds: string[];
+  paymentProductTotal: number;
+  paymentDiscountAmount: number;
+  paymentPayableAmount: number;
   paymentReviewStatus: CommunityPaymentStatus;
   paymentRejectionReason: string;
   paymentBank: string;
@@ -157,6 +168,11 @@ function groupRows(rows: CommunityOrderRow[]): CommunityOrderGroup[] {
         notebookName: row.notebookName,
         paymentStatus: row.paymentStatus,
         paymentSubmissionId: row.paymentSubmissionId,
+        paymentBatchId: row.paymentBatchId,
+        paymentBatchOrderIds: row.paymentBatchOrderIds || [row.orderId],
+        paymentProductTotal: row.paymentProductTotal,
+        paymentDiscountAmount: row.paymentDiscountAmount,
+        paymentPayableAmount: row.paymentPayableAmount,
         paymentReviewStatus: row.paymentReviewStatus,
         paymentRejectionReason: row.paymentRejectionReason,
         paymentBank: row.paymentBank,
@@ -322,6 +338,214 @@ function OrderCard({
   );
 }
 
+function isPaymentSelectable(group: CommunityOrderGroup) {
+  return ["unpaid", "rejected", "topup_required"].includes(group.paymentReviewStatus)
+    && group.paymentRemainingAmount > 0;
+}
+
+function desktopItemStatus(item: CommunityOrderRow) {
+  if (item.purchaseStatus === "not_bought") return "沒買到";
+  return {
+    arrived: "已到貨",
+    exception: "異常",
+    not_arrived: "未到貨",
+  }[item.itemArrivalStatus] || "未到貨";
+}
+
+function DesktopOrderCard({
+  group,
+  tone,
+  checked,
+  selectable,
+  onToggle,
+}: {
+  group: CommunityOrderGroup;
+  tone: "unpaid" | "paid";
+  checked: boolean;
+  selectable: boolean;
+  onToggle: (checked: boolean) => void;
+}) {
+  const paymentLabel = desktopPaymentStatusLabel(group.paymentReviewStatus);
+  return (
+    <article className={`rounded-2xl border-2 p-4 ${tone === "paid" ? "border-emerald-200 bg-emerald-50/55" : "border-rose-200 bg-rose-50/55"}`}>
+      <div className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={!selectable}
+          onChange={(event) => onToggle(event.target.checked)}
+          className="mt-0.5 h-4 w-4 shrink-0 accent-penguin-pink-dark disabled:cursor-not-allowed disabled:opacity-45"
+          aria-label={`選擇 ${group.notebookName}`}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h3 className="truncate text-sm font-black text-penguin-gray">{group.notebookName}</h3>
+              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] font-bold">
+                <span className={`rounded-full px-2 py-0.5 ${tone === "paid" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
+                  {tone === "paid" ? "已付款" : paymentLabel}
+                </span>
+                {tone === "paid" && !group.shipmentAllBoughtArrived ? <span className="text-amber-700">等待到貨</span> : null}
+                {group.paymentReviewStatus === "topup_required" ? <span className="text-orange-700">尚需補款 {formatPrice(group.paymentRemainingAmount)}</span> : null}
+                {group.paymentReviewStatus === "rejected" ? <span className="text-red-600">{group.paymentRejectionReason || "請重新確認付款資料"}</span> : null}
+              </div>
+            </div>
+            <div className="shrink-0 text-right">
+              <p className="text-[10px] font-bold text-gray-500">商品總金額</p>
+              <p className="text-base font-black tabular-nums text-penguin-gray">{formatPrice(group.boughtTotal)}</p>
+            </div>
+          </div>
+
+          <ul className="mt-3 divide-y divide-dashed divide-penguin-peach/80 border-t border-penguin-peach/80">
+            {group.items.map((item) => (
+              <li key={item.itemId} className="grid grid-cols-[minmax(0,1.45fr)_auto_auto_auto_auto] items-center gap-x-3 py-2 text-[11px] text-penguin-gray">
+                <span className="min-w-0 truncate font-bold" title={item.variantSpec ? `${item.productName}｜${item.variantSpec}` : item.productName}>
+                  {item.productName}{item.variantSpec ? `｜${item.variantSpec}` : ""}
+                </span>
+                <span className="whitespace-nowrap">×{item.quantity}</span>
+                {item.purchaseStatus === "not_bought" ? (
+                  <span className="col-span-2 whitespace-nowrap font-bold text-gray-400">不計入付款</span>
+                ) : (
+                  <>
+                    <span className="whitespace-nowrap">單價 {formatPrice(item.unitPrice)}</span>
+                    <span className="whitespace-nowrap font-black">小計 {formatPrice(item.itemSubtotal)}</span>
+                  </>
+                )}
+                <span className={`whitespace-nowrap rounded-full px-2 py-0.5 font-black ${item.purchaseStatus === "not_bought" || item.itemArrivalStatus === "exception" ? "bg-red-100 text-red-600" : item.itemArrivalStatus === "arrived" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                  {desktopItemStatus(item)}
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          {group.shipmentLocked ? (
+            <div className="mt-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-bold text-sky-700">
+              <p className="font-black">{group.shipmentMethod === "face_to_face" ? "已預約面交" : "已申請出貨"} · {communityShipmentStatusLabel(group.shipmentRequestStatus)}</p>
+              {group.shipmentMethod === "face_to_face" ? (
+                <p>{group.meetupDate} {group.meetupStartTime.slice(0, 5)}～{group.meetupEndTime.slice(0, 5)} · {group.meetupLocation}</p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {group.paymentHistory.length > 0 ? (
+            <details className="mt-2 text-[11px] text-gray-500">
+              <summary className="cursor-pointer font-black text-penguin-gray">付款紀錄 {group.paymentHistory.length} 筆</summary>
+              <div className="mt-1 space-y-1">
+                {group.paymentHistory.map((payment) => (
+                  <p key={payment.id} className="flex flex-wrap justify-between gap-2 rounded-lg bg-white/80 px-2 py-1.5">
+                    <span>{communityPaymentBankLabel(payment.bank)} · {communityPaymentStatusLabel(payment.status)}</span>
+                    <span className="font-black tabular-nums text-penguin-gray">{formatPrice(payment.amount)}</span>
+                  </p>
+                ))}
+              </div>
+            </details>
+          ) : null}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function DesktopCombinedPaymentPanel({
+  groups,
+  nickname,
+  onSubmitted,
+}: {
+  groups: CommunityOrderGroup[];
+  nickname: string;
+  onSubmitted: () => Promise<void>;
+}) {
+  const existingBatchIds = [...new Set(groups.map((group) => group.paymentBatchId).filter(Boolean))];
+  const freshGroups = groups.filter((group) => !group.paymentBatchId);
+  const selectedOrderIds = [...new Set(groups.map((group) => group.orderId))];
+  const existingBatchOrderIds = groups.find((group) => group.paymentBatchId)?.paymentBatchOrderIds || [];
+  const isExistingBatch = existingBatchIds.length === 1 && freshGroups.length === 0;
+  const completeExistingBatch = !isExistingBatch || (
+    existingBatchOrderIds.length === selectedOrderIds.length
+    && existingBatchOrderIds.every((orderId) => selectedOrderIds.includes(orderId))
+  );
+  const validSelection = groups.length > 0
+    && existingBatchIds.length <= 1
+    && !(existingBatchIds.length > 0 && freshGroups.length > 0)
+    && completeExistingBatch;
+  const productTotal = isExistingBatch
+    ? groups.reduce((sum, group) => sum + group.paymentProductTotal, 0)
+    : groups.reduce((sum, group) => sum + group.boughtTotal, 0);
+  const discountTotal = isExistingBatch
+    ? groups.reduce((sum, group) => sum + group.paymentDiscountAmount, 0)
+    : groups.reduce((sum, group) => sum + Math.min(20, group.boughtTotal), 0);
+  const total = isExistingBatch
+    ? (groups[0]?.paymentRemainingAmount || 0)
+    : Math.max(productTotal - discountTotal, 0);
+  const submitOrderIds = isExistingBatch ? existingBatchOrderIds : selectedOrderIds;
+  const [bank, setBank] = useState("ctbc");
+  const [amount, setAmount] = useState("0");
+  const [last5, setLast5] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => setAmount(String(total)), [total]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const amountNumber = Number(amount);
+    if (!validSelection || total <= 0 || submitting || !Number.isFinite(amountNumber) || amountNumber <= 0 || !/^\d{5}$/.test(last5)) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      const response = await fetch("/api/community/remittances", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nickname, orderIds: submitOrderIds, bank, accountLast5: last5, amount: amountNumber }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.ok) throw new Error(result?.error || "付款資料送出失敗，請稍後再試。");
+      setLast5("");
+      await onSubmitted();
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "付款資料送出失敗，請稍後再試。");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="rounded-2xl border-2 border-rose-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h3 className="text-sm font-black text-penguin-gray">付款資料</h3>
+          <p className="mt-0.5 text-[11px] font-bold text-gray-500">{groups.length ? `已選 ${groups.length} 個系列` : "請先選擇要付款的系列"}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-[10px] font-bold text-gray-500">本次應付總額</p>
+          <p className="text-xl font-black tabular-nums text-penguin-pink-dark">{formatPrice(total)}</p>
+        </div>
+      </div>
+      <dl className="mt-3 grid grid-cols-3 gap-2 rounded-xl bg-rose-50 px-3 py-2 text-[11px] font-bold text-gray-600">
+        <div><dt>商品總金額</dt><dd className="mt-0.5 font-black tabular-nums text-penguin-gray">{formatPrice(productTotal)}</dd></div>
+        <div><dt>記事本折抵</dt><dd className="mt-0.5 font-black tabular-nums text-penguin-pink-dark">-{formatPrice(discountTotal)}{!isExistingBatch && groups.length ? `（${groups.length} 本 × NT$20）` : ""}</dd></div>
+        <div><dt>本次匯款</dt><dd className="mt-0.5 font-black tabular-nums text-penguin-gray">{formatPrice(total)}</dd></div>
+      </dl>
+      {!validSelection && groups.length ? <p className="mt-2 text-xs font-bold text-red-500">補款需完整選取同一付款批次的全部記事本，且不可混入其他批次。</p> : null}
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        {PAYMENT_BANK_OPTIONS.map((option) => (
+          <button key={option.value} type="button" onClick={() => setBank(option.value)} className={`rounded-xl border-2 px-2 py-2 text-xs font-black ${bank === option.value ? "border-penguin-pink-dark bg-penguin-pink-light text-penguin-pink-dark" : "border-penguin-peach bg-white text-penguin-gray"}`}>
+            {option.label}
+          </button>
+        ))}
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <label className="text-xs font-black text-penguin-gray">實際匯款金額<input type="number" min="1" step="1" value={amount} onChange={(event) => setAmount(event.target.value)} className="mt-1 h-10 w-full rounded-xl border-2 border-penguin-peach px-3 text-sm font-bold tabular-nums outline-none focus:border-penguin-pink-dark" /></label>
+        <label className="text-xs font-black text-penguin-gray">匯款後 5 碼<input type="text" inputMode="numeric" maxLength={5} value={last5} onChange={(event) => setLast5(event.target.value.replace(/\D/g, "").slice(0, 5))} className="mt-1 h-10 w-full rounded-xl border-2 border-penguin-peach px-3 text-sm font-bold tabular-nums outline-none focus:border-penguin-pink-dark" /></label>
+      </div>
+      {error ? <p className="mt-2 text-xs font-bold text-red-500">{error}</p> : null}
+      <button type="submit" disabled={!validSelection || total <= 0 || submitting || !/^\d{5}$/.test(last5) || !Number.isFinite(Number(amount)) || Number(amount) <= 0} className="mt-3 w-full rounded-full bg-penguin-pink-dark px-4 py-2.5 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50">
+        {submitting ? "送出中..." : "送出付款資料"}
+      </button>
+    </form>
+  );
+}
+
 function NotebookPaymentPanel({
   group,
   nickname,
@@ -354,7 +578,7 @@ function NotebookPaymentPanel({
       const response = await fetch("/api/community/remittances", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nickname, orderIds: [group.orderId], bank, accountLast5: last5, amount: amountNumber }),
+        body: JSON.stringify({ nickname, orderIds: group.paymentBatchOrderIds?.length ? group.paymentBatchOrderIds : [group.orderId], bank, accountLast5: last5, amount: amountNumber }),
       });
       const result = await response.json().catch(() => null);
       if (!response.ok || !result?.ok) throw new Error(result?.error || "付款資料送出失敗，請稍後再試。");
@@ -371,7 +595,7 @@ function NotebookPaymentPanel({
       <div className="grid gap-2 text-xs sm:grid-cols-2">
         <div className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2">
           <span className="font-black text-penguin-gray">應付總額</span>
-          <span className="font-black tabular-nums text-penguin-pink-dark">{formatPrice(group.boughtTotal)}</span>
+          <span className="font-black tabular-nums text-penguin-pink-dark">{formatPrice(group.paymentExpectedAmount || Math.max(group.boughtTotal - Math.min(20, group.boughtTotal), 0))}</span>
         </div>
         <div className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2">
           <span className="font-black text-penguin-gray">累計已收</span>
@@ -505,6 +729,11 @@ function communityPaymentStatusLabel(value: CommunityPaymentHistory["status"]) {
   }[value];
 }
 
+function desktopPaymentStatusLabel(value: CommunityPaymentStatus) {
+  if (value === "unpaid") return "未付款";
+  return communityPaymentStatusLabel(value);
+}
+
 function formatCommunityPaymentTime(value: string) {
   if (!value) return "—";
   const date = new Date(value);
@@ -532,10 +761,13 @@ export function CommunityOrdersClient() {
   const [searchedNickname, setSearchedNickname] = useState("");
   const [groups, setGroups] = useState<CommunityOrderGroup[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [desktopUnpaidSelected, setDesktopUnpaidSelected] = useState<Set<string>>(new Set());
+  const [desktopPaidSelected, setDesktopPaidSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [shipmentOpen, setShipmentOpen] = useState(false);
   const [meetupOpen, setMeetupOpen] = useState(false);
+  const [fulfillmentGroups, setFulfillmentGroups] = useState<CommunityOrderGroup[]>([]);
   const [lineSession, setLineSession] = useState<CommunityLineSession | null>(null);
   const [lineLoading, setLineLoading] = useState(true);
   const [lineError, setLineError] = useState("");
@@ -562,6 +794,8 @@ export function CommunityOrdersClient() {
       const rows = Array.isArray(result.rows) ? (result.rows as CommunityOrderRow[]) : [];
       setGroups(groupRows(rows));
       setSelected(new Set());
+      setDesktopUnpaidSelected(new Set());
+      setDesktopPaidSelected(new Set());
       setSearchedNickname(trimmed);
     } catch (err) {
       setError(err instanceof Error ? err.message : "查詢失敗，請稍後再試。");
@@ -664,6 +898,35 @@ export function CommunityOrdersClient() {
     return groups.filter((group) => selected.has(group.orderId));
   }, [groups, selected]);
 
+  const desktopUnpaidGroups = useMemo(
+    () => (groups || []).filter((group) => !group.shipmentPaid),
+    [groups],
+  );
+  const desktopPaidGroups = useMemo(
+    () => (groups || []).filter((group) => group.shipmentPaid),
+    [groups],
+  );
+  const desktopPayableGroups = useMemo(
+    () => desktopUnpaidGroups.filter((group) => isPaymentSelectable(group)),
+    [desktopUnpaidGroups],
+  );
+  const desktopFulfillableGroups = useMemo(
+    () => desktopPaidGroups.filter((group) => group.shipmentAllBoughtArrived && !group.shipmentLocked),
+    [desktopPaidGroups],
+  );
+  const selectedDesktopUnpaidGroups = useMemo(
+    () => desktopUnpaidGroups.filter((group) => desktopUnpaidSelected.has(group.orderId)),
+    [desktopUnpaidGroups, desktopUnpaidSelected],
+  );
+  const selectedDesktopPaidGroups = useMemo(
+    () => desktopPaidGroups.filter((group) => desktopPaidSelected.has(group.orderId)),
+    [desktopPaidGroups, desktopPaidSelected],
+  );
+  const allDesktopUnpaidSelected = desktopPayableGroups.length > 0
+    && desktopPayableGroups.every((group) => desktopUnpaidSelected.has(group.orderId));
+  const allDesktopPaidSelected = desktopFulfillableGroups.length > 0
+    && desktopFulfillableGroups.every((group) => desktopPaidSelected.has(group.orderId));
+
   const selectedNotArrived = selectedGroups.filter((group) => !group.shipmentAllBoughtArrived);
   const selectedHasUnpaid = selectedGroups.some((group) => !group.shipmentPaid);
   const sevenElevenEnabled = selectedGroups.length > 0 && selectedGroups.every((group) => group.shipmentEligible);
@@ -671,16 +934,55 @@ export function CommunityOrdersClient() {
 
   function handleShipClick() {
     if (!sevenElevenEnabled) return;
+    setFulfillmentGroups(selectedGroups);
     setShipmentOpen(true);
   }
 
   function handleMeetupClick() {
     if (!faceToFaceEnabled) return;
+    setFulfillmentGroups(selectedGroups);
+    setMeetupOpen(true);
+  }
+
+  function toggleDesktopSelection(
+    setter: Dispatch<SetStateAction<Set<string>>>,
+    orderId: string,
+    checked: boolean,
+  ) {
+    setter((current) => {
+      const next = new Set(current);
+      if (checked) next.add(orderId);
+      else next.delete(orderId);
+      return next;
+    });
+  }
+
+  function toggleDesktopUnpaidGroup(group: CommunityOrderGroup, checked: boolean) {
+    const relatedOrderIds = group.paymentBatchId ? group.paymentBatchOrderIds : [group.orderId];
+    setDesktopUnpaidSelected((current) => {
+      const next = new Set(current);
+      for (const orderId of relatedOrderIds) {
+        if (checked) next.add(orderId);
+        else next.delete(orderId);
+      }
+      return next;
+    });
+  }
+
+  function openDesktopShipment() {
+    if (!selectedDesktopPaidGroups.length || !selectedDesktopPaidGroups.every((group) => group.shipmentEligible)) return;
+    setFulfillmentGroups(selectedDesktopPaidGroups);
+    setShipmentOpen(true);
+  }
+
+  function openDesktopMeetup() {
+    if (!selectedDesktopPaidGroups.length || !selectedDesktopPaidGroups.every((group) => group.meetupEligible)) return;
+    setFulfillmentGroups(selectedDesktopPaidGroups);
     setMeetupOpen(true);
   }
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8 pb-8 sm:px-6 lg:px-8">
+    <main className="mx-auto max-w-5xl px-4 py-8 pb-8 sm:px-6 lg:max-w-7xl lg:px-8">
       <div className="mb-6 text-center">
         <p className="text-xs font-black text-penguin-pink-dark">社群下單查詢</p>
         <h1 className="mt-1 text-3xl font-black text-penguin-gray sm:text-4xl">社群訂單</h1>
@@ -811,7 +1113,110 @@ export function CommunityOrdersClient() {
           </div>
         ) : (
           <section className="mt-8 pb-28 sm:pb-0">
-            {/* Desktop toolbar */}
+            <div className="hidden items-start gap-6 lg:grid lg:grid-cols-2">
+              <section className="min-w-0">
+                <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl border-2 border-rose-200 bg-rose-50/70 px-4 py-3">
+                  <div>
+                    <h2 className="text-lg font-black text-penguin-gray">未付款</h2>
+                    <p className="text-[11px] font-bold text-gray-500">選擇要一起提交付款的系列</p>
+                  </div>
+                  <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-black text-penguin-gray">
+                    <input
+                      type="checkbox"
+                      checked={allDesktopUnpaidSelected}
+                      disabled={desktopPayableGroups.length === 0}
+                      onChange={(event) => setDesktopUnpaidSelected(event.target.checked ? new Set(desktopPayableGroups.map((group) => group.orderId)) : new Set())}
+                      className="h-4 w-4 accent-penguin-pink-dark disabled:cursor-not-allowed disabled:opacity-45"
+                    />
+                    全選可付款
+                  </label>
+                </div>
+                <div className="space-y-3">
+                  {desktopUnpaidGroups.length ? desktopUnpaidGroups.map((group) => (
+                    <DesktopOrderCard
+                      key={group.orderId}
+                      group={group}
+                      tone="unpaid"
+                      checked={desktopUnpaidSelected.has(group.orderId)}
+                      selectable={isPaymentSelectable(group)}
+                      onToggle={(checked) => toggleDesktopUnpaidGroup(group, checked)}
+                    />
+                  )) : (
+                    <div className="rounded-2xl border-2 border-dashed border-rose-200 bg-rose-50/40 px-4 py-8 text-center text-sm font-bold text-gray-500">目前沒有未付款系列</div>
+                  )}
+                </div>
+                <div className="mt-4">
+                  <DesktopCombinedPaymentPanel
+                    groups={selectedDesktopUnpaidGroups}
+                    nickname={searchedNickname}
+                    onSubmitted={() => runSearch(searchedNickname)}
+                  />
+                </div>
+              </section>
+
+              <section className="min-w-0">
+                <div className="mb-3 rounded-2xl border-2 border-emerald-200 bg-emerald-50/70 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-lg font-black text-penguin-gray">已付款</h2>
+                      <p className="text-[11px] font-bold text-gray-500">只可選擇已到貨且未鎖定的系列</p>
+                    </div>
+                    <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-black text-penguin-gray">
+                      <input
+                        type="checkbox"
+                        checked={allDesktopPaidSelected}
+                        disabled={desktopFulfillableGroups.length === 0}
+                        onChange={(event) => setDesktopPaidSelected(event.target.checked ? new Set(desktopFulfillableGroups.map((group) => group.orderId)) : new Set())}
+                        className="h-4 w-4 accent-penguin-pink-dark disabled:cursor-not-allowed disabled:opacity-45"
+                      />
+                      全選可出貨
+                    </label>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-3 border-t border-emerald-200 pt-3">
+                    <p className="text-xs font-black text-penguin-gray">已選 {selectedDesktopPaidGroups.length} 個系列</p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={selectedDesktopPaidGroups.length === 0}
+                        onClick={openDesktopShipment}
+                        className="inline-flex items-center gap-1.5 rounded-full border-2 border-penguin-pink-dark bg-white px-4 py-2 text-xs font-black text-penguin-pink-dark disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        <PackageCheck size={14} />
+                        7-11 出貨
+                      </button>
+                      <button
+                        type="button"
+                        disabled={selectedDesktopPaidGroups.length === 0}
+                        onClick={openDesktopMeetup}
+                        className="rounded-full border-2 border-gray-300 bg-white px-4 py-2 text-xs font-black text-penguin-gray disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        面交
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  {desktopPaidGroups.length ? desktopPaidGroups.map((group) => {
+                    const selectable = group.shipmentAllBoughtArrived && !group.shipmentLocked;
+                    return (
+                      <DesktopOrderCard
+                        key={group.orderId}
+                        group={group}
+                        tone="paid"
+                        checked={desktopPaidSelected.has(group.orderId)}
+                        selectable={selectable}
+                        onToggle={(checked) => toggleDesktopSelection(setDesktopPaidSelected, group.orderId, checked)}
+                      />
+                    );
+                  }) : (
+                    <div className="rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50/40 px-4 py-8 text-center text-sm font-bold text-gray-500">目前沒有已付款系列</div>
+                  )}
+                </div>
+              </section>
+            </div>
+
+            <div className="lg:hidden">
+            {/* Existing mobile/tablet layout remains unchanged. */}
             <div className="hidden items-center justify-between gap-3 rounded-t-3xl border-2 border-b-0 border-penguin-peach bg-penguin-cream/55 px-4 py-3 sm:flex sm:px-5">
               <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-black text-penguin-gray">
                 <input
@@ -863,6 +1268,7 @@ export function CommunityOrdersClient() {
                   onPaymentSubmitted={() => runSearch(searchedNickname)}
                 />
               ))}
+            </div>
             </div>
           </section>
         )
@@ -923,14 +1329,14 @@ export function CommunityOrdersClient() {
       {shipmentOpen ? (
         <ShipmentRequestModal
           nickname={searchedNickname}
-          groups={selectedGroups}
+          groups={fulfillmentGroups}
           onClose={() => setShipmentOpen(false)}
           onSubmitted={() => runSearch(searchedNickname)}
         />
       ) : null}
       {meetupOpen ? (
         <MeetupRequestModal
-          groups={selectedGroups}
+          groups={fulfillmentGroups}
           onClose={() => setMeetupOpen(false)}
           onSubmitted={() => runSearch(searchedNickname)}
         />

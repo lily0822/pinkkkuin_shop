@@ -16,6 +16,7 @@ type CommunityItemStatusRow = {
 
 type CommunityPaymentSubmissionRow = {
   id: string;
+  batch_key: string;
   order_ids: string[];
   bank: string;
   account_last5: string;
@@ -26,6 +27,14 @@ type CommunityPaymentSubmissionRow = {
   submitted_at: string;
   reviewed_at: string | null;
   refunded_at: string | null;
+};
+
+type CommunityPaymentOrderDetailRow = {
+  submission_id: string;
+  order_id: string;
+  product_total: number | string;
+  discount_amount: number | string;
+  payable_amount: number | string;
 };
 
 type CommunityPaymentRefundRow = {
@@ -108,11 +117,12 @@ export async function enrichCommunityPaymentRows<T extends { orderId: string; bo
   const orderIds = [...new Set(rows.map((row) => row.orderId).filter(Boolean))];
   const submissionsByOrderId = new Map<string, CommunityPaymentSubmissionRow[]>();
   const refundsBySubmissionId = new Map<string, CommunityPaymentRefundRow>();
+  const detailsBySubmissionAndOrder = new Map<string, CommunityPaymentOrderDetailRow>();
 
   if (orderIds.length > 0) {
     const { data, error } = await supabase
       .from("community_remittance_submissions")
-      .select("id,order_ids,bank,account_last5,amount,expected_amount,status,rejection_reason,submitted_at,reviewed_at,refunded_at")
+      .select("id,batch_key,order_ids,bank,account_last5,amount,expected_amount,status,rejection_reason,submitted_at,reviewed_at,refunded_at")
       .overlaps("order_ids", orderIds)
       .order("submitted_at", { ascending: false });
     if (error) throw error;
@@ -127,6 +137,14 @@ export async function enrichCommunityPaymentRows<T extends { orderId: string; bo
     }
     const submissionIds = submissions.map((submission) => submission.id);
     if (submissionIds.length > 0) {
+      const { data: detailData, error: detailError } = await supabase
+        .from("community_remittance_submission_orders")
+        .select("submission_id,order_id,product_total,discount_amount,payable_amount")
+        .in("submission_id", submissionIds);
+      if (detailError) throw detailError;
+      for (const detail of (detailData || []) as CommunityPaymentOrderDetailRow[]) {
+        detailsBySubmissionAndOrder.set(`${detail.submission_id}:${detail.order_id}`, detail);
+      }
       const { data: refundData, error: refundError } = await supabase
         .from("community_payment_refunds")
         .select("submission_id,amount,completed_at")
@@ -141,8 +159,13 @@ export async function enrichCommunityPaymentRows<T extends { orderId: string; bo
   return rows.map((row) => {
     const submissions = submissionsByOrderId.get(row.orderId) || [];
     const submission = submissions[0];
-    const expectedAmount = Number(row.boughtTotal ?? submission?.expected_amount ?? 0);
-    const cumulativeReceived = submissions.reduce(
+    const batchId = submission?.batch_key || submission?.id || "";
+    const batchSubmissions = submissions.filter((payment) => (payment.batch_key || payment.id) === batchId);
+    const detail = submission ? detailsBySubmissionAndOrder.get(`${submission.id}:${row.orderId}`) : undefined;
+    const expectedAmount = submission
+      ? Number(submission.expected_amount || 0)
+      : Math.max(Number(row.boughtTotal || 0) - Math.min(20, Number(row.boughtTotal || 0)), 0);
+    const cumulativeReceived = batchSubmissions.reduce(
       (total, payment) => total + (ACCEPTED_PAYMENT_STATUSES.has(payment.status) ? Number(payment.amount || 0) : 0),
       0,
     );
@@ -151,6 +174,11 @@ export async function enrichCommunityPaymentRows<T extends { orderId: string; bo
     return {
       ...row,
       paymentSubmissionId: submission?.id || "",
+      paymentBatchId: batchId,
+      paymentBatchOrderIds: submission?.order_ids || [row.orderId],
+      paymentProductTotal: Number(detail?.product_total ?? row.boughtTotal ?? 0),
+      paymentDiscountAmount: Number(detail?.discount_amount ?? (submission ? 0 : Math.min(20, Number(row.boughtTotal || 0)))),
+      paymentPayableAmount: Number(detail?.payable_amount ?? (submission ? submission.expected_amount : expectedAmount)),
       paymentReviewStatus: submission?.status || "unpaid",
       paymentRejectionReason: submission?.rejection_reason || "",
       paymentBank: submission?.bank || "",
@@ -167,6 +195,7 @@ export async function enrichCommunityPaymentRows<T extends { orderId: string; bo
         const refund = refundsBySubmissionId.get(payment.id);
         return {
           id: payment.id,
+          batchId: payment.batch_key || payment.id,
           bank: payment.bank,
           accountLast5: payment.account_last5,
           amount: Number(payment.amount || 0),

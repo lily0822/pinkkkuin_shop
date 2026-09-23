@@ -56,7 +56,8 @@ export async function POST(request: NextRequest) {
     ? body.orderIds.filter((id): id is string => typeof id === "string" && UUID_RE.test(id))
     : [];
 
-  if (!ALLOWED_BANKS.has(bank) || !LAST5_RE.test(accountLast5) || orderIds.length !== 1 || !Number.isFinite(amount) || amount <= 0) {
+  const uniqueOrderIds = [...new Set(orderIds)];
+  if (!ALLOWED_BANKS.has(bank) || !LAST5_RE.test(accountLast5) || uniqueOrderIds.length === 0 || uniqueOrderIds.length > 50 || !Number.isFinite(amount) || amount <= 0) {
     return NextResponse.json({ ok: false, error: "請確認匯款資料是否正確。" }, { status: 400 });
   }
 
@@ -64,7 +65,7 @@ export async function POST(request: NextRequest) {
     const supabase = createSupabaseServiceClient();
     const { data, error } = await supabase.rpc("submit_community_remittance", {
       p_nickname: binding.nickname,
-      p_order_ids: orderIds,
+      p_order_ids: uniqueOrderIds,
       p_bank: bank,
       p_account_last5: accountLast5,
       p_amount: amount,
