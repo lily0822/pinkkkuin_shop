@@ -367,7 +367,7 @@ function DesktopOrderCard({
 }) {
   const paymentLabel = desktopPaymentStatusLabel(group.paymentReviewStatus);
   return (
-    <article className={`rounded-2xl border-2 p-4 ${tone === "paid" ? "border-emerald-200 bg-emerald-50/55" : "border-rose-200 bg-rose-50/55"}`}>
+    <article className={`p-4 transition-colors ${tone === "paid" ? (checked ? "bg-emerald-100/90" : "bg-emerald-50/35") : (checked ? "bg-rose-100/90" : "bg-rose-50/35")}`}>
       <div className="flex items-start gap-3">
         <input
           type="checkbox"
@@ -824,6 +824,7 @@ export function CommunityOrdersClient() {
         setLineSession(nextSession);
         if (nextSession.binding?.nickname) {
           setNickname(nextSession.binding.nickname);
+          void runSearch(nextSession.binding.nickname);
         } else if (nextSession.application.requestedNickname) {
           setNickname(nextSession.application.requestedNickname);
         }
@@ -837,7 +838,7 @@ export function CommunityOrdersClient() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [runSearch]);
 
   async function handleApplication(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1058,7 +1059,7 @@ export function CommunityOrdersClient() {
             <p className="mt-2 text-xs font-bold text-gray-400">審核通過後才能使用這個暱稱查詢訂單。</p>
           </div>
         ) : (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-xs font-bold text-gray-500">已綁定社群暱稱</p>
               <p className="mt-0.5 text-lg font-black text-penguin-gray">{lineSession.binding?.nickname}</p>
@@ -1068,15 +1069,15 @@ export function CommunityOrdersClient() {
                 </p>
               ) : null}
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="flex flex-col gap-2 sm:flex-row lg:shrink-0">
               <button
                 type="button"
                 disabled={loading}
                 onClick={() => lineSession.binding?.nickname && runSearch(lineSession.binding.nickname)}
                 className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-penguin-pink-dark px-6 text-sm font-black text-white transition hover:bg-penguin-pink disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <Search size={16} />
-                {loading ? "查詢中..." : "查詢訂單"}
+                <RefreshCw size={16} />
+                {loading ? "更新中..." : "更新訂單"}
               </button>
               <button
                 type="button"
@@ -1110,7 +1111,7 @@ export function CommunityOrdersClient() {
           </div>
         ) : (
           <section className="mt-8 pb-28 sm:pb-0">
-            <div className="mx-auto hidden max-w-6xl items-start gap-6 lg:grid lg:grid-cols-2">
+            <div className="mx-auto hidden max-w-5xl items-start gap-6 lg:grid lg:grid-cols-2">
               <section className="min-w-0">
                 <div className="mb-3 flex items-center justify-between gap-3 px-1 py-1.5">
                   <div>
@@ -1128,7 +1129,7 @@ export function CommunityOrdersClient() {
                     全選可付款
                   </label>
                 </div>
-                <div className="space-y-3">
+                <div className="overflow-hidden rounded-3xl border-2 border-rose-200 bg-white divide-y-2 divide-dashed divide-rose-200">
                   {desktopUnpaidGroups.length ? desktopUnpaidGroups.map((group) => (
                     <DesktopOrderCard
                       key={group.orderId}
@@ -1139,7 +1140,7 @@ export function CommunityOrdersClient() {
                       onToggle={(checked) => toggleDesktopUnpaidGroup(group, checked)}
                     />
                   )) : (
-                    <div className="rounded-2xl border-2 border-dashed border-rose-200 bg-rose-50/40 px-4 py-8 text-center text-sm font-bold text-gray-500">目前沒有未付款系列</div>
+                    <div className="bg-rose-50/40 px-4 py-8 text-center text-sm font-bold text-gray-500">目前沒有未付款系列</div>
                   )}
                 </div>
                 <div className="mt-4">
@@ -1192,7 +1193,7 @@ export function CommunityOrdersClient() {
                     </div>
                   </div>
                 </div>
-                <div className="space-y-3">
+                <div className="overflow-hidden rounded-3xl border-2 border-emerald-200 bg-white divide-y-2 divide-dashed divide-emerald-200">
                   {desktopPaidGroups.length ? desktopPaidGroups.map((group) => {
                     const selectable = group.shipmentAllBoughtArrived && !group.shipmentLocked;
                     return (
@@ -1206,7 +1207,7 @@ export function CommunityOrdersClient() {
                       />
                     );
                   }) : (
-                    <div className="rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50/40 px-4 py-8 text-center text-sm font-bold text-gray-500">目前沒有已付款系列</div>
+                    <div className="bg-emerald-50/40 px-4 py-8 text-center text-sm font-bold text-gray-500">目前沒有已付款系列</div>
                   )}
                 </div>
               </section>
