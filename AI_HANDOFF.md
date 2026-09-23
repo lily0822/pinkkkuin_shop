@@ -4,7 +4,7 @@
 
 - Branch: `community-orders`; feature commit `0c4a630`.
 - Community frontend: `https://pinkkkuin-community-orders.vercel.app` → `dpl_RwKP6jwMkb8pJnRfgwfuBVe2xFpa`.
-- Shared Staging backend remains on the current `official-next` deployment until local commit `ff71ba7` is explicitly authorized and pushed.
+- Shared Staging backend: `https://pinkkkuin-staging.vercel.app/backend` → official-next deployment `dpl_2L5nEzTkU8thHTeockWxEixrHniH`, commit `ff71ba7`.
 - Backend source commit `970ffd4` is pushed to `backend-staging`.
 - `pinkkkuin-staging.vercel.app` belongs only to `official-next`; never update it from this branch.
 - Production is untouched and must never be deployed without explicit approval.
@@ -24,8 +24,9 @@
 
 - Community and official-next builds pass locally; backend inline JavaScript syntax passes.
 - Community deployment smoke: `/` 200, `/community-orders` 200, unauthenticated orders API 401.
-- Full database E2E for 1/2/3 notebooks, top-up, overpayment/refund, and cleanup still requires a transaction-capable Staging SQL test because REST service credentials cannot delete protected payment history safely.
-- `official-next` local commit `ff71ba7` contains the shared backend API, migration, and backend gitlink, but automatic approval rejected the push pending explicit user authorization.
+- Transactional Staging SQL E2E passed for 1/2/3 notebooks, NT$20 per-notebook discount, `not_bought` exclusion, multi-notebook submission, batch approval, top-up difference, overpayment, and refund completion.
+- The E2E script finished with `ROLLBACK`; no temporary orders, submissions, refunds, or snapshots were retained.
+- Community alias and shared Staging backend HTTP smoke pass; unauthenticated protected APIs still return 401.
 
 ## Deployment rules
 
