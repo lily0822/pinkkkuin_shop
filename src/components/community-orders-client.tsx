@@ -265,7 +265,29 @@ function OrderCard({
   onPaymentSubmitted: () => Promise<void>;
 }) {
   return (
-    <article className="rounded-2xl border-2 border-penguin-peach bg-white p-4 shadow-sm sm:p-5">
+    <article className="rounded-2xl bg-white p-4 sm:p-5">
+      {group.shipmentLocked ? (
+        <div className="mb-3 rounded-xl bg-sky-50 px-3 py-2 text-xs font-bold text-sky-700">
+          <p className="font-black">{communityFulfillmentProgressLabel(group)}</p>
+          {group.shipmentMethod === "face_to_face" ? (
+            <p className="mt-1">
+              {group.meetupDate} {group.meetupStartTime.slice(0, 5)}～{group.meetupEndTime.slice(0, 5)} · {group.meetupLocation}
+              <br />{group.meetupPaymentMethod === "pay_at_meetup" ? "面交付款" : "先匯款"}
+            </p>
+          ) : group.shipmentMarketplaceUrl ? (
+            <a
+              href={group.shipmentMarketplaceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 inline-flex font-black text-penguin-pink-dark underline underline-offset-2"
+            >
+              前往賣貨便填寫取貨資料
+            </a>
+          ) : (
+            <p className="mt-1">賣貨便建立中</p>
+          )}
+        </div>
+      ) : null}
       <div className="flex items-start gap-3">
         <input
           type="checkbox"
@@ -313,30 +335,6 @@ function OrderCard({
           <div className="mt-3">
             <GroupStatusBadges group={group} />
           </div>
-          {group.shipmentLocked ? (
-            <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-700">
-              <p className="font-black">
-                {communityFulfillmentProgressLabel(group)}
-              </p>
-              {group.shipmentMethod === "face_to_face" ? (
-                <p className="mt-1">
-                  {group.meetupDate} {group.meetupStartTime.slice(0, 5)}～{group.meetupEndTime.slice(0, 5)} · {group.meetupLocation}
-                  <br />{group.meetupPaymentMethod === "pay_at_meetup" ? "面交付款" : "先匯款"}
-                </p>
-              ) : group.shipmentMarketplaceUrl ? (
-                <a
-                  href={group.shipmentMarketplaceUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-1 inline-flex font-black text-penguin-pink-dark underline underline-offset-2"
-                >
-                  前往賣貨便填寫取貨資料
-                </a>
-              ) : (
-                <p className="mt-1">賣貨便建立中</p>
-              )}
-            </div>
-          ) : null}
           <NotebookPaymentPanel group={group} nickname={nickname} onSubmitted={onPaymentSubmitted} />
         </div>
       </div>
@@ -378,7 +376,15 @@ function DesktopOrderCard({
       ? "bg-emerald-100 text-emerald-700"
       : "bg-rose-100 text-rose-700";
   return (
-    <article className={`p-4 transition-colors ${tone === "paid" ? (checked ? "bg-emerald-100/90" : "bg-emerald-50/35") : (checked ? "bg-rose-100/90" : "bg-rose-50/35")}`}>
+    <article className={`p-4 transition-colors ${tone === "paid" ? (checked ? "bg-emerald-100/90" : "bg-white") : (checked ? "bg-rose-100/90" : "bg-white")}`}>
+      {group.shipmentLocked ? (
+        <div className="mb-2 rounded-xl bg-sky-50 px-3 py-2 text-[11px] font-bold text-sky-700">
+          <p className="font-black">{communityFulfillmentProgressLabel(group)}</p>
+          {group.shipmentMethod === "face_to_face" ? (
+            <p>{group.meetupDate} {group.meetupStartTime.slice(0, 5)}～{group.meetupEndTime.slice(0, 5)} · {group.meetupLocation}</p>
+          ) : null}
+        </div>
+      ) : null}
       <div className="flex items-start gap-3">
         <input
           type="checkbox"
@@ -425,15 +431,6 @@ function DesktopOrderCard({
               </li>
             ))}
           </ul>
-
-          {group.shipmentLocked ? (
-            <div className="mt-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-bold text-sky-700">
-              <p className="font-black">{communityFulfillmentProgressLabel(group)}</p>
-              {group.shipmentMethod === "face_to_face" ? (
-                <p>{group.meetupDate} {group.meetupStartTime.slice(0, 5)}～{group.meetupEndTime.slice(0, 5)} · {group.meetupLocation}</p>
-              ) : null}
-            </div>
-          ) : null}
 
           {group.paymentHistory.length > 0 ? (
             <details className="mt-2 text-[11px] text-gray-500">
@@ -1232,7 +1229,7 @@ export function CommunityOrdersClient() {
         <p className="mt-2 text-sm font-bold text-gray-500">使用 LINE 登入，社群暱稱審核通過後即可查詢訂單。</p>
       </div>
 
-      <section className="mx-auto max-w-xl rounded-3xl border-2 border-penguin-peach bg-white p-4 shadow-sm sm:p-5">
+      <section className="mx-auto max-w-xl rounded-3xl bg-white p-4 sm:p-5 lg:max-w-5xl">
         {lineLoading ? (
           <p className="text-center text-sm font-bold text-gray-500">正在確認 LINE 登入狀態...</p>
         ) : !lineSession?.authenticated ? (
@@ -1367,7 +1364,7 @@ export function CommunityOrdersClient() {
 
       {groups !== null && !error ? (
         groups.length === 0 ? (
-          <div className="mx-auto mt-10 max-w-xl rounded-3xl border-2 border-penguin-peach bg-white p-8 text-center shadow-sm">
+          <div className="mx-auto mt-10 max-w-xl rounded-3xl bg-white p-8 text-center">
             <p className="text-sm font-bold text-gray-500">你沒有任何下單的商品喔</p>
           </div>
         ) : (
