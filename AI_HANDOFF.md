@@ -6,8 +6,8 @@
 - Feature commit: `8435abd` (社群訂單頁 3 項 UI 微調：訂單明細批次修改/LINE 通知靠右對齊、出貨申請展開內容靠左、LINE 通知紀錄移除標題分隔線).
 - Storefront/shared backend Staging: `https://pinkkkuin-staging.vercel.app` → `dpl_2Ay2fATWeXKT1sw3e6eTQwMRPERD`.
 - Backend source commit: `9311469`, pushed to `backend-staging` and referenced by `official-next`.
-- Community frontend feature commit: `acffd3d`.
-- Community frontend: `https://pinkkkuin-community-orders.vercel.app` → `dpl_AnTJSo68yt3fu5A5RS1cDfEnjxc6`.
+- Community frontend feature commit: `c35d634` (mobile/tablet unpaid/paid order list: one big card per section with dashed dividers between series, instead of one small card per series).
+- Community frontend: `https://pinkkkuin-community-orders.vercel.app` → `dpl_5oYeXy3LVYj6ZkNdYiecwBSVxFUj`.
 - Production is untouched and requires explicit authorization for every deploy, migration, or write.
 
 ## Community LINE notifications (v1 — manual admin batch send)
@@ -72,15 +72,14 @@ Every real search/filter bar across the whole admin (not just community-orders) 
 
 ## Current community frontend UI
 
-- Desktop binding/action card aligns with the unpaid + paid main content width.
-- General order cards are white without decorative borders; unpaid/paid section styling and status pills remain unchanged.
+- Desktop (`lg:` and up, 2-column grid): 未付款/已付款 are each ONE big card (`overflow-hidden rounded-3xl border-2 ... divide-y-2 divide-dashed`) with series (`DesktopOrderCard`) inside separated by dashed dividers, not individually bordered. General order cards are white without decorative borders; unpaid/paid section styling and status pills remain unchanged.
+- **Mobile/tablet (below `lg`) — this round**: brought in line with desktop's big-card-with-dividers look. Previously every series was its own rounded white card in a loose `grid sm:grid-cols-2` with NO 未付款/已付款 separation at all (`activeGroups` rendered as one flat list). Now split into the same two labelled sections (未付款/已付款, reusing the already-memoized `desktopUnpaidGroups`/`desktopPaidGroups` classification by `group.shipmentPaid` — purely for grouping the render, no new state), each one big rounded card with series (`OrderCard`, which lost its own `rounded-2xl` border framing) separated by dashed dividers instead of each having a border. Selection (`selected` Set), the fixed bottom action bar, per-series inline `NotebookPaymentPanel`, 7-11/面交 flow, and 歷史訂單/匯款紀錄 modals are all completely untouched — only the card-list markup changed.
 - Shipment and meetup pending labels appear before the corresponding notebook title.
 - Payment amount is locked to the calculated total (customer only picks a bank and enters the last 5 digits); the amount is shown as a large standalone block, not an editable input.
 - A reminder ("請確認匯款完成後再送出...") sits above each payment submit button.
 - Status wording simplified to drop backend-review language ("待審核"→"確認中", "審核退回"→"請重新送出").
 - 7-11 (`ShipmentRequestModal`) and 面交 (`MeetupRequestModal`) both show a clear success confirmation on submit instead of closing silently.
 - A short "確認有買到→匯款→等待到貨→申請出貨／面交" process guide sits above the order list.
-- Mobile layout was not refactored.
 
 ## Verification
 
@@ -89,7 +88,8 @@ Every real search/filter bar across the whole admin (not just community-orders) 
 - Multi-notebook payment, NT$20 discount, top-up/refund, fulfillment locks, cancellation unlock, history, safe deletion, and Excel import logic were not changed this round.
 - This round (社群訂單頁分隔線版面/出貨申請表格化/付款審核欄位精簡) touched only `lily-backend.html` — no API route, no migration.
 - Search/filter UI unification round also touched only `lily-backend.html` — no API route, no migration. Verified via a Node `new Function()` syntax check over every inline `<script>` block plus a full `npm run build`.
-- The 3-tweak alignment/divider round (this round — 訂單明細 right-align, 出貨申請展開 left-align, LINE 通知紀錄 divider) is a 7-line CSS/inline-style-only diff in `lily-backend.html`, nothing else touched.
+- The 3-tweak alignment/divider round (訂單明細 right-align, 出貨申請展開 left-align, LINE 通知紀錄 divider) is a 7-line CSS/inline-style-only diff in `lily-backend.html`, nothing else touched.
+- This round's community frontend change (mobile/tablet big-card layout) is a single-file diff in `src/components/community-orders-client.tsx`, verified with `npx tsc --noEmit`, `npm run build`, and `npx eslint` (clean — the one pre-existing unused-var warning at line ~966 is unrelated, not introduced by this change). No API/data/migration touched.
 - Community route and shared backend login route load successfully from their aliases after every deploy above.
 
 ## Next round
@@ -97,7 +97,7 @@ Every real search/filter bar across the whole admin (not just community-orders) 
 - Confirm the `202609230002_community_line_notifications.sql` migration has been applied to Staging, then run the 3 live manual notification tests (see above) and record the result here.
 - Confirm the `202609240001_community_notebooks_metadata.sql` migration has been applied to Staging, then run the 記事本管理時間設定/篩選 test above and record the result here.
 - Real delete for `community_orders`/`community_order_items` still has no DB capability (checked twice now — no DELETE grant, no RPC). A migration (`202609220001_community_order_item_safe_delete.sql`'s `delete_community_order_item`) already exists for per-item delete; wiring a 刪除 button into the 社群訂單 admin table's 操作 column is still open.
-- Frontend "Next round" items from before this round are believed done (see Community frontend UI above) — re-confirm against the actual list if anything was missed: simplify frontend status wording ✅, clearer success feedback ✅, short process guide ✅, pending-work summary on the backend ✅.
+- Frontend "Next round" items from before this round are believed done (see Community frontend UI above) — re-confirm against the actual list if anything was missed: simplify frontend status wording ✅, clearer success feedback ✅, short process guide ✅, pending-work summary on the backend ✅, mobile/tablet big-card layout ✅ (this round).
 - Underpayment/overpayment flows intentionally not touched.
 - Decide whether a full per-send audit trail for 賣貨便可下單 notifications is actually needed (see 發送時間 field limitation above) — if yes, needs a new append-only table (migration), not built yet pending that decision.
 
