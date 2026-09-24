@@ -3,9 +3,9 @@
 ## Current baseline
 
 - Branch: `official-next`.
-- Feature commit: `a7a73cc` (社群訂單頁版面整理：移除大卡片外框改分隔線、出貨申請表格化、付款審核欄位精簡).
-- Storefront/shared backend Staging: `https://pinkkkuin-staging.vercel.app` → `dpl_EKyHky89xhauHwrAvsT6nBkpbXkL`.
-- Backend source commit: `8752dd1`, pushed to `backend-staging` and referenced by `official-next`.
+- Feature commit: `134e8a2` (統一後台所有搜尋／篩選列 UI：移除外部灰色標籤、控制項樣式統一、date 欄位提示文字 — spans the whole admin, not just community-orders).
+- Storefront/shared backend Staging: `https://pinkkkuin-staging.vercel.app` → `dpl_AjZgfeZkTeJRgUk8j3NnoTXKzyg7`.
+- Backend source commit: `1baf998`, pushed to `backend-staging` and referenced by `official-next`.
 - Community frontend feature commit: `acffd3d`.
 - Community frontend: `https://pinkkkuin-community-orders.vercel.app` → `dpl_AnTJSo68yt3fu5A5RS1cDfEnjxc6`.
 - Production is untouched and requires explicit authorization for every deploy, migration, or write.
@@ -59,6 +59,16 @@
 - LINE 文案設定 modal's per-type "編輯訊息" button got `white-space:nowrap;flex-shrink:0` so its text never wraps regardless of the row's remaining width (the long-preview text on the left shrinks instead, since it already has `min-width:0`).
 - **付款審核 table field cleanup (this round, display only)**: 送出時間/處理時間 now show date on line 1, time on line 2 (new `communityDateTimeStacked` helper, used only for these two columns — the shared `storefrontDateTime` used everywhere else on the page is untouched). 記事本明細 column renamed to 記事本名稱 and now shows just the notebook name(s), one per line — the gray 商品/折抵/基準 sub-line under each notebook was removed. Column renames: 商品總額→總金額, 記事本折抵→預留, 應付總額→匯款金額. Columns removed from display: 累計已收, 尚需補款, 多匯金額 — their underlying values (`cumulativeReceived`/`remainingAmount`/`overpaidAmount`) are untouched in the API/data and `communityPaymentReviewActions`'s 核准/需補款/多匯待退款 label logic still reads them internally, they're just no longer rendered as columns.
 
+## Backend-wide search/filter UI unification (this round)
+
+Every real search/filter bar across the whole admin (not just community-orders) was brought to one visual spec: no external gray `<label>` above a field, the field's purpose shown directly in it, and identical control height/radius/padding/border everywhere. Purely display — no filter value, filter logic, API, or DB changed.
+
+- **Labels removed, replaced by**: `input`/`select` get `aria-label` (accessible name preserved); `input` placeholders are the field's own purpose text (e.g. "商品名稱", "社群暱稱、記事本名稱"); `select` default/`value=""` options were renamed from bare "全部" to self-descriptive text — "全部匯款狀態", "全部到貨狀態", "全部下單狀態", "全部 LINE 狀態", "全部會員狀態", "全部訂單類型/訂單狀態/付款狀態/配送狀態", "全部出貨狀態", "全部廠商", "全部購物網站", "全部分類", "全部收支類型", "全部集運公司" — so a row of unlabeled selects still reads correctly at a glance. Two of these (`filter-v-vendor`/`filter-w-vendor`) are populated dynamically by `populateFilterVendors()`, so the default-option text was changed in that JS string, not just the static HTML.
+- **Date/month fields (no native placeholder support)**: `<input type="date">`/`type="month">` ignore the `placeholder` attribute in every browser, so a light-gray overlay hint (`.admin-filter-hint`, absolutely positioned inside a `position:relative` wrapper) shows "開始日期"/"結束日期"/"下單月份"/"預計出貨月份" etc. and disappears once a value is picked. Mechanism: `syncAdminDateHint()` toggles an `.admin-hint-empty` class on the input (which sets `color:transparent` so the input's own native empty-state text doesn't show underneath the hint) on `input`/`change`, plus a one-time init pass on page load — but **only for inputs that actually have an `.admin-filter-hint` sibling**. Every other date input in the admin (add/edit modals, `community-notebook-meta-*`, `ledger-date` in the add-entry modal, meetup/schedule create forms, etc.) is completely unaffected — this was deliberately scoped after catching that a naive "all date inputs" version would have made every modal date field look blank when empty.
+- **Unified control style**: `.backend-member-filter-field`/`.storefront-order-filter-field` were already identical (`min-height:34px; border:1px solid #fbcfe8; border-radius:0.72rem; padding:0.42rem 0.62rem; color:#334155; font-size:0.82rem; font-weight:800`, focus `border-color:#f472b6; box-shadow:0 0 0 3px rgba(244,114,182,.12)`) — that became the baseline. Three previously-divergent systems were brought up to the same values: plain `.filter-bar .form-group` (廠商叫貨明細/購物網站叫貨明細/客戶訂單明細), `.product-filter-card .form-group` (現貨/預購商品管理), and a new `.schedule-filter-card` marker class added to the 擺攤時程/連線時程 search rows (they had no distinguishing class before, needed one to scope the CSS safely without touching the many other unrelated `.form-row`/`.table-wrapper` uses elsewhere in modals). 總帳表's `.ledger-filter-card` has its own local `<style>` block inside that section — edited in place to the same values. `.tag-select-button` (the IP/商品類別 multi-select trigger) got the same border/radius/height too. A global `input::placeholder { color:#94a3b8; }` was added (harmless everywhere, including modals — pure color, no behavior change).
+- **Full page/field scope**: 會員管理 (搜尋/LINE 狀態/會員狀態), 社群訂單頁's 記事本管理/訂單明細/出貨申請 (搜尋 fields already de-labeled in an earlier round — this round just fixed their selects' bare "全部" text and did the notebook filters), 社群名單 (LINE 名稱/申請暱稱 — already had no label, just added `aria-label`), 訂單管理 (搜尋 + 開始/結束日期 + 4 selects), 客戶訂單明細, 廠商叫貨明細, 購物網站叫貨明細, 現貨商品管理, 預購商品管理, 擺攤時程, 連線時程, 總帳表, 集運帳表 (`#freight-company-filter` — found to be a static mockup with hardcoded table rows and no wired-up filter logic at all; changed anyway for visual consistency, zero functional risk since nothing reads it).
+- **Explicitly NOT touched** (not search/filter UI, so left exactly as-is): 批次修改欄位/修改為 (batch-edit config, community-orders), LINE 通知類型 selector, 面交時段/擺攤/連線 schedule *create* forms (date/time/location fields for adding a new slot, as opposed to the search row above the table), all add/edit modals (vendor, website, product, ledger entry, brand/appearance settings, community member/order edit, etc.), and all page-size/pagination selects (`#ledger-page-size`, `#community-order-page-size`, etc. — a different UI purpose from search/filter, and most already show self-descriptive option text like "20 筆" without a label).
+
 ## Current community frontend UI
 
 - Desktop binding/action card aligns with the unpaid + paid main content width.
@@ -77,6 +87,7 @@
 - Deploying from the `community-orders` git worktree (`.tmp-community-desktop`) directly with `vercel deploy` fails/hangs with `Not authorized` — root-caused to the worktree's `.git` metadata, not the code. Workaround: `git archive <commit> | tar -x -C <clean temp dir>`, copy `.vercel/project.json` in, deploy from there.
 - Multi-notebook payment, NT$20 discount, top-up/refund, fulfillment locks, cancellation unlock, history, safe deletion, and Excel import logic were not changed this round.
 - This round (社群訂單頁分隔線版面/出貨申請表格化/付款審核欄位精簡) touched only `lily-backend.html` — no API route, no migration.
+- Search/filter UI unification round (this round) also touched only `lily-backend.html` — no API route, no migration. Verified via a Node `new Function()` syntax check over every inline `<script>` block plus a full `npm run build`.
 - Community route and shared backend login route load successfully from their aliases after every deploy above.
 
 ## Next round
