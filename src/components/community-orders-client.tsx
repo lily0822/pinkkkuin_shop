@@ -255,14 +255,10 @@ function OrderCard({
   group,
   checked,
   onToggle,
-  nickname,
-  onPaymentSubmitted,
 }: {
   group: CommunityOrderGroup;
   checked: boolean;
   onToggle: (checked: boolean) => void;
-  nickname: string;
-  onPaymentSubmitted: () => Promise<void>;
 }) {
   return (
     <article className="bg-white p-4 sm:p-5">
@@ -335,7 +331,7 @@ function OrderCard({
           <div className="mt-3">
             <GroupStatusBadges group={group} />
           </div>
-          <NotebookPaymentPanel group={group} nickname={nickname} onSubmitted={onPaymentSubmitted} />
+          <NotebookPaymentPanel group={group} />
         </div>
       </div>
     </article>
@@ -557,44 +553,73 @@ function DesktopCombinedPaymentPanel({
   );
 }
 
-function NotebookPaymentPanel({
-  group,
+/**
+ * "我要匯款" modal — the sole place a customer now submits a payment. Reuses
+ * DesktopCombinedPaymentPanel completely unmodified (same batch/multi-notebook
+ * logic, same NT$20-per-notebook discount calc, same POST /api/community/remittances
+ * call) so the payment core is untouched; this just adds the modal shell and
+ * the "本次勾選品項明細" breakdown the task asked for on top of it.
+ */
+function CombinedPaymentModal({
+  groups,
   nickname,
+  onClose,
   onSubmitted,
 }: {
-  group: CommunityOrderGroup;
+  groups: CommunityOrderGroup[];
   nickname: string;
+  onClose: () => void;
   onSubmitted: () => Promise<void>;
 }) {
-  const [bank, setBank] = useState("ctbc");
-  const [last5, setLast5] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
-  const status = group.paymentReviewStatus || "unpaid";
-  const canSubmit = (status === "unpaid" || status === "rejected" || status === "topup_required")
-    && group.paymentRemainingAmount > 0;
-  const payAmount = group.paymentRemainingAmount || group.boughtTotal;
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!canSubmit || submitting || !/^\d{5}$/.test(last5)) return;
-    setSubmitting(true);
-    setError("");
-    try {
-      const response = await fetch("/api/community/remittances", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nickname, orderIds: group.paymentBatchOrderIds?.length ? group.paymentBatchOrderIds : [group.orderId], bank, accountLast5: last5, amount: payAmount }),
-      });
-      const result = await response.json().catch(() => null);
-      if (!response.ok || !result?.ok) throw new Error(result?.error || "付款資料送出失敗，請稍後再試。");
-      await onSubmitted();
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "付款資料送出失敗，請稍後再試。");
-    } finally {
-      setSubmitting(false);
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
     }
-  }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-penguin-gray/40 p-0 sm:items-center sm:p-5" role="dialog" aria-modal="true" aria-label="我要匯款" onMouseDown={onClose}>
+      <div className="max-h-[88vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-penguin-cream p-5 shadow-xl sm:rounded-3xl sm:p-6" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-lg font-black text-penguin-gray">我要匯款</h2>
+          <button type="button" onClick={onClose} aria-label="關閉" className="rounded-full border border-penguin-peach bg-white p-2 text-penguin-gray">
+            <X size={18} />
+          </button>
+        </div>
+
+        {groups.length > 0 ? (
+          <div className="mt-4 rounded-2xl border border-penguin-peach bg-white p-3">
+            <p className="text-xs font-black text-penguin-gray">本次勾選品項明細</p>
+            <div className="mt-2 space-y-3">
+              {groups.map((group) => (
+                <div key={group.orderId} className="border-t border-dashed border-penguin-peach pt-2 first:border-t-0 first:pt-0">
+                  <p className="text-xs font-black text-penguin-gray">{group.notebookName}</p>
+                  <ul className="mt-1 space-y-0.5 text-[11px] text-gray-500">
+                    {group.items.filter((item) => item.purchaseStatus === "bought").map((item) => (
+                      <li key={item.itemId} className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate">{item.productName}{item.variantSpec ? `｜${item.variantSpec}` : ""} ×{item.quantity}</span>
+                        <span className="shrink-0 font-bold tabular-nums text-penguin-gray">{formatPrice(item.itemSubtotal)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="mt-4">
+          <DesktopCombinedPaymentPanel groups={groups} nickname={nickname} onSubmitted={onSubmitted} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NotebookPaymentPanel({ group }: { group: CommunityOrderGroup }) {
+  const status = group.paymentReviewStatus || "unpaid";
 
   return (
     <div className="mt-4 rounded-2xl border border-penguin-peach bg-penguin-cream/45 p-3">
@@ -626,59 +651,20 @@ function NotebookPaymentPanel({
       ) : group.boughtTotal <= 0 ? (
         <p className="mt-3 text-xs font-bold text-gray-500">目前沒有需要付款的商品。</p>
       ) : (
-        <form onSubmit={handleSubmit} className="mt-3 space-y-3">
+        <div className="mt-3 space-y-2">
           {status === "topup_required" ? (
             <div className="rounded-xl bg-orange-50 px-3 py-2 text-xs font-bold text-orange-700">
-              尚需補款 <span className="font-black">{formatPrice(group.paymentRemainingAmount)}</span>
+              尚需補款 <span className="font-black">{formatPrice(group.paymentRemainingAmount)}</span>，請在「未付款」勾選後點擊「我要匯款」送出。
             </div>
-          ) : null}
-          {status === "rejected" ? (
+          ) : status === "rejected" ? (
             <div className="rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-600">
               <p className="font-black">請重新送出付款資料</p>
               <p className="mt-0.5">原因：{group.paymentRejectionReason || "請重新確認付款資料。"}</p>
             </div>
-          ) : null}
-          <div className="rounded-2xl border-2 border-penguin-pink-dark bg-white px-4 py-3 text-center">
-            <p className="text-xs font-black text-penguin-gray">本次應匯款金額</p>
-            <p className="mt-0.5 text-3xl font-black tabular-nums text-penguin-pink-dark">{formatPrice(payAmount)}</p>
-          </div>
-          <div>
-            <p className="mb-1.5 text-xs font-black text-penguin-gray">選擇匯款銀行</p>
-            <div className="grid grid-cols-3 gap-2">
-              {PAYMENT_BANK_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setBank(option.value)}
-                  className={`flex min-w-0 items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2 text-xs font-black transition ${bank === option.value ? "border-penguin-pink-dark bg-penguin-pink-light text-penguin-pink-dark" : "border-penguin-peach bg-white text-penguin-gray"}`}
-                >
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white text-[10px] shadow-sm" aria-hidden="true">{option.logo}</span>
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <label className="block text-xs font-black text-penguin-gray">
-            匯款後 5 碼
-            <input
-              type="text"
-              inputMode="numeric"
-              maxLength={5}
-              value={last5}
-              onChange={(event) => setLast5(event.target.value.replace(/\D/g, "").slice(0, 5))}
-              className="mt-1 h-10 w-full rounded-xl border-2 border-penguin-peach bg-white px-3 text-sm font-bold tabular-nums outline-none focus:border-penguin-pink-dark"
-            />
-          </label>
-          {error ? <p className="text-xs font-bold text-red-500">{error}</p> : null}
-          <p className="rounded-xl bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">請確認匯款完成後再送出，避免對帳延誤。</p>
-          <button
-            type="submit"
-            disabled={submitting || !/^\d{5}$/.test(last5)}
-            className="w-full rounded-full bg-penguin-pink-dark px-4 py-2.5 text-sm font-black text-white transition hover:bg-penguin-pink disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {submitting ? "送出中..." : status === "topup_required" ? "送出補款資料" : status === "rejected" ? "重新送出付款資料" : "送出付款資料"}
-          </button>
-        </form>
+          ) : (
+            <p className="text-xs font-bold text-gray-500">請在「未付款」勾選後點擊「我要匯款」送出付款資料。</p>
+          )}
+        </div>
       )}
 
       {group.paymentHistory.length > 0 ? (
@@ -999,6 +985,8 @@ export function CommunityOrdersClient() {
   const [changingBinding, setChangingBinding] = useState(false);
   const [paymentHistoryOpen, setPaymentHistoryOpen] = useState(false);
   const [orderHistoryOpen, setOrderHistoryOpen] = useState(false);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [showUnpaidPrompt, setShowUnpaidPrompt] = useState(false);
 
   const historicalGroups = useMemo(
     () => (groups || []).filter((group) => group.shipmentRequestStatus === "completed"),
@@ -1202,6 +1190,16 @@ export function CommunityOrdersClient() {
       }
       return next;
     });
+    if (checked) setShowUnpaidPrompt(false);
+  }
+
+  function openPaymentModal() {
+    if (selectedDesktopUnpaidGroups.length === 0) {
+      setShowUnpaidPrompt(true);
+      return;
+    }
+    setShowUnpaidPrompt(false);
+    setPaymentModalOpen(true);
   }
 
   function openDesktopShipment() {
@@ -1370,195 +1368,206 @@ export function CommunityOrdersClient() {
               <span>等待到貨</span><span className="text-penguin-pink-dark">→</span>
               <span>申請出貨／面交</span>
             </div>
-            <div className="mx-auto hidden max-w-5xl items-start gap-6 lg:grid lg:grid-cols-2">
-              <section className="min-w-0">
-                <div className="mb-3 flex items-center justify-between gap-3 px-1 py-1.5">
-                  <div>
-                    <h2 className="inline-flex rounded-full border-2 border-rose-300 bg-white px-4 py-1.5 text-lg font-black text-rose-600">未付款</h2>
-                    <p className="mt-1 text-[11px] font-bold text-gray-500">選擇要一起提交付款的系列</p>
-                  </div>
-                  <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-black text-penguin-gray">
-                    <input
-                      type="checkbox"
-                      checked={allDesktopUnpaidSelected}
-                      disabled={desktopPayableGroups.length === 0}
-                      onChange={(event) => setDesktopUnpaidSelected(event.target.checked ? new Set(desktopPayableGroups.map((group) => group.orderId)) : new Set())}
-                      className="h-4 w-4 accent-penguin-pink-dark disabled:cursor-not-allowed disabled:opacity-45"
-                    />
-                    全選可付款
-                  </label>
-                </div>
-                <div className="overflow-hidden rounded-3xl border-2 border-rose-200 bg-white divide-y-2 divide-dashed divide-rose-200">
-                  {desktopUnpaidGroups.length ? desktopUnpaidGroups.map((group) => (
-                    <DesktopOrderCard
-                      key={group.orderId}
-                      group={group}
-                      tone="unpaid"
-                      checked={desktopUnpaidSelected.has(group.orderId)}
-                      selectable={isPaymentSelectable(group)}
-                      onToggle={(checked) => toggleDesktopUnpaidGroup(group, checked)}
-                    />
-                  )) : (
-                    <div className="bg-rose-50/40 px-4 py-8 text-center text-sm font-bold text-gray-500">目前沒有未付款系列</div>
-                  )}
-                </div>
-                <div className="mt-4">
-                  <DesktopCombinedPaymentPanel
-                    groups={selectedDesktopUnpaidGroups}
-                    nickname={searchedNickname}
-                    onSubmitted={() => runSearch(searchedNickname)}
-                  />
-                </div>
-              </section>
-
-              <section className="min-w-0">
-                <div className="mb-3 px-1 py-1.5">
-                  <div className="flex items-center justify-between gap-3">
+            {/* Single outer card for the whole order-content area (未付款/已付款/
+                出貨・面交, everything below the flow-guide pill above). Desktop
+                keeps its 2-column layout and mobile/tablet keeps its stacked
+                layout — both now live inside ONE shared card boundary
+                (border/rounded/shadow), separated internally by section
+                titles + dividers + padding instead of each being its own
+                bordered card. Series inside each section still get a dashed
+                divider between them. */}
+            <div className="mx-auto max-w-5xl overflow-hidden rounded-3xl border-2 border-penguin-peach bg-white shadow-sm lg:max-w-6xl">
+              {/* ============ Desktop (lg+): 2-column layout ============ */}
+              <div className="hidden lg:grid lg:grid-cols-2 lg:divide-x-2 lg:divide-dashed lg:divide-penguin-peach">
+                <div className="min-w-0 p-5">
+                  <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <h2 className="inline-flex rounded-full border-2 border-emerald-300 bg-white px-4 py-1.5 text-lg font-black text-emerald-700">已付款</h2>
-                      <p className="mt-1 text-[11px] font-bold text-gray-500">只可選擇已到貨且未鎖定的系列</p>
+                      <h2 className="inline-flex rounded-full border-2 border-rose-300 bg-white px-4 py-1.5 text-lg font-black text-rose-600">未付款</h2>
+                      <p className="mt-1 text-[11px] font-bold text-gray-500">選擇要一起提交付款的系列</p>
                     </div>
-                    <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-black text-penguin-gray">
-                      <input
-                        type="checkbox"
-                        checked={allDesktopPaidSelected}
-                        disabled={desktopFulfillableGroups.length === 0}
-                        onChange={(event) => setDesktopPaidSelected(event.target.checked ? new Set(desktopFulfillableGroups.map((group) => group.orderId)) : new Set())}
-                        className="h-4 w-4 accent-penguin-pink-dark disabled:cursor-not-allowed disabled:opacity-45"
-                      />
-                      全選可出貨
-                    </label>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/55 px-3 py-2.5">
-                    <p className="text-xs font-black text-penguin-gray">已選 {selectedDesktopPaidGroups.length} 個系列</p>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        disabled={selectedDesktopPaidGroups.length === 0}
-                        onClick={openDesktopShipment}
-                        className="inline-flex items-center gap-1.5 rounded-full border-2 border-penguin-pink-dark bg-white px-4 py-2 text-xs font-black text-penguin-pink-dark disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        <PackageCheck size={14} />
-                        7-11 出貨
-                      </button>
-                      <button
-                        type="button"
-                        disabled={selectedDesktopPaidGroups.length === 0}
-                        onClick={openDesktopMeetup}
-                        className="rounded-full border-2 border-gray-300 bg-white px-4 py-2 text-xs font-black text-penguin-gray disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        面交
-                      </button>
+                    <div className="flex flex-col items-end gap-1.5">
+                      <div className="flex items-center gap-3">
+                        <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-black text-penguin-gray">
+                          <input
+                            type="checkbox"
+                            checked={allDesktopUnpaidSelected}
+                            disabled={desktopPayableGroups.length === 0}
+                            onChange={(event) => setDesktopUnpaidSelected(event.target.checked ? new Set(desktopPayableGroups.map((group) => group.orderId)) : new Set())}
+                            className="h-4 w-4 accent-penguin-pink-dark disabled:cursor-not-allowed disabled:opacity-45"
+                          />
+                          全選可付款
+                        </label>
+                        <button
+                          type="button"
+                          onClick={openPaymentModal}
+                          className="inline-flex items-center gap-1.5 rounded-full bg-penguin-pink-dark px-4 py-2 text-xs font-black text-white shadow-sm transition hover:bg-penguin-pink"
+                        >
+                          我要匯款
+                        </button>
+                      </div>
+                      {showUnpaidPrompt ? <p className="text-[11px] font-bold text-red-500">請先勾選要一起付款的商品</p> : null}
                     </div>
                   </div>
-                </div>
-                <div className="overflow-hidden rounded-3xl border-2 border-emerald-200 bg-white divide-y-2 divide-dashed divide-emerald-200">
-                  {desktopPaidGroups.length ? desktopPaidGroups.map((group) => {
-                    const selectable = group.shipmentAllBoughtArrived && !group.shipmentLocked;
-                    return (
+                  <div className="divide-y-2 divide-dashed divide-rose-100">
+                    {desktopUnpaidGroups.length ? desktopUnpaidGroups.map((group) => (
                       <DesktopOrderCard
                         key={group.orderId}
                         group={group}
-                        tone="paid"
-                        checked={desktopPaidSelected.has(group.orderId)}
-                        selectable={selectable}
-                        onToggle={(checked) => toggleDesktopSelection(setDesktopPaidSelected, group.orderId, checked)}
+                        tone="unpaid"
+                        checked={desktopUnpaidSelected.has(group.orderId)}
+                        selectable={isPaymentSelectable(group)}
+                        onToggle={(checked) => toggleDesktopUnpaidGroup(group, checked)}
                       />
-                    );
-                  }) : (
-                    <div className="bg-emerald-50/40 px-4 py-8 text-center text-sm font-bold text-gray-500">目前沒有已付款系列</div>
-                  )}
+                    )) : (
+                      <div className="px-4 py-8 text-center text-sm font-bold text-gray-500">目前沒有未付款系列</div>
+                    )}
+                  </div>
                 </div>
-              </section>
-            </div>
 
-            <div className="lg:hidden">
-            {/* Mobile/tablet layout: selection, action bar, and payment/shipment
-                flow are unchanged — only the card list below was reworked to
-                match the desktop columns' big-card-with-dividers look. */}
-            <div className="hidden items-center justify-between gap-3 rounded-t-3xl border-2 border-b-0 border-penguin-peach bg-penguin-cream/55 px-4 py-3 sm:flex sm:px-5">
-              <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-black text-penguin-gray">
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={(event) => toggleAll(event.target.checked)}
-                  className="h-4 w-4 accent-penguin-pink-dark"
-                />
-                全選
-              </label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  disabled={!sevenElevenEnabled}
-                  onClick={handleShipClick}
-                  className="inline-flex items-center gap-1.5 rounded-full border-2 border-penguin-pink-dark px-4 py-2 text-xs font-black text-penguin-pink-dark shadow-sm transition hover:bg-penguin-pink-light disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <PackageCheck size={14} />
-                  7-11 出貨
-                </button>
-                <button
-                  type="button"
-                  disabled={!faceToFaceEnabled}
-                  onClick={handleMeetupClick}
-                  className="inline-flex items-center gap-1.5 rounded-full border-2 border-gray-300 px-4 py-2 text-xs font-black text-penguin-gray shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  面交
-                </button>
+                <div className="min-w-0 p-5">
+                  <div className="mb-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h2 className="inline-flex rounded-full border-2 border-emerald-300 bg-white px-4 py-1.5 text-lg font-black text-emerald-700">已付款</h2>
+                        <p className="mt-1 text-[11px] font-bold text-gray-500">只可選擇已到貨且未鎖定的系列</p>
+                      </div>
+                      <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-black text-penguin-gray">
+                        <input
+                          type="checkbox"
+                          checked={allDesktopPaidSelected}
+                          disabled={desktopFulfillableGroups.length === 0}
+                          onChange={(event) => setDesktopPaidSelected(event.target.checked ? new Set(desktopFulfillableGroups.map((group) => group.orderId)) : new Set())}
+                          className="h-4 w-4 accent-penguin-pink-dark disabled:cursor-not-allowed disabled:opacity-45"
+                        />
+                        全選可出貨
+                      </label>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/55 px-3 py-2.5">
+                      <p className="text-xs font-black text-penguin-gray">已選 {selectedDesktopPaidGroups.length} 個系列</p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          disabled={selectedDesktopPaidGroups.length === 0}
+                          onClick={openDesktopShipment}
+                          className="inline-flex items-center gap-1.5 rounded-full border-2 border-penguin-pink-dark bg-white px-4 py-2 text-xs font-black text-penguin-pink-dark disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          <PackageCheck size={14} />
+                          7-11 出貨
+                        </button>
+                        <button
+                          type="button"
+                          disabled={selectedDesktopPaidGroups.length === 0}
+                          onClick={openDesktopMeetup}
+                          className="rounded-full border-2 border-gray-300 bg-white px-4 py-2 text-xs font-black text-penguin-gray disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          面交
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="divide-y-2 divide-dashed divide-emerald-100">
+                    {desktopPaidGroups.length ? desktopPaidGroups.map((group) => {
+                      const selectable = group.shipmentAllBoughtArrived && !group.shipmentLocked;
+                      return (
+                        <DesktopOrderCard
+                          key={group.orderId}
+                          group={group}
+                          tone="paid"
+                          checked={desktopPaidSelected.has(group.orderId)}
+                          selectable={selectable}
+                          onToggle={(checked) => toggleDesktopSelection(setDesktopPaidSelected, group.orderId, checked)}
+                        />
+                      );
+                    }) : (
+                      <div className="px-4 py-8 text-center text-sm font-bold text-gray-500">目前沒有已付款系列</div>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
 
-            {selectedNotArrived.length > 0 ? (
-              <div className="hidden sm:block sm:my-3">
-                <ShipBlockedNotice names={selectedNotArrived.map((group) => group.notebookName)} onDismiss={() => setSelected(new Set())} />
+              {/* ============ Mobile/tablet (below lg): stacked layout ============ */}
+              <div className="lg:hidden">
+                <div className="hidden items-center justify-between gap-3 border-b-2 border-penguin-peach bg-penguin-cream/55 px-4 py-3 sm:flex sm:px-5">
+                  <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-black text-penguin-gray">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={(event) => toggleAll(event.target.checked)}
+                      className="h-4 w-4 accent-penguin-pink-dark"
+                    />
+                    全選
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={!sevenElevenEnabled}
+                      onClick={handleShipClick}
+                      className="inline-flex items-center gap-1.5 rounded-full border-2 border-penguin-pink-dark px-4 py-2 text-xs font-black text-penguin-pink-dark shadow-sm transition hover:bg-penguin-pink-light disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <PackageCheck size={14} />
+                      7-11 出貨
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!faceToFaceEnabled}
+                      onClick={handleMeetupClick}
+                      className="inline-flex items-center gap-1.5 rounded-full border-2 border-gray-300 px-4 py-2 text-xs font-black text-penguin-gray shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      面交
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-4 sm:p-5">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                    <h2 className="inline-flex rounded-full border-2 border-rose-300 bg-white px-4 py-1.5 text-base font-black text-rose-600">未付款</h2>
+                    <button
+                      type="button"
+                      onClick={openPaymentModal}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-penguin-pink-dark px-4 py-2 text-xs font-black text-white shadow-sm transition hover:bg-penguin-pink"
+                    >
+                      我要匯款
+                    </button>
+                  </div>
+                  {showUnpaidPrompt ? <p className="mb-2 text-xs font-bold text-red-500">請先勾選要一起付款的商品</p> : null}
+                  <div className="divide-y-2 divide-dashed divide-rose-100">
+                    {desktopUnpaidGroups.length ? desktopUnpaidGroups.map((group) => (
+                      <OrderCard
+                        key={group.orderId}
+                        group={group}
+                        checked={desktopUnpaidSelected.has(group.orderId)}
+                        onToggle={(checked) => toggleDesktopUnpaidGroup(group, checked)}
+                      />
+                    )) : (
+                      <div className="bg-rose-50/40 px-4 py-8 text-center text-sm font-bold text-gray-500">目前沒有未付款系列</div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="border-t-2 border-dashed border-penguin-peach p-4 sm:p-5">
+                  <h2 className="mb-3 inline-flex rounded-full border-2 border-emerald-300 bg-white px-4 py-1.5 text-base font-black text-emerald-700">已付款</h2>
+                  {selectedNotArrived.length > 0 ? (
+                    <div className="hidden sm:mb-3 sm:block">
+                      <ShipBlockedNotice names={selectedNotArrived.map((group) => group.notebookName)} onDismiss={() => setSelected(new Set())} />
+                    </div>
+                  ) : null}
+                  {selectedGroups.length > 0 && selectedNotArrived.length === 0 && selectedHasUnpaid ? (
+                    <p className="mb-3 hidden text-sm font-black text-red-600 sm:block">有商品未付款，無法申請出貨</p>
+                  ) : null}
+                  <div className="divide-y-2 divide-dashed divide-emerald-100">
+                    {desktopPaidGroups.length ? desktopPaidGroups.map((group) => (
+                      <OrderCard
+                        key={group.orderId}
+                        group={group}
+                        checked={selected.has(group.orderId)}
+                        onToggle={(checked) => toggleGroup(group.orderId, checked)}
+                      />
+                    )) : (
+                      <div className="bg-emerald-50/40 px-4 py-8 text-center text-sm font-bold text-gray-500">目前沒有已付款系列</div>
+                    )}
+                  </div>
+                </div>
               </div>
-            ) : null}
-            {selectedGroups.length > 0 && selectedNotArrived.length === 0 && selectedHasUnpaid ? (
-              <p className="my-3 hidden text-sm font-black text-red-600 sm:block">有商品未付款，無法申請出貨</p>
-            ) : null}
-
-            {/* One big card per section (未付款/已付款), series separated by dividers
-                instead of each being its own card — same visual treatment as the
-                lg:grid desktop columns above, just stacked for narrower screens.
-                Selection/payment/shipment behavior is untouched: still the single
-                `selected` Set, the same OrderCard props, the same fixed bottom
-                action bar below. desktopUnpaidGroups/desktopPaidGroups are the
-                same already-memoized classification the desktop columns use. */}
-            <div className="space-y-5">
-              <section>
-                <h2 className="mb-2 inline-flex rounded-full border-2 border-rose-300 bg-white px-4 py-1.5 text-base font-black text-rose-600">未付款</h2>
-                <div className="overflow-hidden rounded-3xl border-2 border-rose-200 bg-white divide-y-2 divide-dashed divide-rose-200">
-                  {desktopUnpaidGroups.length ? desktopUnpaidGroups.map((group) => (
-                    <OrderCard
-                      key={group.orderId}
-                      group={group}
-                      checked={selected.has(group.orderId)}
-                      onToggle={(checked) => toggleGroup(group.orderId, checked)}
-                      nickname={searchedNickname}
-                      onPaymentSubmitted={() => runSearch(searchedNickname)}
-                    />
-                  )) : (
-                    <div className="bg-rose-50/40 px-4 py-8 text-center text-sm font-bold text-gray-500">目前沒有未付款系列</div>
-                  )}
-                </div>
-              </section>
-              <section>
-                <h2 className="mb-2 inline-flex rounded-full border-2 border-emerald-300 bg-white px-4 py-1.5 text-base font-black text-emerald-700">已付款</h2>
-                <div className="overflow-hidden rounded-3xl border-2 border-emerald-200 bg-white divide-y-2 divide-dashed divide-emerald-200">
-                  {desktopPaidGroups.length ? desktopPaidGroups.map((group) => (
-                    <OrderCard
-                      key={group.orderId}
-                      group={group}
-                      checked={selected.has(group.orderId)}
-                      onToggle={(checked) => toggleGroup(group.orderId, checked)}
-                      nickname={searchedNickname}
-                      onPaymentSubmitted={() => runSearch(searchedNickname)}
-                    />
-                  )) : (
-                    <div className="bg-emerald-50/40 px-4 py-8 text-center text-sm font-bold text-gray-500">目前沒有已付款系列</div>
-                  )}
-                </div>
-              </section>
-            </div>
             </div>
           </section>
         )
@@ -1632,6 +1641,14 @@ export function CommunityOrdersClient() {
       ) : null}
       {paymentHistoryOpen ? (
         <PaymentHistoryModal groups={groups || []} onClose={() => setPaymentHistoryOpen(false)} />
+      ) : null}
+      {paymentModalOpen ? (
+        <CombinedPaymentModal
+          groups={selectedDesktopUnpaidGroups}
+          nickname={searchedNickname}
+          onClose={() => setPaymentModalOpen(false)}
+          onSubmitted={() => runSearch(searchedNickname)}
+        />
       ) : null}
       {orderHistoryOpen ? (
         <OrderHistoryModal groups={historicalGroups} onClose={() => setOrderHistoryOpen(false)} />
