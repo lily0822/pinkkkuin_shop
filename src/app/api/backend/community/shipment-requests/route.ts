@@ -129,6 +129,28 @@ export async function GET(request: NextRequest) {
         itemsByOrderId.set(orderId, list);
       }
     }
+    // Last-sent time for the 賣貨便可下單 LINE notification, per request. Read
+    // from the existing community_line_notifications table (upserted on
+    // (kind, target_id), so sent_at is already "most recent send"). Wrapped
+    // in its own try/catch so a missing/not-yet-migrated table degrades to
+    // "no time shown" instead of breaking the whole list.
+    const notifiedAtByRequest = new Map<string, string>();
+    if (requestIds.length) {
+      try {
+        const { data: notificationRows, error: notificationRowsError } = await supabase
+          .from("community_line_notifications")
+          .select("target_id, sent_at")
+          .eq("kind", "marketplace_ready")
+          .in("target_id", requestIds);
+        if (notificationRowsError) throw notificationRowsError;
+        for (const row of notificationRows || []) {
+          if (row.sent_at) notifiedAtByRequest.set(String(row.target_id || ""), String(row.sent_at));
+        }
+      } catch {
+        // ignore — table not migrated yet or query failed, just show no time
+      }
+    }
+
     function notebookGroupsForRequest(requestId: string) {
       const orderIds = orderIdsByRequest.get(requestId) || [];
       const byNotebook = new Map<string, { productName: string; variantSpec: string; quantity: number }[]>();
@@ -162,6 +184,7 @@ export async function GET(request: NextRequest) {
         notebookSnapshot: Array.isArray(row.notebook_snapshot) ? row.notebook_snapshot : [],
         marketplaceUrl: String(row.marketplace_url || ""),
         marketplaceOrderRef: String(row.marketplace_order_ref || ""),
+        marketplaceNotifiedAt: notifiedAtByRequest.get(String(row.id || "")) || "",
         status: String(row.status || "pending"),
         submittedAt: String(row.submitted_at || ""),
         acceptedAt: String(row.accepted_at || ""),
