@@ -265,7 +265,7 @@ function OrderCard({
   onPaymentSubmitted: () => Promise<void>;
 }) {
   return (
-    <article className="rounded-2xl bg-white p-4 sm:p-5">
+    <article className="bg-white p-4 sm:p-5">
       {group.shipmentLocked ? (
         <div className="mb-3 rounded-xl bg-sky-50 px-3 py-2 text-xs font-bold text-sky-700">
           <p className="font-black">{communityFulfillmentProgressLabel(group)}</p>
@@ -1473,7 +1473,9 @@ export function CommunityOrdersClient() {
             </div>
 
             <div className="lg:hidden">
-            {/* Existing mobile/tablet layout remains unchanged. */}
+            {/* Mobile/tablet layout: selection, action bar, and payment/shipment
+                flow are unchanged — only the card list below was reworked to
+                match the desktop columns' big-card-with-dividers look. */}
             <div className="hidden items-center justify-between gap-3 rounded-t-3xl border-2 border-b-0 border-penguin-peach bg-penguin-cream/55 px-4 py-3 sm:flex sm:px-5">
               <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-black text-penguin-gray">
                 <input
@@ -1514,17 +1516,48 @@ export function CommunityOrdersClient() {
               <p className="my-3 hidden text-sm font-black text-red-600 sm:block">有商品未付款，無法申請出貨</p>
             ) : null}
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              {activeGroups.map((group) => (
-                <OrderCard
-                  key={group.orderId}
-                  group={group}
-                  checked={selected.has(group.orderId)}
-                  onToggle={(checked) => toggleGroup(group.orderId, checked)}
-                  nickname={searchedNickname}
-                  onPaymentSubmitted={() => runSearch(searchedNickname)}
-                />
-              ))}
+            {/* One big card per section (未付款/已付款), series separated by dividers
+                instead of each being its own card — same visual treatment as the
+                lg:grid desktop columns above, just stacked for narrower screens.
+                Selection/payment/shipment behavior is untouched: still the single
+                `selected` Set, the same OrderCard props, the same fixed bottom
+                action bar below. desktopUnpaidGroups/desktopPaidGroups are the
+                same already-memoized classification the desktop columns use. */}
+            <div className="space-y-5">
+              <section>
+                <h2 className="mb-2 inline-flex rounded-full border-2 border-rose-300 bg-white px-4 py-1.5 text-base font-black text-rose-600">未付款</h2>
+                <div className="overflow-hidden rounded-3xl border-2 border-rose-200 bg-white divide-y-2 divide-dashed divide-rose-200">
+                  {desktopUnpaidGroups.length ? desktopUnpaidGroups.map((group) => (
+                    <OrderCard
+                      key={group.orderId}
+                      group={group}
+                      checked={selected.has(group.orderId)}
+                      onToggle={(checked) => toggleGroup(group.orderId, checked)}
+                      nickname={searchedNickname}
+                      onPaymentSubmitted={() => runSearch(searchedNickname)}
+                    />
+                  )) : (
+                    <div className="bg-rose-50/40 px-4 py-8 text-center text-sm font-bold text-gray-500">目前沒有未付款系列</div>
+                  )}
+                </div>
+              </section>
+              <section>
+                <h2 className="mb-2 inline-flex rounded-full border-2 border-emerald-300 bg-white px-4 py-1.5 text-base font-black text-emerald-700">已付款</h2>
+                <div className="overflow-hidden rounded-3xl border-2 border-emerald-200 bg-white divide-y-2 divide-dashed divide-emerald-200">
+                  {desktopPaidGroups.length ? desktopPaidGroups.map((group) => (
+                    <OrderCard
+                      key={group.orderId}
+                      group={group}
+                      checked={selected.has(group.orderId)}
+                      onToggle={(checked) => toggleGroup(group.orderId, checked)}
+                      nickname={searchedNickname}
+                      onPaymentSubmitted={() => runSearch(searchedNickname)}
+                    />
+                  )) : (
+                    <div className="bg-emerald-50/40 px-4 py-8 text-center text-sm font-bold text-gray-500">目前沒有已付款系列</div>
+                  )}
+                </div>
+              </section>
             </div>
             </div>
           </section>
