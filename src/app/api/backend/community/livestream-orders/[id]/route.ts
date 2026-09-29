@@ -13,7 +13,7 @@ import { sendLineUserText } from "@/lib/line/client";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const PURCHASE_STATUSES = new Set(["not_bought", "confirming", "bought"]);
+const PURCHASE_STATUSES = new Set(["not_bought", "bought"]);
 const PAYMENT_STATUSES = new Set(["unpaid", "confirming", "paid"]);
 
 async function guardBackendRequest(request: NextRequest) {

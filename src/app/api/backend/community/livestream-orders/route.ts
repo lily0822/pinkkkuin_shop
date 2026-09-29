@@ -14,7 +14,7 @@ export const runtime = "nodejs";
 
 const PHOTO_BUCKET = "community-livestream-photos";
 const SIGNED_URL_TTL_SECONDS = 60 * 10; // admin-view thumbnail only, short-lived
-const PURCHASE_STATUSES = new Set(["not_bought", "confirming", "bought"]);
+const PURCHASE_STATUSES = new Set(["not_bought", "bought"]);
 const PAYMENT_STATUSES = new Set(["unpaid", "confirming", "paid"]);
 
 async function guardBackendRequest(request: NextRequest) {
@@ -84,25 +84,50 @@ export async function GET(request: NextRequest) {
       ),
     );
 
+    // 功能五 (自助匯款申報)：payment_status='confirming' 的訂單，反查最新一筆
+    // 涵蓋該訂單 id 的申報記錄，秀出客人回報的後 5 碼跟申報金額給管理員核對。
+    // 一次查、記憶體比對，避免對每一筆 confirming 訂單各打一次查詢。
+    const confirmingUserIds = [
+      ...new Set(rows.filter((row) => row.payment_status === "confirming" && row.line_user_id).map((row) => String(row.line_user_id))),
+    ];
+    let remittances: { order_ids: string[]; account_last5: string; amount: number; submitted_at: string }[] = [];
+    if (confirmingUserIds.length) {
+      const { data: remittanceData } = await supabase
+        .from("community_livestream_remittances")
+        .select("order_ids, account_last5, amount, submitted_at")
+        .in("line_user_id", confirmingUserIds)
+        .order("submitted_at", { ascending: false })
+        .limit(500);
+      remittances = Array.isArray(remittanceData) ? remittanceData : [];
+    }
+    function findLatestRemittance(orderId: string) {
+      return remittances.find((remittance) => Array.isArray(remittance.order_ids) && remittance.order_ids.includes(orderId)) || null;
+    }
+
     return NextResponse.json({
       ok: true,
-      orders: rows.map((row, index) => ({
-        id: String(row.id || ""),
-        lineDisplayName: String(row.line_display_name || ""),
-        nickname: String(row.nickname || ""),
-        productName: row.product_name ? String(row.product_name) : "",
-        unitPrice: row.unit_price === null || row.unit_price === undefined ? null : Number(row.unit_price),
-        totalPrice: row.total_price === null || row.total_price === undefined ? null : Number(row.total_price),
-        quantity: Number(row.quantity || 1),
-        confidence:
-          row.recognized_confidence === null || row.recognized_confidence === undefined ? null : Number(row.recognized_confidence),
-        purchaseStatus: String(row.purchase_status || "not_bought"),
-        paymentStatus: String(row.payment_status || "unpaid"),
-        notes: String(row.notes || ""),
-        photoUrl: photoUrls[index],
-        createdAt: String(row.created_at || ""),
-        updatedAt: String(row.updated_at || ""),
-      })),
+      orders: rows.map((row, index) => {
+        const remittance = row.payment_status === "confirming" ? findLatestRemittance(String(row.id)) : null;
+        return {
+          id: String(row.id || ""),
+          lineDisplayName: String(row.line_display_name || ""),
+          nickname: String(row.nickname || ""),
+          productName: row.product_name ? String(row.product_name) : "",
+          unitPrice: row.unit_price === null || row.unit_price === undefined ? null : Number(row.unit_price),
+          totalPrice: row.total_price === null || row.total_price === undefined ? null : Number(row.total_price),
+          quantity: Number(row.quantity || 1),
+          confidence:
+            row.recognized_confidence === null || row.recognized_confidence === undefined ? null : Number(row.recognized_confidence),
+          purchaseStatus: String(row.purchase_status || "not_bought"),
+          paymentStatus: String(row.payment_status || "unpaid"),
+          notes: String(row.notes || ""),
+          photoUrl: photoUrls[index],
+          remittanceLast5: remittance?.account_last5 || null,
+          remittanceAmount: remittance ? Number(remittance.amount) : null,
+          createdAt: String(row.created_at || ""),
+          updatedAt: String(row.updated_at || ""),
+        };
+      }),
     });
   } catch {
     return NextResponse.json({ ok: false, error: "社群連線訂單讀取失敗，請稍後再試。" }, { status: 500 });

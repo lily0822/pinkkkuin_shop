@@ -10,6 +10,7 @@ import {
   type LineReplyMessage,
 } from "./client";
 import { recognizeProductPhoto } from "./vision";
+import { getLivestreamBankInfo } from "./livestream-bank-info";
 
 // 功能一 (自助綁定) + 功能二 (LINE 圖片下單對話流程). Everything here talks to
 // community_line_bindings (read + insert/update of the self-service columns
@@ -40,6 +41,7 @@ const MAX_REPLY_MESSAGES = 5; // LINE reply API hard limit
 
 const ORDER_TRIGGER_KEYWORDS = ["我要下單", "下單", "開始下單", "開通", "綁定", "加入社群", "註冊"];
 const DONE_KEYWORDS = ["好了", "傳完了", "傳完", "完成", "ok", "OK", "好囉"];
+const REMITTANCE_TRIGGER_KEYWORDS = ["我要匯款", "匯款申報", "回報匯款", "匯款"];
 
 function normalizeText(text: string) {
   return text.replace(/\s+/g, "").toLowerCase();
@@ -56,6 +58,11 @@ function parsePositiveInteger(text: string) {
   if (!/^\d{1,4}$/.test(trimmed)) return null;
   const value = Number(trimmed);
   return value > 0 ? value : null;
+}
+
+function parseAccountLast5(text: string) {
+  const trimmed = text.trim();
+  return /^\d{5}$/.test(trimmed) ? trimmed : null;
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -92,17 +99,30 @@ function isApprovedBinding(binding: BindingRow | null): binding is BindingRow & 
   return Boolean(binding && binding.review_status === "approved" && binding.nickname);
 }
 
-type BotState = { awaiting_nickname: boolean; awaiting_quantity_for_order_id: string | null };
+type BotState = {
+  awaiting_nickname: boolean;
+  awaiting_quantity_for_order_id: string | null;
+  // 功能五 (自助匯款申報)：這個人現在在等他回覆帳號後 5 碼，以及觸發當下
+  // 算好的「這次結算涵蓋哪些訂單、總金額多少」快照，避免客人回覆的當下
+  // 訂單內容/金額跟觸發當下不一致（例如中途被管理員改了單價）。
+  awaiting_remittance_last5: boolean;
+  remittance_order_ids: string[] | null;
+  remittance_amount: number | null;
+};
 
 async function getBotState(supabase: SupabaseService, userId: string): Promise<BotState> {
   const { data } = await supabase
     .from("community_line_bot_states")
-    .select("awaiting_nickname, awaiting_quantity_for_order_id")
+    .select("awaiting_nickname, awaiting_quantity_for_order_id, awaiting_remittance_last5, remittance_order_ids, remittance_amount")
     .eq("line_user_id", userId)
     .maybeSingle();
+  const row = data as BotState | null;
   return {
-    awaiting_nickname: Boolean((data as BotState | null)?.awaiting_nickname),
-    awaiting_quantity_for_order_id: (data as BotState | null)?.awaiting_quantity_for_order_id || null,
+    awaiting_nickname: Boolean(row?.awaiting_nickname),
+    awaiting_quantity_for_order_id: row?.awaiting_quantity_for_order_id || null,
+    awaiting_remittance_last5: Boolean(row?.awaiting_remittance_last5),
+    remittance_order_ids: Array.isArray(row?.remittance_order_ids) ? row.remittance_order_ids : null,
+    remittance_amount: row?.remittance_amount ?? null,
   };
 }
 
@@ -397,6 +417,113 @@ async function handlePostback(
   }
 }
 
+// ---------------------------------------------------------------------------
+// 功能五：自助匯款申報 — 比照「我要下單」的觸發模式，全新對話流程。
+// 只動 community_livestream_orders 自己的 payment_status 欄位和新的
+// community_livestream_remittances 表，不碰 community_orders/
+// community_remittance_submissions（那組是舊的記事本系統，存的是客人自己
+// 匯出的帳戶資訊，跟這裡的「這次要核對哪些訂單」完全是兩回事）。
+// ---------------------------------------------------------------------------
+
+type UnpaidOrderRow = {
+  id: string;
+  product_name: string | null;
+  unit_price: number | null;
+  quantity: number;
+  total_price: number | null;
+};
+
+async function handleRemittanceTrigger(supabase: SupabaseService, userId: string, replyToken: string | undefined) {
+  const binding = await getBinding(supabase, userId);
+  if (!isApprovedBinding(binding)) {
+    await reply(replyToken, "請先完成社群暱稱綁定並通過審核後，才能使用匯款申報功能喔。");
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from("community_livestream_orders")
+    .select("id, product_name, unit_price, quantity, total_price")
+    .eq("line_user_id", userId)
+    .eq("payment_status", "unpaid");
+
+  if (error) {
+    await reply(replyToken, "查詢訂單失敗，請稍後再試一次。");
+    return;
+  }
+
+  const rows = (data as UnpaidOrderRow[] | null) || [];
+  if (!rows.length) {
+    await reply(replyToken, "目前沒有待匯款的訂單喔。");
+    return;
+  }
+
+  const unresolvedCount = rows.filter((row) => row.unit_price == null).length;
+  if (unresolvedCount > 0) {
+    await reply(
+      replyToken,
+      `您有 ${unresolvedCount} 項商品尚未確認金額，請等候客服確認金額後才能匯款，確認後可以再次輸入「我要匯款」。`,
+    );
+    return;
+  }
+
+  const total = rows.reduce((sum, row) => sum + Number(row.total_price || 0), 0);
+  const productLines = rows
+    .map((row) => `・${row.product_name || "未命名商品"} ×${row.quantity}　NT$${Number(row.total_price || 0)}`)
+    .join("\n");
+  const bankInfo = await getLivestreamBankInfo();
+  const bankSection = bankInfo ? `\n\n收款資訊：\n${bankInfo}` : "";
+
+  await setBotState(supabase, userId, {
+    awaiting_remittance_last5: true,
+    remittance_order_ids: rows.map((row) => row.id),
+    remittance_amount: total,
+  });
+
+  await reply(
+    replyToken,
+    `本次待匯款商品：\n${productLines}\n\n應付總額：NT$${total}${bankSection}\n\n請回覆您的匯款帳號後 5 碼完成申報（例如：12345）。`,
+  );
+}
+
+async function handleRemittanceLast5Submission(
+  supabase: SupabaseService,
+  userId: string,
+  replyToken: string | undefined,
+  rawText: string,
+  state: BotState,
+) {
+  const last5 = parseAccountLast5(rawText);
+  if (!last5) {
+    await reply(replyToken, "請輸入正確的匯款帳號後 5 碼（純數字 5 碼），例如：12345。");
+    return; // stays in awaiting_remittance_last5 so the next message can retry
+  }
+
+  const orderIds = state.remittance_order_ids || [];
+  const amount = state.remittance_amount ?? 0;
+  if (!orderIds.length) {
+    await setBotState(supabase, userId, { awaiting_remittance_last5: false, remittance_order_ids: null, remittance_amount: null });
+    await reply(replyToken, "找不到待申報的匯款資料，請重新輸入「我要匯款」。");
+    return;
+  }
+
+  const binding = await getBinding(supabase, userId);
+  const { error: insertError } = await supabase.from("community_livestream_remittances").insert({
+    line_user_id: userId,
+    nickname: binding?.nickname || "",
+    order_ids: orderIds,
+    account_last5: last5,
+    amount,
+  });
+  if (insertError) {
+    await reply(replyToken, "匯款申報失敗，請稍後再試一次。");
+    return; // keep the awaiting state so the customer can just retry, no need to re-trigger
+  }
+
+  await supabase.from("community_livestream_orders").update({ payment_status: "confirming" }).in("id", orderIds);
+  await setBotState(supabase, userId, { awaiting_remittance_last5: false, remittance_order_ids: null, remittance_amount: null });
+  await reply(replyToken, "已收到您的匯款回報，我們將盡快為您核對，感謝您！");
+}
+
 async function handleTextMessage(
   supabase: SupabaseService,
   userId: string,
@@ -410,6 +537,11 @@ async function handleTextMessage(
 
   if (state.awaiting_nickname) {
     await handleNicknameSubmission(supabase, userId, replyToken, text);
+    return;
+  }
+
+  if (state.awaiting_remittance_last5) {
+    await handleRemittanceLast5Submission(supabase, userId, replyToken, text, state);
     return;
   }
 
@@ -432,6 +564,11 @@ async function handleTextMessage(
 
   if (matchesAny(text, ORDER_TRIGGER_KEYWORDS)) {
     await handleOrderTrigger(supabase, userId, replyToken);
+    return;
+  }
+
+  if (matchesAny(text, REMITTANCE_TRIGGER_KEYWORDS)) {
+    await handleRemittanceTrigger(supabase, userId, replyToken);
     return;
   }
 
