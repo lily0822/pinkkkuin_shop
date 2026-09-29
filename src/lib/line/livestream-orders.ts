@@ -197,7 +197,7 @@ async function handleNicknameSubmission(
     await reply(replyToken, "申請送出失敗，請稍後再試一次。");
     return;
   }
-  await reply(replyToken, `已收到您的申請暱稱「${nickname}」，審核通過後即可使用下單功能，請耐心等候！`);
+  await reply(replyToken, `已收到您的申請暱稱「${nickname}」，審核通過後即可使用下單功能，請耐心等候！如需修改暱稱請輸入「修改暱稱」。`);
 }
 
 async function handleOrderTrigger(supabase: SupabaseService, userId: string, replyToken: string | undefined) {
@@ -213,6 +213,14 @@ async function handleOrderTrigger(supabase: SupabaseService, userId: string, rep
     await reply(replyToken, `您申請的暱稱「${binding.requested_nickname || ""}」正在審核中，審核通過後才能使用下單功能，請耐心等候。`);
     return;
   }
+  await startNicknameRequest(supabase, userId, replyToken);
+}
+
+// 修改暱稱：跟 handleOrderTrigger 不同，不管目前是完全沒申請過、pending
+// 審核中、還是已經 approved，一律直接進入「請輸入您的社群暱稱」流程——
+// pending 狀態的人原本用 ORDER_TRIGGER 會卡在「審核中請耐心等候」，這裡
+// 刻意不做那個檢查，讓客人隨時都能改成想要的暱稱重新送審。
+async function handleEditNicknameTrigger(supabase: SupabaseService, userId: string, replyToken: string | undefined) {
   await startNicknameRequest(supabase, userId, replyToken);
 }
 
@@ -346,6 +354,18 @@ async function buildOrderItemBlock(row: PendingOrderRow) {
         layout: "horizontal",
         spacing: "sm",
         contents: [
+          // 新建立的訂單 quantity 預設就是 1，所以這顆用跟其他不同的
+          // primary/粉色樣式，視覺上標示「這是目前的數量」——只在訊息
+          // 第一次送出時看得出來，客人之後點別的數量，這則舊訊息本身
+          // 不會跟著變色（LINE 平台限制，Flex 訊息發送後內容是靜態的），
+          // 但文字確認訊息照常會回覆新數量，這不算 bug。
+          {
+            type: "button",
+            style: "primary",
+            height: "sm",
+            color: "#ec4899",
+            action: { type: "postback", label: "1件", data: `action=set_qty&order_id=${row.id}&qty=1`, displayText: "設定為 1 件" },
+          },
           ...[2, 3, 4].map((qty) => ({
             type: "button",
             style: "secondary",
@@ -354,9 +374,8 @@ async function buildOrderItemBlock(row: PendingOrderRow) {
           })),
           {
             type: "button",
-            style: "primary",
+            style: "secondary",
             height: "sm",
-            color: "#ec4899",
             action: { type: "postback", label: "5件以上", data: `action=ask_qty&order_id=${row.id}`, displayText: "5 件以上" },
           },
         ],
@@ -693,7 +712,35 @@ type UnpaidOrderRow = {
   unit_price: number | null;
   quantity: number;
   total_price: number | null;
+  photo_storage_path: string | null;
 };
+
+// 待匯款商品清單：比照 buildOrderItemBlock 的「縮圖＋名稱＋數量/金額」
+// 直向清單做法，純展示用（不需要按鈕），跟 buildOrderListBubble 組成
+// 同一個 Flex bubble。
+async function buildRemittanceItemBlock(row: UnpaidOrderRow) {
+  const imageUrl = row.photo_storage_path
+    ? await createSignedUrl(PHOTO_BUCKET, row.photo_storage_path, CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS)
+    : null;
+  const detailText = `NT$${row.unit_price}　×${row.quantity}　＝　NT$${Number(row.total_price || 0)}`;
+
+  const rowContents: object[] = [];
+  if (imageUrl) {
+    rowContents.push({ type: "image", url: imageUrl, size: "60px", aspectMode: "cover", aspectRatio: "1:1", flex: 0 });
+  }
+  rowContents.push({
+    type: "box",
+    layout: "vertical",
+    flex: 1,
+    justifyContent: "center",
+    contents: [
+      { type: "text", text: row.product_name || "未命名商品", weight: "bold", wrap: true, size: "sm" },
+      { type: "text", text: detailText, size: "xs", color: "#888888", margin: "sm" },
+    ],
+  });
+
+  return { type: "box", layout: "horizontal", spacing: "md", contents: rowContents };
+}
 
 async function handleRemittanceTrigger(supabase: SupabaseService, userId: string, replyToken: string | undefined) {
   const binding = await getBinding(supabase, userId);
@@ -704,7 +751,7 @@ async function handleRemittanceTrigger(supabase: SupabaseService, userId: string
 
   const { data, error } = await supabase
     .from("community_livestream_orders")
-    .select("id, product_name, unit_price, quantity, total_price")
+    .select("id, product_name, unit_price, quantity, total_price, photo_storage_path")
     .eq("line_user_id", userId)
     .eq("payment_status", "unpaid");
 
@@ -729,9 +776,6 @@ async function handleRemittanceTrigger(supabase: SupabaseService, userId: string
   }
 
   const total = rows.reduce((sum, row) => sum + Number(row.total_price || 0), 0);
-  const productLines = rows
-    .map((row) => `・${row.product_name || "未命名商品"} ×${row.quantity}　NT$${Number(row.total_price || 0)}`)
-    .join("\n");
   const bankInfo = await getLivestreamBankInfo();
   const bankSection = bankInfo ? `\n\n收款資訊：\n${bankInfo}` : "";
 
@@ -741,10 +785,14 @@ async function handleRemittanceTrigger(supabase: SupabaseService, userId: string
     remittance_amount: total,
   });
 
-  await reply(
-    replyToken,
-    `本次待匯款商品：\n${productLines}\n\n應付總額：NT$${total}${bankSection}\n\n請回覆您的匯款帳號後 5 碼完成申報（例如：12345）。`,
-  );
+  // 商品清單改用帶圖片的 Flex（跟功能二的直向清單同一套做法），總額／
+  // 收款資訊／回覆提示接續放在同一次 reply 裡的第二則文字訊息。
+  const itemBlocks = await Promise.all(rows.map((row) => buildRemittanceItemBlock(row)));
+  const messages: LineReplyMessage[] = [
+    { type: "flex", altText: "本次待匯款商品", contents: buildOrderListBubble(itemBlocks) },
+    { type: "text", text: `應付總額：NT$${total}${bankSection}\n\n請回覆您的匯款帳號後 5 碼完成申報（例如：12345）。` },
+  ];
+  if (replyToken) await sendLineReply(replyToken, messages);
 }
 
 async function handleRemittanceLast5Submission(
@@ -843,6 +891,11 @@ async function handleTextMessage(
 
   if (matchesAny(text, keywords.quantity_confirm)) {
     await handleQuantityConfirmTrigger(supabase, userId, replyToken);
+    return;
+  }
+
+  if (matchesAny(text, keywords.edit_nickname)) {
+    await handleEditNicknameTrigger(supabase, userId, replyToken);
     return;
   }
 
