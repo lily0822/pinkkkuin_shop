@@ -228,6 +228,19 @@ async function countPendingPhotos(supabase: SupabaseService, userId: string) {
   return count || 0;
 }
 
+// 辨識不出商品名稱時，不存 null、也不顯示「未辨識商品」——自動產生一個
+// 看得懂的名稱：{LINE顯示名稱}-商品{N}。N 是這個 line_user_id 目前總共
+// 有幾筆 community_livestream_orders（不分辨識成功或失敗、跨輪次跨批次
+// 都算）+1，直接從資料庫實際筆數算出來，天然不會歸零重算。
+async function generateFallbackProductName(supabase: SupabaseService, userId: string, binding: BindingRow) {
+  const { count } = await supabase
+    .from("community_livestream_orders")
+    .select("id", { count: "exact", head: true })
+    .eq("line_user_id", userId);
+  const displayName = binding.line_display_name || binding.nickname || "客人";
+  return `${displayName}-商品${(count || 0) + 1}`;
+}
+
 async function handleImageMessage(
   supabase: SupabaseService,
   userId: string,
@@ -258,12 +271,13 @@ async function handleImageMessage(
   }
 
   const recognized = await recognizeProductPhoto(content.buffer, content.contentType);
+  const productName = recognized?.productName || (await generateFallbackProductName(supabase, userId, binding));
 
   const { error: insertError } = await supabase.from("community_livestream_orders").insert({
     line_user_id: userId,
     line_display_name: binding.line_display_name,
     nickname: binding.nickname,
-    product_name: recognized?.productName ?? null,
+    product_name: productName,
     unit_price: recognized?.price ?? null,
     recognized_confidence: recognized?.confidence ?? null,
     quantity: 1,
@@ -275,16 +289,14 @@ async function handleImageMessage(
     return;
   }
 
+  // Every other outcome here is intentionally silent — no per-photo "已收到
+  // 第 N 張圖片" ack anymore (per instructions: the upload flow should stay
+  // quiet until "好了"). The over-10-per-round warning is the one exception,
+  // since without it the customer would have no idea why a later photo
+  // didn't make it into this round's carousel.
   if (pendingBefore >= MAX_PHOTOS_PER_ROUND) {
     await reply(replyToken, `這輪已收到 ${MAX_PHOTOS_PER_ROUND} 張，請先回覆「好了」，我先幫您整理目前收到的商品！`);
-    return;
   }
-
-  const rank = pendingBefore + 1;
-  const label = recognized?.productName
-    ? `辨識為「${recognized.productName}」${recognized.price != null ? `，NT$${recognized.price}` : "（價格未辨識）"}`
-    : "商品辨識不出來，稍後可在清單裡手動確認";
-  await reply(replyToken, `已收到第 ${rank} 張圖片，${label}。傳完後請回覆「好了」。`);
 }
 
 type PendingOrderRow = {
@@ -299,7 +311,9 @@ async function buildOrderBubble(row: PendingOrderRow) {
   const imageUrl = row.photo_storage_path
     ? await createSignedUrl(PHOTO_BUCKET, row.photo_storage_path, CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS)
     : null;
-  const priceText = row.unit_price != null ? `NT$${row.unit_price}` : "價格未辨識";
+  // 單價未知時整段不提價格，不再顯示「價格未辨識」這種字樣——只留商品
+  // 名稱＋目前數量，卡片看起來就是正常商品。
+  const detailText = row.unit_price != null ? `NT$${row.unit_price}　目前數量：${row.quantity}` : `目前數量：${row.quantity}`;
 
   return {
     type: "bubble",
@@ -310,8 +324,8 @@ async function buildOrderBubble(row: PendingOrderRow) {
       type: "box",
       layout: "vertical",
       contents: [
-        { type: "text", text: row.product_name || "未辨識商品", weight: "bold", wrap: true },
-        { type: "text", text: `${priceText}　目前數量：${row.quantity}`, size: "sm", color: "#888888", margin: "sm" },
+        { type: "text", text: row.product_name || "商品", weight: "bold", wrap: true },
+        { type: "text", text: detailText, size: "sm", color: "#888888", margin: "sm" },
       ],
     },
     footer: {
@@ -344,13 +358,14 @@ async function handleDoneCommand(supabase: SupabaseService, userId: string, repl
     return;
   }
 
+  const maxBatches = MAX_REPLY_MESSAGES - 1; // one reply slot is used by the leading confirmation text below
   const { data, error } = await supabase
     .from("community_livestream_orders")
     .select("id, product_name, unit_price, quantity, photo_storage_path")
     .eq("line_user_id", userId)
     .is("carousel_sent_at", null)
     .order("created_at", { ascending: true })
-    .limit(MAX_PHOTOS_PER_ROUND * MAX_REPLY_MESSAGES);
+    .limit(MAX_PHOTOS_PER_ROUND * maxBatches);
 
   const pendingRows = (data as PendingOrderRow[] | null) || [];
   if (error || !pendingRows.length) {
@@ -359,13 +374,14 @@ async function handleDoneCommand(supabase: SupabaseService, userId: string, repl
   }
 
   // Carousel bubbles are capped at 12 by LINE; we batch in groups of 10 (the
-  // same "one round" size) and send up to 5 such batches in one reply call
-  // (LINE's own per-reply message cap) — covering up to 50 photos in one
-  // "好了". Anything beyond that stays queued (carousel_sent_at still null)
-  // for whatever "好了" comes next; nothing is discarded.
-  const batches = chunk(pendingRows, MAX_PHOTOS_PER_ROUND).slice(0, MAX_REPLY_MESSAGES);
+  // same "one round" size). LINE caps a single reply call at 5 messages —
+  // one of those slots is used by the leading "已登錄您的商品" confirmation
+  // text below, so up to 4 carousel batches (40 photos) go out per "好了".
+  // Anything beyond that stays queued (carousel_sent_at still null) for
+  // whatever "好了" comes next; nothing is discarded.
+  const batches = chunk(pendingRows, MAX_PHOTOS_PER_ROUND).slice(0, maxBatches);
 
-  const messages: LineReplyMessage[] = [];
+  const messages: LineReplyMessage[] = [{ type: "text", text: "已登錄您的商品，請確認以下數量：" }];
   for (const batch of batches) {
     const bubbles = await Promise.all(batch.map((row) => buildOrderBubble(row)));
     messages.push({
@@ -402,8 +418,9 @@ async function applyQuantityUpdate(
     await reply(replyToken, "更新數量失敗，請稍後再試一次。");
     return;
   }
-  const label = data.product_name ? `「${data.product_name}」` : "這項商品";
-  await reply(replyToken, `已將${label}數量更新為 ${quantity} 件。`);
+  // product_name is never null for LINE-sourced rows anymore (see
+  // generateFallbackProductName above), so no "這項商品" fallback needed.
+  await reply(replyToken, `已將「${data.product_name}」數量更新為 ${quantity} 件。`);
 }
 
 async function handlePostback(
@@ -460,7 +477,7 @@ async function buildCancelBubble(row: CancellableOrderRow) {
       type: "box",
       layout: "vertical",
       contents: [
-        { type: "text", text: row.product_name || "未辨識商品", weight: "bold", wrap: true },
+        { type: "text", text: row.product_name || "商品", weight: "bold", wrap: true },
         { type: "text", text: `數量：${row.quantity}`, size: "sm", color: "#888888", margin: "sm" },
       ],
     },
