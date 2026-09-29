@@ -8,7 +8,6 @@ import {
   shouldRequireBackendAuth,
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
-import { sendLineUserText } from "@/lib/line/client";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -76,43 +75,19 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   try {
     const supabase = createSupabaseServiceClient();
-    const { data: before, error: beforeError } = await supabase
-      .from("community_livestream_orders")
-      .select("line_user_id, product_name, purchase_status, confirmed_notified_at")
-      .eq("id", orderId)
-      .maybeSingle();
-    if (beforeError) throw beforeError;
-    if (!before) return NextResponse.json({ ok: false, error: "找不到這筆訂單。" }, { status: 404 });
-
-    // 功能四：只在「第一次」轉為已購買時才 push 通知客人，之後的任何編輯
-    // （改備註、改數量等）都不會重複發送。這是本功能唯一會計入 LINE 月費
-    // 訊息額度的動作，其餘都是 reply。
-    const willConfirmNow = patch.purchase_status === "bought" && before.purchase_status !== "bought" && !before.confirmed_notified_at;
-    if (willConfirmNow) patch.confirmed_notified_at = new Date().toISOString();
-
+    // 已移除訂單確認 LINE push 通知（原本是本功能唯一計入月費額度的動作，
+    // 使用者決定不需要）。標記已購買現在單純是狀態更新，不對客人發任何
+    // 訊息。confirmed_notified_at 欄位仍留在資料表裡，只是不再讀寫。
     const { data: updated, error: updateError } = await supabase
       .from("community_livestream_orders")
       .update(patch)
       .eq("id", orderId)
-      .select("id, line_user_id, product_name, quantity")
+      .select("id")
       .maybeSingle();
     if (updateError) throw updateError;
     if (!updated) return NextResponse.json({ ok: false, error: "更新失敗，請重新整理後再試。" }, { status: 409 });
 
-    let notified = false;
-    if (willConfirmNow && updated.line_user_id) {
-      try {
-        const label = updated.product_name ? `「${updated.product_name}」×${updated.quantity}` : "您的訂單";
-        await sendLineUserText(String(updated.line_user_id), `${label} 訂單已確認，謝謝您的購買！`);
-        notified = true;
-      } catch {
-        // The status update itself already succeeded and confirmed_notified_at
-        // is already set (no retry queue for this v1 — matches how other LINE
-        // push failures in this codebase are already just logged, not queued).
-      }
-    }
-
-    return NextResponse.json({ ok: true, notified });
+    return NextResponse.json({ ok: true });
   } catch {
     return NextResponse.json({ ok: false, error: "社群連線訂單更新失敗，請稍後再試。" }, { status: 500 });
   }
