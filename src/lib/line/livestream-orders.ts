@@ -540,9 +540,10 @@ async function handlePostback(
 
 // ---------------------------------------------------------------------------
 // 功能六：自助取消訂單 — 比照「我要下單」的觸發模式。只有 purchase_status
-// 還是 'not_bought' 的訂單能取消；取消即直接硬刪除該筆
-// community_livestream_orders（跟後台的刪除按鈕共用 deleteLivestreamOrder，
-// 不另外寫一套邏輯），不留取消紀錄。
+// 還是 'not_bought' 且 payment_status 還是 'unpaid'（客人還沒進入匯款
+// 流程）的訂單能取消；取消即直接硬刪除該筆 community_livestream_orders
+// （跟後台的刪除按鈕共用 deleteLivestreamOrder，不另外寫一套邏輯），不留
+// 取消紀錄。
 // ---------------------------------------------------------------------------
 
 type CancellableOrderRow = {
@@ -593,11 +594,14 @@ async function handleCancelTrigger(supabase: SupabaseService, userId: string, re
     return;
   }
 
+  // 只有「還沒購買」且「還沒付款（含匯款確認中）」的訂單才能自助取消——
+  // 一旦客人回報過匯款（confirming/paid），就不該再讓他把這筆訂單取消掉。
   const { data, error } = await supabase
     .from("community_livestream_orders")
     .select("id, product_name, quantity, photo_storage_path")
     .eq("line_user_id", userId)
     .eq("purchase_status", "not_bought")
+    .eq("payment_status", "unpaid")
     .order("created_at", { ascending: true })
     .limit(MAX_PHOTOS_PER_ROUND * MAX_REPLY_MESSAGES);
 
@@ -608,19 +612,23 @@ async function handleCancelTrigger(supabase: SupabaseService, userId: string, re
 
   const cancellable = (data as CancellableOrderRow[] | null) || [];
   if (!cancellable.length) {
-    await reply(replyToken, "目前沒有可以取消的商品喔（已購買的商品無法取消）。");
+    await reply(replyToken, "目前沒有可以取消的商品喔（已購買或已在匯款流程中的商品無法取消）。");
     return;
   }
 
-  const { count: boughtCount } = await supabase
+  // 開頭提示：涵蓋「已購買」跟「已購買以外、但已進入匯款流程（確認中/
+  // 已付款）」這兩種不能取消的情況——用「這個人全部訂單筆數 - 可取消
+  // 筆數」算出不可取消的總數，不用另外寫一個 OR 條件的查詢。
+  const { count: totalCount } = await supabase
     .from("community_livestream_orders")
     .select("id", { count: "exact", head: true })
-    .eq("line_user_id", userId)
-    .eq("purchase_status", "bought");
+    .eq("line_user_id", userId);
+
+  const noncancellableCount = Math.max((totalCount || 0) - cancellable.length, 0);
 
   const introText =
-    boughtCount && boughtCount > 0
-      ? `您已購買的 ${boughtCount} 項商品不會列在這裡，恕無法取消。以下是可以取消的商品：`
+    noncancellableCount > 0
+      ? `您已購買或已在匯款流程中的 ${noncancellableCount} 項商品不會列在這裡，恕無法取消。以下是可以取消的商品：`
       : "以下是您目前可以取消的商品：";
 
   const batches = chunk(cancellable, MAX_PHOTOS_PER_ROUND).slice(0, MAX_REPLY_MESSAGES - 1);
@@ -645,7 +653,7 @@ async function handleCancelOrder(
 ) {
   const { data: row } = await supabase
     .from("community_livestream_orders")
-    .select("product_name, purchase_status")
+    .select("product_name, purchase_status, payment_status")
     .eq("id", orderId)
     .eq("line_user_id", userId)
     .maybeSingle();
@@ -655,6 +663,10 @@ async function handleCancelOrder(
   }
   if (row.purchase_status !== "not_bought") {
     await reply(replyToken, "這項商品已經購買，無法取消。");
+    return;
+  }
+  if (row.payment_status !== "unpaid") {
+    await reply(replyToken, "這項商品已在匯款流程中，無法取消。");
     return;
   }
 
