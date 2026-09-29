@@ -1,0 +1,466 @@
+import "server-only";
+
+import { createSupabaseServiceClient } from "@/lib/supabase/service";
+import { createSignedUrl, uploadPrivateFile } from "@/lib/supabase/storage";
+import {
+  downloadLineMessageContent,
+  getLineUserProfile,
+  sendLineReply,
+  sendLineReplyText,
+  type LineReplyMessage,
+} from "./client";
+import { recognizeProductPhoto } from "./vision";
+
+// 功能一 (自助綁定) + 功能二 (LINE 圖片下單對話流程). Everything here talks to
+// community_line_bindings (read + insert/update of the self-service columns
+// only — requested_nickname/review_status/line_display_name; never touches
+// the admin-approval columns directly) and the brand-new
+// community_livestream_orders / community_line_bot_states tables. Nothing
+// here ever writes to community_orders/community_order_items.
+//
+// Every reply in this file MUST go through sendLineReply/sendLineReplyText
+// (uses the incoming event's replyToken — free, doesn't count against the
+// LINE OA's monthly push quota). Never sendLineUserText/sendLineUserFlex
+// here — those are push and cost quota; the only push in this whole feature
+// is the "訂單已確認" notification in the backend PATCH route (功能四),
+// fired on the admin's own initiative, not in response to a message.
+
+export type LineWebhookEvent = {
+  type?: string;
+  replyToken?: string;
+  source?: { userId?: string; type?: string };
+  message?: { id?: string; type?: string; text?: string };
+  postback?: { data?: string };
+};
+
+const PHOTO_BUCKET = "community-livestream-photos";
+const MAX_PHOTOS_PER_ROUND = 10;
+const CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days — long enough for LINE to fetch/cache the bubble image
+const MAX_REPLY_MESSAGES = 5; // LINE reply API hard limit
+
+const ORDER_TRIGGER_KEYWORDS = ["我要下單", "下單", "開始下單", "開通", "綁定", "加入社群", "註冊"];
+const DONE_KEYWORDS = ["好了", "傳完了", "傳完", "完成", "ok", "OK", "好囉"];
+
+function normalizeText(text: string) {
+  return text.replace(/\s+/g, "").toLowerCase();
+}
+
+function matchesAny(text: string, keywords: string[]) {
+  const normalized = normalizeText(text);
+  if (!normalized) return false;
+  return keywords.some((keyword) => normalized.includes(normalizeText(keyword)));
+}
+
+function parsePositiveInteger(text: string) {
+  const trimmed = text.trim();
+  if (!/^\d{1,4}$/.test(trimmed)) return null;
+  const value = Number(trimmed);
+  return value > 0 ? value : null;
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const batches: T[][] = [];
+  for (let i = 0; i < items.length; i += size) batches.push(items.slice(i, i + size));
+  return batches;
+}
+
+async function reply(replyToken: string | undefined, text: string) {
+  if (!replyToken) return;
+  await sendLineReplyText(replyToken, text);
+}
+
+type SupabaseService = ReturnType<typeof createSupabaseServiceClient>;
+
+type BindingRow = {
+  line_user_id: string;
+  line_display_name: string | null;
+  nickname: string | null;
+  requested_nickname: string | null;
+  review_status: string;
+};
+
+async function getBinding(supabase: SupabaseService, userId: string): Promise<BindingRow | null> {
+  const { data } = await supabase
+    .from("community_line_bindings")
+    .select("line_user_id, line_display_name, nickname, requested_nickname, review_status")
+    .eq("line_user_id", userId)
+    .maybeSingle();
+  return (data as BindingRow) || null;
+}
+
+function isApprovedBinding(binding: BindingRow | null): binding is BindingRow & { nickname: string } {
+  return Boolean(binding && binding.review_status === "approved" && binding.nickname);
+}
+
+type BotState = { awaiting_nickname: boolean; awaiting_quantity_for_order_id: string | null };
+
+async function getBotState(supabase: SupabaseService, userId: string): Promise<BotState> {
+  const { data } = await supabase
+    .from("community_line_bot_states")
+    .select("awaiting_nickname, awaiting_quantity_for_order_id")
+    .eq("line_user_id", userId)
+    .maybeSingle();
+  return {
+    awaiting_nickname: Boolean((data as BotState | null)?.awaiting_nickname),
+    awaiting_quantity_for_order_id: (data as BotState | null)?.awaiting_quantity_for_order_id || null,
+  };
+}
+
+async function setBotState(supabase: SupabaseService, userId: string, patch: Partial<BotState>) {
+  await supabase
+    .from("community_line_bot_states")
+    .upsert({ line_user_id: userId, ...patch }, { onConflict: "line_user_id" });
+}
+
+// ---------------------------------------------------------------------------
+// 功能一：自助綁定
+// ---------------------------------------------------------------------------
+
+async function startNicknameRequest(supabase: SupabaseService, userId: string, replyToken: string | undefined) {
+  await setBotState(supabase, userId, { awaiting_nickname: true });
+  await reply(replyToken, "請輸入您的社群暱稱，審核通過後就能使用下單功能囉！");
+}
+
+async function handleNicknameSubmission(
+  supabase: SupabaseService,
+  userId: string,
+  replyToken: string | undefined,
+  rawText: string,
+) {
+  const nickname = rawText.trim().slice(0, 120);
+  if (!nickname) {
+    await reply(replyToken, "請輸入有效的社群暱稱喔。");
+    return;
+  }
+
+  // Collision check against already-APPROVED bindings only (not other
+  // pending requests) — matches the existing admin-approval flow's own
+  // duplicate check in src/app/api/backend/community/members/route.ts,
+  // which likewise only rejects against the final `nickname` column.
+  const { data: conflict } = await supabase
+    .from("community_line_bindings")
+    .select("id")
+    .ilike("nickname", nickname)
+    .neq("line_user_id", userId)
+    .limit(1)
+    .maybeSingle();
+  if (conflict) {
+    await reply(replyToken, `暱稱「${nickname}」已經被其他人綁定了，請換一個暱稱再傳一次。`);
+    return; // stays in awaiting_nickname so the very next message can retry
+  }
+
+  const profile = await getLineUserProfile(userId);
+  const { error } = await supabase.from("community_line_bindings").upsert(
+    {
+      line_user_id: userId,
+      line_display_name: profile?.displayName || null,
+      requested_nickname: nickname,
+      review_status: "pending",
+    },
+    { onConflict: "line_user_id" },
+  );
+  await setBotState(supabase, userId, { awaiting_nickname: false });
+
+  if (error) {
+    await reply(replyToken, "申請送出失敗，請稍後再試一次。");
+    return;
+  }
+  await reply(replyToken, `已收到您的申請暱稱「${nickname}」，審核通過後即可使用下單功能，請耐心等候！`);
+}
+
+async function handleOrderTrigger(supabase: SupabaseService, userId: string, replyToken: string | undefined) {
+  const binding = await getBinding(supabase, userId);
+  if (isApprovedBinding(binding)) {
+    await reply(
+      replyToken,
+      "已開啟下單功能，請上傳您要的商品圖片（單次最多 10 張），傳完後請回覆「好了」，我就會列出所有收到的商品讓您填寫數量！",
+    );
+    return;
+  }
+  if (binding?.review_status === "pending") {
+    await reply(replyToken, `您申請的暱稱「${binding.requested_nickname || ""}」正在審核中，審核通過後才能使用下單功能，請耐心等候。`);
+    return;
+  }
+  await startNicknameRequest(supabase, userId, replyToken);
+}
+
+// ---------------------------------------------------------------------------
+// 功能二：LINE 圖片下單
+// ---------------------------------------------------------------------------
+
+async function countPendingPhotos(supabase: SupabaseService, userId: string) {
+  const { count } = await supabase
+    .from("community_livestream_orders")
+    .select("id", { count: "exact", head: true })
+    .eq("line_user_id", userId)
+    .is("carousel_sent_at", null);
+  return count || 0;
+}
+
+async function handleImageMessage(
+  supabase: SupabaseService,
+  userId: string,
+  replyToken: string | undefined,
+  messageId: string,
+) {
+  const binding = await getBinding(supabase, userId);
+  if (!isApprovedBinding(binding)) {
+    await reply(replyToken, "請先完成社群暱稱綁定並通過審核後，才能使用圖片下單功能喔。");
+    return;
+  }
+  if (!messageId) return;
+
+  const pendingBefore = await countPendingPhotos(supabase, userId);
+
+  const content = await downloadLineMessageContent(messageId);
+  if (!content) {
+    await reply(replyToken, "圖片下載失敗，請重新傳送一次。");
+    return;
+  }
+
+  const storagePath = `${userId}/${messageId}.jpg`;
+  try {
+    await uploadPrivateFile(PHOTO_BUCKET, storagePath, content.buffer, content.contentType);
+  } catch {
+    await reply(replyToken, "圖片儲存失敗，請稍後再試一次。");
+    return;
+  }
+
+  const recognized = await recognizeProductPhoto(content.buffer, content.contentType);
+
+  const { error: insertError } = await supabase.from("community_livestream_orders").insert({
+    line_user_id: userId,
+    line_display_name: binding.line_display_name,
+    nickname: binding.nickname,
+    product_name: recognized?.productName ?? null,
+    unit_price: recognized?.price ?? null,
+    recognized_confidence: recognized?.confidence ?? null,
+    quantity: 1,
+    photo_storage_path: storagePath,
+    source: "line",
+  });
+  if (insertError) {
+    await reply(replyToken, "圖片處理失敗，請稍後再試一次。");
+    return;
+  }
+
+  if (pendingBefore >= MAX_PHOTOS_PER_ROUND) {
+    await reply(replyToken, `這輪已收到 ${MAX_PHOTOS_PER_ROUND} 張，請先回覆「好了」，我先幫您整理目前收到的商品！`);
+    return;
+  }
+
+  const rank = pendingBefore + 1;
+  const label = recognized?.productName
+    ? `辨識為「${recognized.productName}」${recognized.price != null ? `，NT$${recognized.price}` : "（價格未辨識）"}`
+    : "商品辨識不出來，稍後可在清單裡手動確認";
+  await reply(replyToken, `已收到第 ${rank} 張圖片，${label}。傳完後請回覆「好了」。`);
+}
+
+type PendingOrderRow = {
+  id: string;
+  product_name: string | null;
+  unit_price: number | null;
+  quantity: number;
+  photo_storage_path: string | null;
+};
+
+async function buildOrderBubble(row: PendingOrderRow) {
+  const imageUrl = row.photo_storage_path
+    ? await createSignedUrl(PHOTO_BUCKET, row.photo_storage_path, CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS)
+    : null;
+  const priceText = row.unit_price != null ? `NT$${row.unit_price}` : "價格未辨識";
+
+  return {
+    type: "bubble",
+    ...(imageUrl
+      ? { hero: { type: "image", url: imageUrl, size: "full", aspectRatio: "1:1", aspectMode: "cover" } }
+      : {}),
+    body: {
+      type: "box",
+      layout: "vertical",
+      contents: [
+        { type: "text", text: row.product_name || "未辨識商品", weight: "bold", wrap: true },
+        { type: "text", text: `${priceText}　目前數量：${row.quantity}`, size: "sm", color: "#888888", margin: "sm" },
+      ],
+    },
+    footer: {
+      type: "box",
+      layout: "horizontal",
+      spacing: "sm",
+      contents: [
+        ...[2, 3, 4].map((qty) => ({
+          type: "button",
+          style: "secondary",
+          height: "sm",
+          action: { type: "postback", label: `${qty}件`, data: `action=set_qty&order_id=${row.id}&qty=${qty}`, displayText: `設定為 ${qty} 件` },
+        })),
+        {
+          type: "button",
+          style: "primary",
+          height: "sm",
+          color: "#ec4899",
+          action: { type: "postback", label: "5件以上", data: `action=ask_qty&order_id=${row.id}`, displayText: "5 件以上" },
+        },
+      ],
+    },
+  };
+}
+
+async function handleDoneCommand(supabase: SupabaseService, userId: string, replyToken: string | undefined) {
+  const binding = await getBinding(supabase, userId);
+  if (!isApprovedBinding(binding)) {
+    await reply(replyToken, "請先完成社群暱稱綁定並通過審核後，才能使用下單功能喔。");
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from("community_livestream_orders")
+    .select("id, product_name, unit_price, quantity, photo_storage_path")
+    .eq("line_user_id", userId)
+    .is("carousel_sent_at", null)
+    .order("created_at", { ascending: true })
+    .limit(MAX_PHOTOS_PER_ROUND * MAX_REPLY_MESSAGES);
+
+  const pendingRows = (data as PendingOrderRow[] | null) || [];
+  if (error || !pendingRows.length) {
+    await reply(replyToken, "目前沒有待確認的商品圖片喔，請先上傳圖片再回覆「好了」。");
+    return;
+  }
+
+  // Carousel bubbles are capped at 12 by LINE; we batch in groups of 10 (the
+  // same "one round" size) and send up to 5 such batches in one reply call
+  // (LINE's own per-reply message cap) — covering up to 50 photos in one
+  // "好了". Anything beyond that stays queued (carousel_sent_at still null)
+  // for whatever "好了" comes next; nothing is discarded.
+  const batches = chunk(pendingRows, MAX_PHOTOS_PER_ROUND).slice(0, MAX_REPLY_MESSAGES);
+
+  const messages: LineReplyMessage[] = [];
+  for (const batch of batches) {
+    const bubbles = await Promise.all(batch.map((row) => buildOrderBubble(row)));
+    messages.push({
+      type: "flex",
+      altText: "請確認您的商品數量",
+      contents: { type: "carousel", contents: bubbles },
+    });
+  }
+
+  const sentIds = batches.flat().map((row) => row.id);
+  await supabase
+    .from("community_livestream_orders")
+    .update({ carousel_sent_at: new Date().toISOString() })
+    .in("id", sentIds);
+
+  if (replyToken) await sendLineReply(replyToken, messages);
+}
+
+async function applyQuantityUpdate(
+  supabase: SupabaseService,
+  userId: string,
+  orderId: string,
+  quantity: number,
+  replyToken: string | undefined,
+) {
+  const { data, error } = await supabase
+    .from("community_livestream_orders")
+    .update({ quantity })
+    .eq("id", orderId)
+    .eq("line_user_id", userId)
+    .select("product_name")
+    .maybeSingle();
+  if (error || !data) {
+    await reply(replyToken, "更新數量失敗，請稍後再試一次。");
+    return;
+  }
+  const label = data.product_name ? `「${data.product_name}」` : "這項商品";
+  await reply(replyToken, `已將${label}數量更新為 ${quantity} 件。`);
+}
+
+async function handlePostback(
+  supabase: SupabaseService,
+  userId: string,
+  replyToken: string | undefined,
+  data: string,
+) {
+  const params = new URLSearchParams(data);
+  const action = params.get("action") || "";
+  const orderId = params.get("order_id") || "";
+  if (!orderId) return;
+
+  if (action === "set_qty") {
+    const qty = Number(params.get("qty") || "0");
+    if (qty > 0) await applyQuantityUpdate(supabase, userId, orderId, Math.round(qty), replyToken);
+    return;
+  }
+  if (action === "ask_qty") {
+    await setBotState(supabase, userId, { awaiting_quantity_for_order_id: orderId });
+    await reply(replyToken, "請直接輸入您要的數量（例如：6）。");
+  }
+}
+
+async function handleTextMessage(
+  supabase: SupabaseService,
+  userId: string,
+  replyToken: string | undefined,
+  rawText: string,
+) {
+  const text = rawText.trim();
+  if (!text) return;
+
+  const state = await getBotState(supabase, userId);
+
+  if (state.awaiting_nickname) {
+    await handleNicknameSubmission(supabase, userId, replyToken, text);
+    return;
+  }
+
+  if (state.awaiting_quantity_for_order_id) {
+    const parsed = parsePositiveInteger(text);
+    if (parsed === null) {
+      await reply(replyToken, "請輸入一個大於 0 的數字（例如：6）。");
+      return;
+    }
+    const orderId = state.awaiting_quantity_for_order_id;
+    await setBotState(supabase, userId, { awaiting_quantity_for_order_id: null });
+    await applyQuantityUpdate(supabase, userId, orderId, parsed, replyToken);
+    return;
+  }
+
+  if (matchesAny(text, DONE_KEYWORDS)) {
+    await handleDoneCommand(supabase, userId, replyToken);
+    return;
+  }
+
+  if (matchesAny(text, ORDER_TRIGGER_KEYWORDS)) {
+    await handleOrderTrigger(supabase, userId, replyToken);
+    return;
+  }
+
+  // Anything else: intentionally silent, to avoid noisy/unexpected bot
+  // chatter for normal conversation the customer wasn't directing at us.
+}
+
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
+
+export async function handleLineEvent(event: LineWebhookEvent): Promise<void> {
+  const userId = event.source?.userId;
+  if (!userId || event.source?.type !== "user") return; // ignore group/room events for this feature
+
+  const supabase = createSupabaseServiceClient();
+  const replyToken = event.replyToken;
+
+  if (event.type === "message" && event.message?.type === "text") {
+    await handleTextMessage(supabase, userId, replyToken, String(event.message.text || ""));
+    return;
+  }
+  if (event.type === "message" && event.message?.type === "image") {
+    await handleImageMessage(supabase, userId, replyToken, String(event.message.id || ""));
+    return;
+  }
+  if (event.type === "postback") {
+    await handlePostback(supabase, userId, replyToken, String(event.postback?.data || ""));
+    return;
+  }
+  // follow/unfollow/other event types: no-op for this feature.
+}
