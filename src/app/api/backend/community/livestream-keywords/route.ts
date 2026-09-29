@@ -72,12 +72,10 @@ export async function POST(request: NextRequest) {
   }
 
   const incoming = body.keywords && typeof body.keywords === "object" ? body.keywords : {};
-  const groups: LivestreamKeywords = {
-    order: Array.isArray(incoming.order) ? (incoming.order as string[]) : [],
-    done: Array.isArray(incoming.done) ? (incoming.done as string[]) : [],
-    remittance: Array.isArray(incoming.remittance) ? (incoming.remittance as string[]) : [],
-    cancel: Array.isArray(incoming.cancel) ? (incoming.cancel as string[]) : [],
-  };
+  const groups = {} as LivestreamKeywords;
+  LIVESTREAM_KEYWORD_GROUPS.forEach((group) => {
+    groups[group] = Array.isArray(incoming[group]) ? (incoming[group] as string[]) : [];
+  });
 
   if (LIVESTREAM_KEYWORD_GROUPS.every((group) => !groups[group].length)) {
     return NextResponse.json({ ok: false, error: "請至少為每一組輸入關鍵字。" }, { status: 400 });

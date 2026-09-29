@@ -415,7 +415,9 @@ async function handleDoneCommand(supabase: SupabaseService, userId: string, repl
   // "好了" comes next; nothing is discarded.
   const batches = chunk(pendingRows, MAX_PHOTOS_PER_ROUND).slice(0, maxBatches);
 
-  const messages: LineReplyMessage[] = [{ type: "text", text: "已登錄您的商品，請確認以下數量：" }];
+  const messages: LineReplyMessage[] = [
+    { type: "text", text: "已登錄您的商品，請確認以下數量，如果都沒問題請回覆「數量正確」：" },
+  ];
   for (const batch of batches) {
     const itemBlocks = await Promise.all(batch.map((row) => buildOrderItemBlock(row)));
     messages.push({
@@ -441,6 +443,20 @@ async function applyQuantityUpdate(
   quantity: number,
   replyToken: string | undefined,
 ) {
+  // LINE 按鈕發出去後沒辦法從視覺上變成不能點——這裡做的是「功能上鎖住」：
+  // 按鈕還在、還點得下去，但點了不會真的更新。鎖定後任何數量調整入口
+  // （2/3/4件按鈕、5件以上輸入數字，都走這支函式）一律擋下。
+  const { data: existing } = await supabase
+    .from("community_livestream_orders")
+    .select("quantity_locked_at")
+    .eq("id", orderId)
+    .eq("line_user_id", userId)
+    .maybeSingle();
+  if (existing?.quantity_locked_at) {
+    await reply(replyToken, "此訂單數量已確認，如需修改請聯繫客服。");
+    return;
+  }
+
   const { data, error } = await supabase
     .from("community_livestream_orders")
     .update({ quantity })
@@ -455,6 +471,45 @@ async function applyQuantityUpdate(
   // product_name is never null for LINE-sourced rows anymore (see
   // generateFallbackProductName above), so no "這項商品" fallback needed.
   await reply(replyToken, `已將「${data.product_name}」數量更新為 ${quantity} 件。`);
+}
+
+// 客人回覆「數量正確」(可後台設定的 quantity_confirm 關鍵字組) 後，把
+// 這批「已經列在清單裡、還沒鎖定」的訂單一次鎖定——鎖定後
+// applyQuantityUpdate 會擋下任何後續的數量調整。只鎖 carousel_sent_at
+// 不是 null（已經列出過）且 quantity_locked_at 還是 null（還沒鎖過）的
+// 訂單，所以下一輪新照片不受這次鎖定影響。
+async function handleQuantityConfirmTrigger(supabase: SupabaseService, userId: string, replyToken: string | undefined) {
+  const { data, error } = await supabase
+    .from("community_livestream_orders")
+    .select("id")
+    .eq("line_user_id", userId)
+    .not("carousel_sent_at", "is", null)
+    .is("quantity_locked_at", null);
+
+  if (error) {
+    await reply(replyToken, "查詢訂單失敗，請稍後再試一次。");
+    return;
+  }
+
+  const rows = (data as { id: string }[] | null) || [];
+  if (!rows.length) {
+    await reply(replyToken, "目前沒有待確認的商品數量喔。");
+    return;
+  }
+
+  const { error: updateError } = await supabase
+    .from("community_livestream_orders")
+    .update({ quantity_locked_at: new Date().toISOString() })
+    .in(
+      "id",
+      rows.map((row) => row.id),
+    );
+  if (updateError) {
+    await reply(replyToken, "確認失敗，請稍後再試一次。");
+    return;
+  }
+
+  await reply(replyToken, "以上已經記錄囉！");
 }
 
 async function handlePostback(
@@ -771,6 +826,11 @@ async function handleTextMessage(
 
   if (matchesAny(text, keywords.cancel)) {
     await handleCancelTrigger(supabase, userId, replyToken);
+    return;
+  }
+
+  if (matchesAny(text, keywords.quantity_confirm)) {
+    await handleQuantityConfirmTrigger(supabase, userId, replyToken);
     return;
   }
 
