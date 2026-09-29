@@ -22,9 +22,8 @@ import { getLivestreamBankInfo } from "./livestream-bank-info";
 // Every reply in this file MUST go through sendLineReply/sendLineReplyText
 // (uses the incoming event's replyToken — free, doesn't count against the
 // LINE OA's monthly push quota). Never sendLineUserText/sendLineUserFlex
-// here — those are push and cost quota; the only push in this whole feature
-// is the "訂單已確認" notification in the backend PATCH route (功能四),
-// fired on the admin's own initiative, not in response to a message.
+// here — this entire feature is reply-only now (the one push it used to
+// have, on order confirmation, was removed by request — see AI_HANDOFF.md).
 
 export type LineWebhookEvent = {
   type?: string;
@@ -42,6 +41,7 @@ const MAX_REPLY_MESSAGES = 5; // LINE reply API hard limit
 const ORDER_TRIGGER_KEYWORDS = ["我要下單", "下單", "開始下單", "開通", "綁定", "加入社群", "註冊"];
 const DONE_KEYWORDS = ["好了", "傳完了", "傳完", "完成", "ok", "OK", "好囉"];
 const REMITTANCE_TRIGGER_KEYWORDS = ["我要匯款", "匯款申報", "回報匯款", "匯款"];
+const CANCEL_TRIGGER_KEYWORDS = ["取消訂單", "我要取消", "取消"];
 
 function normalizeText(text: string) {
   return text.replace(/\s+/g, "").toLowerCase();
@@ -76,7 +76,18 @@ async function reply(replyToken: string | undefined, text: string) {
   await sendLineReplyText(replyToken, text);
 }
 
-type SupabaseService = ReturnType<typeof createSupabaseServiceClient>;
+export type SupabaseService = ReturnType<typeof createSupabaseServiceClient>;
+
+// Shared by the backend's DELETE /api/backend/community/livestream-orders/[id]
+// route (admin-initiated delete) and 功能六's LINE self-cancel flow below —
+// one hard delete, no separate "safe delete" RPC (this table is a brand-new,
+// simple, fully independent design, unlike the older community_orders/
+// community_order_items safe-delete path). Requires the delete grant added
+// in 202609300003_community_livestream_orders_delete_grant.sql.
+export async function deleteLivestreamOrder(supabase: SupabaseService, orderId: string): Promise<boolean> {
+  const { error } = await supabase.from("community_livestream_orders").delete().eq("id", orderId);
+  return !error;
+}
 
 type BindingRow = {
   line_user_id: string;
@@ -414,7 +425,140 @@ async function handlePostback(
   if (action === "ask_qty") {
     await setBotState(supabase, userId, { awaiting_quantity_for_order_id: orderId });
     await reply(replyToken, "請直接輸入您要的數量（例如：6）。");
+    return;
   }
+  if (action === "cancel_order") {
+    await handleCancelOrder(supabase, userId, orderId, replyToken);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 功能六：自助取消訂單 — 比照「我要下單」的觸發模式。只有 purchase_status
+// 還是 'not_bought' 的訂單能取消；取消即直接硬刪除該筆
+// community_livestream_orders（跟後台的刪除按鈕共用 deleteLivestreamOrder，
+// 不另外寫一套邏輯），不留取消紀錄。
+// ---------------------------------------------------------------------------
+
+type CancellableOrderRow = {
+  id: string;
+  product_name: string | null;
+  quantity: number;
+  photo_storage_path: string | null;
+};
+
+async function buildCancelBubble(row: CancellableOrderRow) {
+  const imageUrl = row.photo_storage_path
+    ? await createSignedUrl(PHOTO_BUCKET, row.photo_storage_path, CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS)
+    : null;
+
+  return {
+    type: "bubble",
+    ...(imageUrl
+      ? { hero: { type: "image", url: imageUrl, size: "full", aspectRatio: "1:1", aspectMode: "cover" } }
+      : {}),
+    body: {
+      type: "box",
+      layout: "vertical",
+      contents: [
+        { type: "text", text: row.product_name || "未辨識商品", weight: "bold", wrap: true },
+        { type: "text", text: `數量：${row.quantity}`, size: "sm", color: "#888888", margin: "sm" },
+      ],
+    },
+    footer: {
+      type: "box",
+      layout: "vertical",
+      contents: [
+        {
+          type: "button",
+          style: "primary",
+          height: "sm",
+          color: "#ef4444",
+          action: { type: "postback", label: "取消這項", data: `action=cancel_order&order_id=${row.id}`, displayText: "取消這項" },
+        },
+      ],
+    },
+  };
+}
+
+async function handleCancelTrigger(supabase: SupabaseService, userId: string, replyToken: string | undefined) {
+  const binding = await getBinding(supabase, userId);
+  if (!isApprovedBinding(binding)) {
+    await reply(replyToken, "請先完成社群暱稱綁定並通過審核後，才能使用取消訂單功能喔。");
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from("community_livestream_orders")
+    .select("id, product_name, quantity, photo_storage_path")
+    .eq("line_user_id", userId)
+    .eq("purchase_status", "not_bought")
+    .order("created_at", { ascending: true })
+    .limit(MAX_PHOTOS_PER_ROUND * MAX_REPLY_MESSAGES);
+
+  if (error) {
+    await reply(replyToken, "查詢訂單失敗，請稍後再試一次。");
+    return;
+  }
+
+  const cancellable = (data as CancellableOrderRow[] | null) || [];
+  if (!cancellable.length) {
+    await reply(replyToken, "目前沒有可以取消的商品喔（已購買的商品無法取消）。");
+    return;
+  }
+
+  const { count: boughtCount } = await supabase
+    .from("community_livestream_orders")
+    .select("id", { count: "exact", head: true })
+    .eq("line_user_id", userId)
+    .eq("purchase_status", "bought");
+
+  const introText =
+    boughtCount && boughtCount > 0
+      ? `您已購買的 ${boughtCount} 項商品不會列在這裡，恕無法取消。以下是可以取消的商品：`
+      : "以下是您目前可以取消的商品：";
+
+  const batches = chunk(cancellable, MAX_PHOTOS_PER_ROUND).slice(0, MAX_REPLY_MESSAGES - 1);
+  const messages: LineReplyMessage[] = [{ type: "text", text: introText }];
+  for (const batch of batches) {
+    const bubbles = await Promise.all(batch.map((row) => buildCancelBubble(row)));
+    messages.push({
+      type: "flex",
+      altText: "請選擇要取消的商品",
+      contents: { type: "carousel", contents: bubbles },
+    });
+  }
+
+  if (replyToken) await sendLineReply(replyToken, messages);
+}
+
+async function handleCancelOrder(
+  supabase: SupabaseService,
+  userId: string,
+  orderId: string,
+  replyToken: string | undefined,
+) {
+  const { data: row } = await supabase
+    .from("community_livestream_orders")
+    .select("product_name, purchase_status")
+    .eq("id", orderId)
+    .eq("line_user_id", userId)
+    .maybeSingle();
+  if (!row) {
+    await reply(replyToken, "找不到這筆訂單，可能已經被取消過了。");
+    return;
+  }
+  if (row.purchase_status !== "not_bought") {
+    await reply(replyToken, "這項商品已經購買，無法取消。");
+    return;
+  }
+
+  const label = row.product_name || "這項商品";
+  const ok = await deleteLivestreamOrder(supabase, orderId);
+  if (!ok) {
+    await reply(replyToken, "取消失敗，請稍後再試一次。");
+    return;
+  }
+  await reply(replyToken, `已為您取消「${label}」，感謝您的訂購！`);
 }
 
 // ---------------------------------------------------------------------------
@@ -569,6 +713,11 @@ async function handleTextMessage(
 
   if (matchesAny(text, REMITTANCE_TRIGGER_KEYWORDS)) {
     await handleRemittanceTrigger(supabase, userId, replyToken);
+    return;
+  }
+
+  if (matchesAny(text, CANCEL_TRIGGER_KEYWORDS)) {
+    await handleCancelTrigger(supabase, userId, replyToken);
     return;
   }
 

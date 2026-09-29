@@ -8,6 +8,7 @@ import {
   shouldRequireBackendAuth,
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
+import { deleteLivestreamOrder } from "@/lib/line/livestream-orders";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -90,5 +91,36 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ ok: true });
   } catch {
     return NextResponse.json({ ok: false, error: "社群連線訂單更新失敗，請稍後再試。" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const guard = await guardBackendRequest(request);
+  if (guard) return guard;
+
+  const rate = await backendRateLimit(request, "backend_community_livestream_orders_delete", 30);
+  if (!rate.ok) {
+    return NextResponse.json(
+      { ok: false, error: "操作太頻繁，請稍後再試。" },
+      { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } },
+    );
+  }
+
+  const { id } = await params;
+  const orderId = id?.trim();
+  if (!orderId) return NextResponse.json({ ok: false, error: "缺少訂單識別資料。" }, { status: 400 });
+
+  try {
+    const supabase = createSupabaseServiceClient();
+    // Hard delete, shared with 功能六's LINE self-cancel flow
+    // (src/lib/line/livestream-orders.ts::deleteLivestreamOrder) — this table
+    // is a brand-new, simple, fully independent design, not the older
+    // community_orders/community_order_items safe-delete path. The photo in
+    // the private storage bucket (if any) is left orphaned, not cleaned up.
+    const ok = await deleteLivestreamOrder(supabase, orderId);
+    if (!ok) return NextResponse.json({ ok: false, error: "刪除失敗，請稍後再試。" }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json({ ok: false, error: "刪除失敗，請稍後再試。" }, { status: 500 });
   }
 }
