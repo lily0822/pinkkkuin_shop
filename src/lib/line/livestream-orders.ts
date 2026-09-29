@@ -11,6 +11,7 @@ import {
 } from "./client";
 import { recognizeProductPhoto } from "./vision";
 import { getLivestreamBankInfo } from "./livestream-bank-info";
+import { getLivestreamKeywords } from "./livestream-keywords";
 
 // 功能一 (自助綁定) + 功能二 (LINE 圖片下單對話流程). Everything here talks to
 // community_line_bindings (read + insert/update of the self-service columns
@@ -38,10 +39,10 @@ const MAX_PHOTOS_PER_ROUND = 10;
 const CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days — long enough for LINE to fetch/cache the bubble image
 const MAX_REPLY_MESSAGES = 5; // LINE reply API hard limit
 
-const ORDER_TRIGGER_KEYWORDS = ["我要下單", "下單", "開始下單", "開通", "綁定", "加入社群", "註冊"];
-const DONE_KEYWORDS = ["好了", "傳完了", "傳完", "完成", "ok", "OK", "好囉"];
-const REMITTANCE_TRIGGER_KEYWORDS = ["我要匯款", "匯款申報", "回報匯款", "匯款"];
-const CANCEL_TRIGGER_KEYWORDS = ["取消訂單", "我要取消", "取消"];
+// 四組觸發關鍵字（下單/完成/匯款/取消）改成後台可設定——實際的預設值/
+// 讀取/fallback 邏輯都在 src/lib/line/livestream-keywords.ts，這裡不再
+// 寫死陣列，一律透過 getLivestreamKeywords() 在 handleTextMessage 裡
+// 每則訊息抓一次（讀取失敗會自動 fallback 回預設值，不會直接失效）。
 
 function normalizeText(text: string) {
   return text.replace(/\s+/g, "").toLowerCase();
@@ -307,46 +308,76 @@ type PendingOrderRow = {
   photo_storage_path: string | null;
 };
 
-async function buildOrderBubble(row: PendingOrderRow) {
+// 數量確認畫面：從 Carousel（左右滑動的卡片）改成單一 Flex bubble、內容
+// 直向堆疊——客人用一般聊天視窗往下捲動瀏覽，不用左右滑動。每個商品的
+// 縮圖/名稱/單價/數量/按鈕邏輯不變，只是排版方向從橫向卡片變成直向清單
+// 裡的一個區塊；每個按鈕一樣各自帶自己的 order_id 做 postback。
+async function buildOrderItemBlock(row: PendingOrderRow) {
   const imageUrl = row.photo_storage_path
     ? await createSignedUrl(PHOTO_BUCKET, row.photo_storage_path, CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS)
     : null;
   // 單價未知時整段不提價格，不再顯示「價格未辨識」這種字樣——只留商品
-  // 名稱＋目前數量，卡片看起來就是正常商品。
+  // 名稱＋目前數量，看起來就是正常商品。
   const detailText = row.unit_price != null ? `NT$${row.unit_price}　目前數量：${row.quantity}` : `目前數量：${row.quantity}`;
 
+  const rowContents: object[] = [];
+  if (imageUrl) {
+    rowContents.push({ type: "image", url: imageUrl, size: "60px", aspectMode: "cover", aspectRatio: "1:1", flex: 0 });
+  }
+  rowContents.push({
+    type: "box",
+    layout: "vertical",
+    flex: 1,
+    justifyContent: "center",
+    contents: [
+      { type: "text", text: row.product_name || "商品", weight: "bold", wrap: true, size: "sm" },
+      { type: "text", text: detailText, size: "xs", color: "#888888", margin: "sm" },
+    ],
+  });
+
+  return {
+    type: "box",
+    layout: "vertical",
+    spacing: "sm",
+    contents: [
+      { type: "box", layout: "horizontal", spacing: "md", contents: rowContents },
+      {
+        type: "box",
+        layout: "horizontal",
+        spacing: "sm",
+        contents: [
+          ...[2, 3, 4].map((qty) => ({
+            type: "button",
+            style: "secondary",
+            height: "sm",
+            action: { type: "postback", label: `${qty}件`, data: `action=set_qty&order_id=${row.id}&qty=${qty}`, displayText: `設定為 ${qty} 件` },
+          })),
+          {
+            type: "button",
+            style: "primary",
+            height: "sm",
+            color: "#ec4899",
+            action: { type: "postback", label: "5件以上", data: `action=ask_qty&order_id=${row.id}`, displayText: "5 件以上" },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function buildOrderListBubble(itemBlocks: object[]) {
+  const bodyContents: object[] = [];
+  itemBlocks.forEach((block, index) => {
+    if (index > 0) bodyContents.push({ type: "separator", margin: "lg" });
+    bodyContents.push(block);
+  });
   return {
     type: "bubble",
-    ...(imageUrl
-      ? { hero: { type: "image", url: imageUrl, size: "full", aspectRatio: "1:1", aspectMode: "cover" } }
-      : {}),
     body: {
       type: "box",
       layout: "vertical",
-      contents: [
-        { type: "text", text: row.product_name || "商品", weight: "bold", wrap: true },
-        { type: "text", text: detailText, size: "sm", color: "#888888", margin: "sm" },
-      ],
-    },
-    footer: {
-      type: "box",
-      layout: "horizontal",
-      spacing: "sm",
-      contents: [
-        ...[2, 3, 4].map((qty) => ({
-          type: "button",
-          style: "secondary",
-          height: "sm",
-          action: { type: "postback", label: `${qty}件`, data: `action=set_qty&order_id=${row.id}&qty=${qty}`, displayText: `設定為 ${qty} 件` },
-        })),
-        {
-          type: "button",
-          style: "primary",
-          height: "sm",
-          color: "#ec4899",
-          action: { type: "postback", label: "5件以上", data: `action=ask_qty&order_id=${row.id}`, displayText: "5 件以上" },
-        },
-      ],
+      spacing: "lg",
+      contents: bodyContents,
     },
   };
 }
@@ -373,21 +404,24 @@ async function handleDoneCommand(supabase: SupabaseService, userId: string, repl
     return;
   }
 
-  // Carousel bubbles are capped at 12 by LINE; we batch in groups of 10 (the
-  // same "one round" size). LINE caps a single reply call at 5 messages —
+  // Each batch of 10 becomes ONE vertical-list bubble (not a 10-bubble
+  // carousel) — no longer bound by LINE's 12-bubble carousel limit, but kept
+  // at the same "one round" batch size for now per instructions (10-20 is
+  // fine; revisit only if a single bubble this size turns out too large in
+  // practice). LINE still caps a single reply call at 5 messages total —
   // one of those slots is used by the leading "已登錄您的商品" confirmation
-  // text below, so up to 4 carousel batches (40 photos) go out per "好了".
-  // Anything beyond that stays queued (carousel_sent_at still null) for
-  // whatever "好了" comes next; nothing is discarded.
+  // text below, so up to 4 batches (40 photos) go out per "好了". Anything
+  // beyond that stays queued (carousel_sent_at still null) for whatever
+  // "好了" comes next; nothing is discarded.
   const batches = chunk(pendingRows, MAX_PHOTOS_PER_ROUND).slice(0, maxBatches);
 
   const messages: LineReplyMessage[] = [{ type: "text", text: "已登錄您的商品，請確認以下數量：" }];
   for (const batch of batches) {
-    const bubbles = await Promise.all(batch.map((row) => buildOrderBubble(row)));
+    const itemBlocks = await Promise.all(batch.map((row) => buildOrderItemBlock(row)));
     messages.push({
       type: "flex",
       altText: "請確認您的商品數量",
-      contents: { type: "carousel", contents: bubbles },
+      contents: buildOrderListBubble(itemBlocks),
     });
   }
 
@@ -718,22 +752,24 @@ async function handleTextMessage(
     return;
   }
 
-  if (matchesAny(text, DONE_KEYWORDS)) {
+  const keywords = await getLivestreamKeywords();
+
+  if (matchesAny(text, keywords.done)) {
     await handleDoneCommand(supabase, userId, replyToken);
     return;
   }
 
-  if (matchesAny(text, ORDER_TRIGGER_KEYWORDS)) {
+  if (matchesAny(text, keywords.order)) {
     await handleOrderTrigger(supabase, userId, replyToken);
     return;
   }
 
-  if (matchesAny(text, REMITTANCE_TRIGGER_KEYWORDS)) {
+  if (matchesAny(text, keywords.remittance)) {
     await handleRemittanceTrigger(supabase, userId, replyToken);
     return;
   }
 
-  if (matchesAny(text, CANCEL_TRIGGER_KEYWORDS)) {
+  if (matchesAny(text, keywords.cancel)) {
     await handleCancelTrigger(supabase, userId, replyToken);
     return;
   }

@@ -1,0 +1,97 @@
+import { NextRequest, NextResponse } from "next/server";
+import {
+  backendAuthJsonError,
+  getBackendRuntime,
+  isBackendSessionValid,
+  isSameOriginMutation,
+  shouldRequireBackendAuth,
+} from "@/lib/backend-auth";
+import { backendRateLimit } from "@/lib/backend-security";
+import {
+  DEFAULT_LIVESTREAM_KEYWORDS,
+  LIVESTREAM_KEYWORD_GROUPS,
+  findDuplicateKeywords,
+  getLivestreamKeywords,
+  saveLivestreamKeywords,
+  type LivestreamKeywords,
+} from "@/lib/line/livestream-keywords";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+async function guardBackendRequest(request: NextRequest, mutation = false) {
+  if (getBackendRuntime() === "unknown") {
+    return new NextResponse("Not found", {
+      status: 404,
+      headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+    });
+  }
+  if (!shouldRequireBackendAuth()) return null;
+  if (!(await isBackendSessionValid(request))) return backendAuthJsonError();
+  if (mutation && !isSameOriginMutation(request)) return backendAuthJsonError("請從後台頁面操作。", 403);
+  return null;
+}
+
+export async function GET(request: NextRequest) {
+  const guard = await guardBackendRequest(request);
+  if (guard) return guard;
+
+  const rate = await backendRateLimit(request, "backend_community_livestream_keywords_get", 60);
+  if (!rate.ok) {
+    return NextResponse.json(
+      { ok: false, error: "操作太頻繁，請稍後再試。" },
+      { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } },
+    );
+  }
+
+  try {
+    const keywords = await getLivestreamKeywords();
+    return NextResponse.json({ ok: true, keywords, defaults: DEFAULT_LIVESTREAM_KEYWORDS });
+  } catch {
+    return NextResponse.json({ ok: false, error: "關鍵字設定讀取失敗，請稍後再試。" }, { status: 500 });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const guard = await guardBackendRequest(request, true);
+  if (guard) return guard;
+
+  const rate = await backendRateLimit(request, "backend_community_livestream_keywords_save", 20);
+  if (!rate.ok) {
+    return NextResponse.json(
+      { ok: false, error: "操作太頻繁，請稍後再試。" },
+      { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } },
+    );
+  }
+
+  let body: { keywords?: Partial<Record<string, unknown>>; force?: unknown };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ ok: false, error: "請提供正確的設定資料。" }, { status: 400 });
+  }
+
+  const incoming = body.keywords && typeof body.keywords === "object" ? body.keywords : {};
+  const groups: LivestreamKeywords = {
+    order: Array.isArray(incoming.order) ? (incoming.order as string[]) : [],
+    done: Array.isArray(incoming.done) ? (incoming.done as string[]) : [],
+    remittance: Array.isArray(incoming.remittance) ? (incoming.remittance as string[]) : [],
+    cancel: Array.isArray(incoming.cancel) ? (incoming.cancel as string[]) : [],
+  };
+
+  if (LIVESTREAM_KEYWORD_GROUPS.every((group) => !groups[group].length)) {
+    return NextResponse.json({ ok: false, error: "請至少為每一組輸入關鍵字。" }, { status: 400 });
+  }
+
+  const duplicates = findDuplicateKeywords(groups);
+  if (duplicates.length && body.force !== true) {
+    return NextResponse.json({ ok: false, needsConfirm: true, duplicates });
+  }
+
+  try {
+    const saved = await saveLivestreamKeywords(groups);
+    return NextResponse.json({ ok: true, keywords: saved });
+  } catch {
+    return NextResponse.json({ ok: false, error: "關鍵字設定儲存失敗，請稍後再試。" }, { status: 500 });
+  }
+}
