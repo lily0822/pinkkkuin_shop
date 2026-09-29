@@ -22,6 +22,26 @@ A brand-new, fully independent feature: customers order by sending photos of pro
 
 Confirmed via `curl -X POST https://pinkkkuin-staging.vercel.app/api/line/webhook`: returns `401` (not `404`), meaning `isLineWebhookConfigured()` already finds `LINE_CHANNEL_SECRET` and the signature check correctly rejects an unsigned test request — the route itself is live, just untested end-to-end (needs a real signed request from LINE, i.e. step 3 above).
 
+### ⚠️ Rich Menu — do not publish to all friends yet
+
+This is a **real** LINE Official Account with **1,546 existing friends**. The new "我要下單" Rich Menu must **not** be set as the account's default/全體 menu until testing is done — every one of those friends would immediately see and be able to trigger the new ordering flow.
+
+- Create the Rich Menu (image + tappable areas + the "我要下單" action) via the LINE console or the Rich Menu API as usual — creating it does **not** by itself show it to anyone.
+- **Do not** call `POST /v2/bot/user/all/richmenu/{richMenuId}` (set-as-default-for-all) and **do not** flip the console's "Set as default rich menu" toggle while testing.
+- Instead, link it to **one test LINE user id at a time** via `linkRichMenuToUser`:
+  ```
+  POST https://api.line.me/v2/bot/user/{testUserId}/richmenu/{richMenuId}
+  Authorization: Bearer <LINE_CHANNEL_ACCESS_TOKEN>
+  ```
+  (no request body). Only that one user id then sees the new menu; everyone else keeps whatever menu (or none) they already had.
+- To remove it from a test user afterward: `DELETE https://api.line.me/v2/bot/user/{testUserId}/richmenu` (same auth header).
+- A ready-to-use helper script was added for this: `scripts/line-link-rich-menu-to-user.js` — reads `LINE_CHANNEL_ACCESS_TOKEN` from `.env`/`.env.local`/the environment (same token `src/lib/line/client.ts` already uses).
+  ```
+  node scripts/line-link-rich-menu-to-user.js <richMenuId> <testLineUserId>
+  node scripts/line-link-rich-menu-to-user.js --unlink <testLineUserId>
+  ```
+- Only switch the Rich Menu to "set as default for all" once the full flow (binding → photo upload → carousel → quantity → backend view → push confirmation) has been manually verified end-to-end using this test-user-only link.
+
 ### Blocked: migrations not yet applied
 
 - `supabase/migrations/202609290001_community_livestream_orders.sql` — creates `community_livestream_orders` (the single table that's both the bot's "待確認佇列" and the final admin-visible order list — see 功能三 below for why there's no separate queue table) and `community_line_bot_states` (tiny per-`line_user_id` conversation-state table: `awaiting_nickname` bool + `awaiting_quantity_for_order_id` uuid — deliberately just this, not a full conversation-management system, per instructions). **Not yet run against any database.**
@@ -75,6 +95,19 @@ Confirmed via `curl -X POST https://pinkkkuin-staging.vercel.app/api/line/webhoo
 - No changes to `community_orders`/`community_order_items`/the 記事本 admin UI/API.
 - No changes to the existing binding-review page or its API (`社群名單` tab, `/api/backend/community/members`) — 功能一 only ever writes the same columns that page already reads.
 - No "ordering session active" state machine beyond the two booleans in `community_line_bot_states` — any image from a bound+approved user is treated as an order photo at any time, which was a deliberate simplification per the "不用做複雜的對話管理系統" instruction.
+
+### Production go-live checklist (not done — Staging and Production are separate)
+
+None of this has been done. This feature currently only exists on Staging. Before pointing the real LINE Official Account's webhook at Production, all four of these are required:
+
+1. **Apply both migrations to Production separately.** Production has its own Supabase project/database — applying a migration on Staging's SQL Editor does **not** touch Production. Both must be run manually in the **Production** Supabase SQL Editor:
+   - `supabase/migrations/202609290001_community_livestream_orders.sql`
+   - `supabase/migrations/202609290002_community_livestream_photos_storage.sql`
+2. **Set env vars on Vercel's Production environment specifically**, not just Preview/Staging:
+   - `ANTHROPIC_API_KEY` — confirmed not set anywhere yet (checked via `vercel env ls`); must be added to Production.
+   - `LINE_CHANNEL_SECRET` — confirmed already set on **Preview**; explicitly re-check (`vercel env ls`) that it is also set on **Production** before relying on it there — a Preview-only env var does not carry over.
+3. **Only switch the LINE Developers console's webhook URL from Staging to Production once testing is done** — `https://pinkkkuin-staging.vercel.app/api/line/webhook` during testing, then `https://pinkkkuin.vercel.app/api/line/webhook` (or whatever the real Production domain is) for go-live. The console holds exactly one webhook URL for the channel at a time, so it's always pointed at either Staging or Production, never both — flipping it is the actual go-live moment for this feature.
+4. **Staging data does not migrate to Production.** Every binding/order/photo created while the webhook points at Staging (all manual testing, including the Rich Menu test-user flow above) lives only in the Staging database/bucket. When the webhook is switched to Production, Production starts completely empty for this feature — no bindings, no orders, no photos carry over automatically.
 
 ## Community LINE notifications (v1 — manual admin batch send)
 
