@@ -19,6 +19,33 @@ const nextConfig: NextConfig = {
   },
   outputFileTracingIncludes: {
     "/backend": [".backend-product-publish/lily-backend.html"],
+    // tesseract.js spawns its worker via `new Worker(path.join(__dirname,
+    // ...))` (src/worker/node/spawnWorker.js) — that file path is only ever
+    // an opaque runtime string, never a `require`/`import`, so @vercel/nft's
+    // static trace (which only follows import/require/fs usage) never
+    // visits worker-script/node/index.js or anything it needs. Everything
+    // that file (running in its own separate worker thread, with its own
+    // independent module resolution) requires has to be force-included here
+    // instead: tesseract.js's own worker-script + tesseract.js-core (the
+    // actual WASM binaries, chosen at runtime by SIMD feature detection —
+    // its LSTM/OEM.DEFAULT variants are the only ones this codebase ever
+    // requests) + the smaller runtime deps that worker-script/node/index.js
+    // and getCore.js pull in directly. Confirmed the exact missing file via
+    // a Vercel Production crash: "Cannot find module '.../tesseract.js/src/
+    // worker-script/node/index.js'", exit status 129 — not reproducible by
+    // any local check (tsc/eslint/build/direct `node` run), only by an
+    // actual Vercel deploy.
+    "/api/line/webhook": [
+      "./node_modules/tesseract.js/**/*",
+      "./node_modules/tesseract.js-core/**/*",
+      "./node_modules/bmp-js/**/*",
+      "./node_modules/idb-keyval/**/*",
+      "./node_modules/is-url/**/*",
+      "./node_modules/node-fetch/**/*",
+      "./node_modules/wasm-feature-detect/**/*",
+      "./node_modules/zlibjs/**/*",
+      "./node_modules/regenerator-runtime/**/*",
+    ],
   },
 };
 

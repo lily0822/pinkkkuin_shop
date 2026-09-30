@@ -10,6 +10,7 @@ import {
   type LineReplyMessage,
 } from "./client";
 import { recognizeProductPhoto } from "./vision";
+import { recognizePriceFromPhoto } from "./price-ocr";
 import { getLivestreamBankInfo } from "./livestream-bank-info";
 import { getLivestreamKeywords } from "./livestream-keywords";
 import {
@@ -316,18 +317,26 @@ async function handleImageMessage(
   const recognized = await recognizeProductPhoto(content.buffer, content.contentType);
   const productName = recognized?.productName || (await generateFallbackProductName(supabase, userId, binding));
 
-  // 免費白框 OCR 備援（price-ocr.ts::recognizePriceFromPhoto）暫時停用——
-  // Vercel 正式環境的實際部署會在呼叫 tesseract.js 時整個 process 崩潰
-  // （"Cannot find module '.../tesseract.js/src/worker-script/node/
-  // index.js'"，exit status 129），本機 tsc/eslint/build/直接跑 node
-  // 完全測不出來，只有真正部署到 Vercel 才會出現。這不是「辨識失敗」，
-  // 是整個 handleImageMessage 崩潰、圖片完全沒寫進資料庫，比舊版的
-  // unit_price 一律 null 還嚴重，所以直接拿掉呼叫點恢復到這個免費 OCR
-  // 功能上線前的行為（Anthropic 沒設金鑰時 unit_price 一律 null），
-  // 不要冒著仍不確定的崩潰行為用 try/catch 包起來。打包問題本身留到
-  // Staging 慢慢修好、且在真正的 Vercel 部署上驗證過之後，才重新接回
-  // 這個呼叫。
-  const unitPrice = recognized?.price ?? null;
+  // Anthropic 視覺辨識沒抓到價格（目前甚至完全沒設定 API 金鑰，一律回傳
+  // price:null）時，用免費的白框 OCR 備援試一次（見 price-ocr.ts）。一樣
+  // 遵守「不確定就跳過」——OCR 也認不出數字就維持 null，不會拿一個猜測值
+  // 蓋掉「沒辦法辨識」這個誠實的狀態。
+  //
+  // 這支呼叫先前在 Production 造成過一次真正的事故：tesseract.js 的
+  // worker thread 用 new Worker(path.join(__dirname, ...)) 動態組路徑
+  // 載入 worker-script/node/index.js，這條路徑對 @vercel/nft 的靜態
+  // 追蹤（只看 import/require/fs）完全不可見，導致那個檔案（跟它需要的
+  // 一切）沒被打包進部署，一呼叫就整個 process 崩潰（exit 129）——不是
+  // 辨識失敗，是連 handleImageMessage 都死掉，照片完全沒寫進資料庫。
+  // 本機 tsc/eslint/build 全部測不出來，只有真正的 Vercel 部署會炸。
+  // 修法在 next.config.ts 的 outputFileTracingIncludes 裡，把
+  // worker thread 需要的檔案強制打包進 /api/line/webhook 這個路由——
+  // 這支呼叫要重新接回來，前提是那個修法已經在真正的 Vercel 部署上
+  // （不是只有本機）驗證過不會再崩潰。
+  let unitPrice = recognized?.price ?? null;
+  if (unitPrice == null) {
+    unitPrice = await recognizePriceFromPhoto(content.buffer);
+  }
 
   const { error: insertError } = await supabase.from("community_livestream_orders").insert({
     line_user_id: userId,
