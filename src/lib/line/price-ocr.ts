@@ -1,7 +1,7 @@
 import "server-only";
 
 import sharp from "sharp";
-import { createWorker, type Worker as TesseractWorker } from "tesseract.js";
+import { createWorker, PSM, type Worker as TesseractWorker } from "tesseract.js";
 
 // 免費、離線可用的白框價格 OCR 備援——當 recognizeProductPhoto（Anthropic
 // 視覺辨識，付費，目前也還沒設定金鑰）沒抓到價格時，用這支頂上去。
@@ -32,6 +32,15 @@ const MIN_WHITE_BOX_AREA_RATIO = 0.01; // 候選白色區塊至少要佔縮圖�
 const CROP_PADDING_RATIO = 0.08; // 裁切時白框寬高各留 8% 的邊界，避免切到貼紙邊緣的文字
 const OCR_UPSCALE_TARGET_WIDTH = 400; // 裁切後的小圖如果比這個窄，放大到這個寬度再做 OCR——文字太小 Tesseract 容易認錯
 const MIN_CROP_DIMENSION = 8; // 裁切結果任一邊小於這個像素數，視為定位失敗
+// PSM 11 = SPARSE_TEXT（把圖片當成零散、不成頁面結構的文字區塊來找，
+// 不依賴完整版面分析）。實測發現 Tesseract 預設的 PSM（AUTO）對某些
+// 乾淨到不能再乾淨的裁切小圖（就一組孤立的白底黑字數字）反而完全找不到
+// 任何文字、回傳空字串——同一張圖換成 PSM 11 就能正常讀出來。只在預設
+// PSM 完全沒讀到任何文字時才重試 PSM 11，不是每次都用它：PSM 11 對
+// 「一塊裁切區域裡真的混雜多種內容」的圖（例如白框貼紙緊貼在一起、裁到
+// 部分背景雜訊）反而容易把內容切得更碎、誤讀出看起來乾淨但其實是錯的
+// 數字，維持預設 PSM 的結果對這種情況反而比較保守安全。
+const FALLBACK_PSM_SPARSE_TEXT = PSM.SPARSE_TEXT;
 
 type BoundingBox = { minX: number; minY: number; maxX: number; maxY: number; area: number };
 
@@ -241,12 +250,18 @@ function extractLineTexts(blocks: OcrBlock[] | null | undefined): string[] {
 }
 
 // 這一行去除空白後是否為「純數字（可含千分位逗號）」——含中文字/英文
-// 字母/其他符號的行一律排除，不列入候選。
+// 字母的行一律排除，不列入候選。實測真實照片發現：白框貼紙邊緣常帶
+// 圓角，裁切時的留白padding 會帶到一點點背景雜訊，Tesseract 偶爾把它
+// 誤讀成一個孤立的符號（例如「280 °」「270 |」這種數字後面多一個跟
+// 字母無關的雜訊符號）——這裡先把「不是字母、不是數字、不是逗號」的
+// 字元都濾掉，再檢查剩下的是不是純數字；只要行裡還留有任何一個字母
+// （不論中英文），一律視為非純數字排除，這個判斷本身沒有放寬。
 function extractNumericLineValue(rawLine: string): number | null {
   const trimmed = rawLine.trim();
   if (!trimmed) return null;
-  const withoutCommas = trimmed.replace(/,/g, "");
-  if (!/^\d+$/.test(withoutCommas)) return null;
+  const withoutNoiseSymbols = trimmed.replace(/[^\p{L}\p{N},]/gu, "");
+  const withoutCommas = withoutNoiseSymbols.replace(/,/g, "");
+  if (!withoutCommas || !/^\d+$/.test(withoutCommas)) return null;
   const value = Number(withoutCommas);
   return Number.isFinite(value) && value > 0 ? value : null;
 }
@@ -271,7 +286,16 @@ export async function recognizePriceFromPhoto(buffer: Buffer): Promise<number | 
       // 串），要逐行判斷就得明確要求 blocks，才會拿到 blocks -> paragraphs
       // -> lines 這個結構。
       const { data } = await worker.recognize(crop, {}, { blocks: true });
-      const lines = extractLineTexts(data.blocks as OcrBlock[] | null);
+      let lines = extractLineTexts(data.blocks as OcrBlock[] | null);
+      // 預設 PSM 完全沒讀到任何文字時，同一張裁切圖換 PSM 11 重試一次
+      // （見上面 FALLBACK_PSM_SPARSE_TEXT 的說明）；讀完後把 PSM 改回
+      // 預設值，不影響下一張裁切圖。
+      if (!lines.length && !data.text.trim()) {
+        await worker.setParameters({ tessedit_pageseg_mode: FALLBACK_PSM_SPARSE_TEXT });
+        const retry = await worker.recognize(crop, {}, { blocks: true });
+        await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO });
+        lines = extractLineTexts(retry.data.blocks as OcrBlock[] | null);
+      }
       for (const line of lines) {
         const value = extractNumericLineValue(line);
         if (value !== null) candidates.push(value);
