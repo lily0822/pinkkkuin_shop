@@ -12,6 +12,12 @@ import {
 import { recognizeProductPhoto } from "./vision";
 import { getLivestreamBankInfo } from "./livestream-bank-info";
 import { getLivestreamKeywords } from "./livestream-keywords";
+import {
+  getLivestreamReplyTemplates,
+  renderLivestreamReplyTemplate,
+  type LivestreamReplyTemplateKey,
+  type LivestreamReplyTemplates,
+} from "./livestream-reply-templates";
 
 // 功能一 (自助綁定) + 功能二 (LINE 圖片下單對話流程). Everything here talks to
 // community_line_bindings (read + insert/update of the self-service columns
@@ -75,6 +81,20 @@ function chunk<T>(items: T[], size: number): T[][] {
 async function reply(replyToken: string | undefined, text: string) {
   if (!replyToken) return;
   await sendLineReplyText(replyToken, text);
+}
+
+// 25 則客人會實際看到的「主要流程」文案改成後台可編輯（見
+// livestream-reply-templates.ts）；系統內部的錯誤/邊界文案不在這套機制
+// 裡，繼續直接呼叫上面的 reply() 寫死文字。templates 一律由呼叫鏈最上層
+// （handleTextMessage/handleImageMessage/handlePostback，三個 handleLineEvent
+// 會分派到的入口）各自查一次、往下傳，不在每個訊息各自查一次資料庫。
+async function replyTemplate(
+  replyToken: string | undefined,
+  templates: LivestreamReplyTemplates,
+  key: LivestreamReplyTemplateKey,
+  vars?: Record<string, string>,
+) {
+  await reply(replyToken, renderLivestreamReplyTemplate(templates[key], vars));
 }
 
 export type SupabaseService = ReturnType<typeof createSupabaseServiceClient>;
@@ -148,9 +168,14 @@ async function setBotState(supabase: SupabaseService, userId: string, patch: Par
 // 功能一：自助綁定
 // ---------------------------------------------------------------------------
 
-async function startNicknameRequest(supabase: SupabaseService, userId: string, replyToken: string | undefined) {
+async function startNicknameRequest(
+  supabase: SupabaseService,
+  userId: string,
+  replyToken: string | undefined,
+  templates: LivestreamReplyTemplates,
+) {
   await setBotState(supabase, userId, { awaiting_nickname: true });
-  await reply(replyToken, "請輸入您的社群暱稱，審核通過後就能使用下單功能囉！");
+  await replyTemplate(replyToken, templates, "nickname_ask");
 }
 
 async function handleNicknameSubmission(
@@ -158,6 +183,7 @@ async function handleNicknameSubmission(
   userId: string,
   replyToken: string | undefined,
   rawText: string,
+  templates: LivestreamReplyTemplates,
 ) {
   const nickname = rawText.trim().slice(0, 120);
   if (!nickname) {
@@ -177,7 +203,7 @@ async function handleNicknameSubmission(
     .limit(1)
     .maybeSingle();
   if (conflict) {
-    await reply(replyToken, `暱稱「${nickname}」已經被其他人綁定了，請換一個暱稱再傳一次。`);
+    await replyTemplate(replyToken, templates, "nickname_taken", { 暱稱: nickname });
     return; // stays in awaiting_nickname so the very next message can retry
   }
 
@@ -197,31 +223,38 @@ async function handleNicknameSubmission(
     await reply(replyToken, "申請送出失敗，請稍後再試一次。");
     return;
   }
-  await reply(replyToken, `已收到您的申請暱稱「${nickname}」，審核通過後即可使用下單功能，請耐心等候！如需修改暱稱請輸入「修改暱稱」。`);
+  await replyTemplate(replyToken, templates, "nickname_submitted", { 暱稱: nickname });
 }
 
-async function handleOrderTrigger(supabase: SupabaseService, userId: string, replyToken: string | undefined) {
+async function handleOrderTrigger(
+  supabase: SupabaseService,
+  userId: string,
+  replyToken: string | undefined,
+  templates: LivestreamReplyTemplates,
+) {
   const binding = await getBinding(supabase, userId);
   if (isApprovedBinding(binding)) {
-    await reply(
-      replyToken,
-      "已開啟下單功能，請上傳您要的商品圖片（單次最多 10 張），傳完後請回覆「好了」，我就會列出所有收到的商品讓您填寫數量！",
-    );
+    await replyTemplate(replyToken, templates, "order_welcome");
     return;
   }
   if (binding?.review_status === "pending") {
-    await reply(replyToken, `您申請的暱稱「${binding.requested_nickname || ""}」正在審核中，審核通過後才能使用下單功能，請耐心等候。`);
+    await replyTemplate(replyToken, templates, "nickname_pending", { 暱稱: binding.requested_nickname || "" });
     return;
   }
-  await startNicknameRequest(supabase, userId, replyToken);
+  await startNicknameRequest(supabase, userId, replyToken, templates);
 }
 
 // 修改暱稱：跟 handleOrderTrigger 不同，不管目前是完全沒申請過、pending
 // 審核中、還是已經 approved，一律直接進入「請輸入您的社群暱稱」流程——
 // pending 狀態的人原本用 ORDER_TRIGGER 會卡在「審核中請耐心等候」，這裡
 // 刻意不做那個檢查，讓客人隨時都能改成想要的暱稱重新送審。
-async function handleEditNicknameTrigger(supabase: SupabaseService, userId: string, replyToken: string | undefined) {
-  await startNicknameRequest(supabase, userId, replyToken);
+async function handleEditNicknameTrigger(
+  supabase: SupabaseService,
+  userId: string,
+  replyToken: string | undefined,
+  templates: LivestreamReplyTemplates,
+) {
+  await startNicknameRequest(supabase, userId, replyToken, templates);
 }
 
 // ---------------------------------------------------------------------------
@@ -256,9 +289,10 @@ async function handleImageMessage(
   replyToken: string | undefined,
   messageId: string,
 ) {
+  const templates = await getLivestreamReplyTemplates();
   const binding = await getBinding(supabase, userId);
   if (!isApprovedBinding(binding)) {
-    await reply(replyToken, "請先完成社群暱稱綁定並通過審核後，才能使用圖片下單功能喔。");
+    await replyTemplate(replyToken, templates, "not_bound_yet", { 功能名稱: "下單" });
     return;
   }
   if (!messageId) return;
@@ -304,7 +338,7 @@ async function handleImageMessage(
   // since without it the customer would have no idea why a later photo
   // didn't make it into this round's carousel.
   if (pendingBefore >= MAX_PHOTOS_PER_ROUND) {
-    await reply(replyToken, `這輪已收到 ${MAX_PHOTOS_PER_ROUND} 張，請先回覆「好了」，我先幫您整理目前收到的商品！`);
+    await replyTemplate(replyToken, templates, "photo_over_cap");
   }
 }
 
@@ -359,24 +393,28 @@ async function buildOrderItemBlock(row: PendingOrderRow) {
           // 第一次送出時看得出來，客人之後點別的數量，這則舊訊息本身
           // 不會跟著變色（LINE 平台限制，Flex 訊息發送後內容是靜態的），
           // 但文字確認訊息照常會回覆新數量，這不算 bug。
+          // 按鈕標籤改成純數字（1/2/3/4/5+）——5 顆按鈕擠在同一排時，
+          // 原本「1件/2件/3件/4件/5件以上」在手機版 LINE 寬度不夠會被
+          // 截斷顯示成「...」；postback 的 data/displayText 維持完整
+          // 文字不變，只改按鈕上顯示的 label。
           {
             type: "button",
             style: "primary",
             height: "sm",
             color: "#ec4899",
-            action: { type: "postback", label: "1件", data: `action=set_qty&order_id=${row.id}&qty=1`, displayText: "設定為 1 件" },
+            action: { type: "postback", label: "1", data: `action=set_qty&order_id=${row.id}&qty=1`, displayText: "設定為 1 件" },
           },
           ...[2, 3, 4].map((qty) => ({
             type: "button",
             style: "secondary",
             height: "sm",
-            action: { type: "postback", label: `${qty}件`, data: `action=set_qty&order_id=${row.id}&qty=${qty}`, displayText: `設定為 ${qty} 件` },
+            action: { type: "postback", label: `${qty}`, data: `action=set_qty&order_id=${row.id}&qty=${qty}`, displayText: `設定為 ${qty} 件` },
           })),
           {
             type: "button",
             style: "secondary",
             height: "sm",
-            action: { type: "postback", label: "5件以上", data: `action=ask_qty&order_id=${row.id}`, displayText: "5 件以上" },
+            action: { type: "postback", label: "5+", data: `action=ask_qty&order_id=${row.id}`, displayText: "5 件以上" },
           },
         ],
       },
@@ -401,10 +439,15 @@ function buildOrderListBubble(itemBlocks: object[]) {
   };
 }
 
-async function handleDoneCommand(supabase: SupabaseService, userId: string, replyToken: string | undefined) {
+async function handleDoneCommand(
+  supabase: SupabaseService,
+  userId: string,
+  replyToken: string | undefined,
+  templates: LivestreamReplyTemplates,
+) {
   const binding = await getBinding(supabase, userId);
   if (!isApprovedBinding(binding)) {
-    await reply(replyToken, "請先完成社群暱稱綁定並通過審核後，才能使用下單功能喔。");
+    await replyTemplate(replyToken, templates, "not_bound_yet", { 功能名稱: "下單" });
     return;
   }
 
@@ -419,7 +462,7 @@ async function handleDoneCommand(supabase: SupabaseService, userId: string, repl
 
   const pendingRows = (data as PendingOrderRow[] | null) || [];
   if (error || !pendingRows.length) {
-    await reply(replyToken, "目前沒有待確認的商品圖片喔，請先上傳圖片再回覆「好了」。");
+    await replyTemplate(replyToken, templates, "done_empty");
     return;
   }
 
@@ -435,7 +478,7 @@ async function handleDoneCommand(supabase: SupabaseService, userId: string, repl
   const batches = chunk(pendingRows, MAX_PHOTOS_PER_ROUND).slice(0, maxBatches);
 
   const messages: LineReplyMessage[] = [
-    { type: "text", text: "已登錄您的商品，請確認以下數量，如果都沒問題請回覆「數量正確」：" },
+    { type: "text", text: renderLivestreamReplyTemplate(templates.done_intro) },
   ];
   for (const batch of batches) {
     const itemBlocks = await Promise.all(batch.map((row) => buildOrderItemBlock(row)));
@@ -461,6 +504,7 @@ async function applyQuantityUpdate(
   orderId: string,
   quantity: number,
   replyToken: string | undefined,
+  templates: LivestreamReplyTemplates,
 ) {
   // LINE 按鈕發出去後沒辦法從視覺上變成不能點——這裡做的是「功能上鎖住」：
   // 按鈕還在、還點得下去，但點了不會真的更新。鎖定後任何數量調整入口
@@ -472,7 +516,7 @@ async function applyQuantityUpdate(
     .eq("line_user_id", userId)
     .maybeSingle();
   if (existing?.quantity_locked_at) {
-    await reply(replyToken, "此訂單數量已確認，如需修改請聯繫客服。");
+    await replyTemplate(replyToken, templates, "quantity_locked");
     return;
   }
 
@@ -489,7 +533,7 @@ async function applyQuantityUpdate(
   }
   // product_name is never null for LINE-sourced rows anymore (see
   // generateFallbackProductName above), so no "這項商品" fallback needed.
-  await reply(replyToken, `已將「${data.product_name}」數量更新為 ${quantity} 件。`);
+  await replyTemplate(replyToken, templates, "quantity_updated", { 商品名稱: data.product_name, 數量: String(quantity) });
 }
 
 // 客人回覆「數量正確」(可後台設定的 quantity_confirm 關鍵字組) 後，把
@@ -497,7 +541,12 @@ async function applyQuantityUpdate(
 // applyQuantityUpdate 會擋下任何後續的數量調整。只鎖 carousel_sent_at
 // 不是 null（已經列出過）且 quantity_locked_at 還是 null（還沒鎖過）的
 // 訂單，所以下一輪新照片不受這次鎖定影響。
-async function handleQuantityConfirmTrigger(supabase: SupabaseService, userId: string, replyToken: string | undefined) {
+async function handleQuantityConfirmTrigger(
+  supabase: SupabaseService,
+  userId: string,
+  replyToken: string | undefined,
+  templates: LivestreamReplyTemplates,
+) {
   const { data, error } = await supabase
     .from("community_livestream_orders")
     .select("id")
@@ -512,7 +561,7 @@ async function handleQuantityConfirmTrigger(supabase: SupabaseService, userId: s
 
   const rows = (data as { id: string }[] | null) || [];
   if (!rows.length) {
-    await reply(replyToken, "目前沒有待確認的商品數量喔。");
+    await replyTemplate(replyToken, templates, "quantity_confirm_empty");
     return;
   }
 
@@ -528,7 +577,7 @@ async function handleQuantityConfirmTrigger(supabase: SupabaseService, userId: s
     return;
   }
 
-  await reply(replyToken, "以上已經記錄囉！");
+  await replyTemplate(replyToken, templates, "quantity_confirmed");
 }
 
 async function handlePostback(
@@ -537,6 +586,7 @@ async function handlePostback(
   replyToken: string | undefined,
   data: string,
 ) {
+  const templates = await getLivestreamReplyTemplates();
   const params = new URLSearchParams(data);
   const action = params.get("action") || "";
   const orderId = params.get("order_id") || "";
@@ -544,16 +594,16 @@ async function handlePostback(
 
   if (action === "set_qty") {
     const qty = Number(params.get("qty") || "0");
-    if (qty > 0) await applyQuantityUpdate(supabase, userId, orderId, Math.round(qty), replyToken);
+    if (qty > 0) await applyQuantityUpdate(supabase, userId, orderId, Math.round(qty), replyToken, templates);
     return;
   }
   if (action === "ask_qty") {
     await setBotState(supabase, userId, { awaiting_quantity_for_order_id: orderId });
-    await reply(replyToken, "請直接輸入您要的數量（例如：6）。");
+    await replyTemplate(replyToken, templates, "quantity_ask_number");
     return;
   }
   if (action === "cancel_order") {
-    await handleCancelOrder(supabase, userId, orderId, replyToken);
+    await handleCancelOrder(supabase, userId, orderId, replyToken, templates);
   }
 }
 
@@ -606,10 +656,15 @@ async function buildCancelBubble(row: CancellableOrderRow) {
   };
 }
 
-async function handleCancelTrigger(supabase: SupabaseService, userId: string, replyToken: string | undefined) {
+async function handleCancelTrigger(
+  supabase: SupabaseService,
+  userId: string,
+  replyToken: string | undefined,
+  templates: LivestreamReplyTemplates,
+) {
   const binding = await getBinding(supabase, userId);
   if (!isApprovedBinding(binding)) {
-    await reply(replyToken, "請先完成社群暱稱綁定並通過審核後，才能使用取消訂單功能喔。");
+    await replyTemplate(replyToken, templates, "not_bound_yet", { 功能名稱: "取消訂單" });
     return;
   }
 
@@ -631,7 +686,7 @@ async function handleCancelTrigger(supabase: SupabaseService, userId: string, re
 
   const cancellable = (data as CancellableOrderRow[] | null) || [];
   if (!cancellable.length) {
-    await reply(replyToken, "目前沒有可以取消的商品喔（已購買或已在匯款流程中的商品無法取消）。");
+    await replyTemplate(replyToken, templates, "cancel_empty");
     return;
   }
 
@@ -647,8 +702,8 @@ async function handleCancelTrigger(supabase: SupabaseService, userId: string, re
 
   const introText =
     noncancellableCount > 0
-      ? `您已購買或已在匯款流程中的 ${noncancellableCount} 項商品不會列在這裡，恕無法取消。以下是可以取消的商品：`
-      : "以下是您目前可以取消的商品：";
+      ? renderLivestreamReplyTemplate(templates.cancel_intro_partial, { 數量: String(noncancellableCount) })
+      : renderLivestreamReplyTemplate(templates.cancel_intro_all);
 
   const batches = chunk(cancellable, MAX_PHOTOS_PER_ROUND).slice(0, MAX_REPLY_MESSAGES - 1);
   const messages: LineReplyMessage[] = [{ type: "text", text: introText }];
@@ -669,6 +724,7 @@ async function handleCancelOrder(
   userId: string,
   orderId: string,
   replyToken: string | undefined,
+  templates: LivestreamReplyTemplates,
 ) {
   const { data: row } = await supabase
     .from("community_livestream_orders")
@@ -681,11 +737,11 @@ async function handleCancelOrder(
     return;
   }
   if (row.purchase_status !== "not_bought") {
-    await reply(replyToken, "這項商品已經購買，無法取消。");
+    await replyTemplate(replyToken, templates, "cancel_blocked_bought");
     return;
   }
   if (row.payment_status !== "unpaid") {
-    await reply(replyToken, "這項商品已在匯款流程中，無法取消。");
+    await replyTemplate(replyToken, templates, "cancel_blocked_paying");
     return;
   }
 
@@ -695,7 +751,7 @@ async function handleCancelOrder(
     await reply(replyToken, "取消失敗，請稍後再試一次。");
     return;
   }
-  await reply(replyToken, `已為您取消「${label}」，感謝您的訂購！`);
+  await replyTemplate(replyToken, templates, "cancel_success", { 商品名稱: label });
 }
 
 // ---------------------------------------------------------------------------
@@ -742,10 +798,15 @@ async function buildRemittanceItemBlock(row: UnpaidOrderRow) {
   return { type: "box", layout: "horizontal", spacing: "md", contents: rowContents };
 }
 
-async function handleRemittanceTrigger(supabase: SupabaseService, userId: string, replyToken: string | undefined) {
+async function handleRemittanceTrigger(
+  supabase: SupabaseService,
+  userId: string,
+  replyToken: string | undefined,
+  templates: LivestreamReplyTemplates,
+) {
   const binding = await getBinding(supabase, userId);
   if (!isApprovedBinding(binding)) {
-    await reply(replyToken, "請先完成社群暱稱綁定並通過審核後，才能使用匯款申報功能喔。");
+    await replyTemplate(replyToken, templates, "not_bound_yet", { 功能名稱: "匯款申報" });
     return;
   }
 
@@ -762,22 +823,18 @@ async function handleRemittanceTrigger(supabase: SupabaseService, userId: string
 
   const rows = (data as UnpaidOrderRow[] | null) || [];
   if (!rows.length) {
-    await reply(replyToken, "目前沒有待匯款的訂單喔。");
+    await replyTemplate(replyToken, templates, "remittance_empty");
     return;
   }
 
   const unresolvedCount = rows.filter((row) => row.unit_price == null).length;
   if (unresolvedCount > 0) {
-    await reply(
-      replyToken,
-      `您有 ${unresolvedCount} 項商品尚未確認金額，請等候客服確認金額後才能匯款，確認後可以再次輸入「我要匯款」。`,
-    );
+    await replyTemplate(replyToken, templates, "remittance_unresolved", { 數量: String(unresolvedCount) });
     return;
   }
 
   const total = rows.reduce((sum, row) => sum + Number(row.total_price || 0), 0);
   const bankInfo = await getLivestreamBankInfo();
-  const bankSection = bankInfo ? `\n\n收款資訊：\n${bankInfo}` : "";
 
   await setBotState(supabase, userId, {
     awaiting_remittance_last5: true,
@@ -790,7 +847,10 @@ async function handleRemittanceTrigger(supabase: SupabaseService, userId: string
   const itemBlocks = await Promise.all(rows.map((row) => buildRemittanceItemBlock(row)));
   const messages: LineReplyMessage[] = [
     { type: "flex", altText: "本次待匯款商品", contents: buildOrderListBubble(itemBlocks) },
-    { type: "text", text: `應付總額：NT$${total}${bankSection}\n\n請回覆您的匯款帳號後 5 碼完成申報（例如：12345）。` },
+    {
+      type: "text",
+      text: renderLivestreamReplyTemplate(templates.remittance_summary, { 總額: String(total), 收款資訊: bankInfo || "" }),
+    },
   ];
   if (replyToken) await sendLineReply(replyToken, messages);
 }
@@ -801,6 +861,7 @@ async function handleRemittanceLast5Submission(
   replyToken: string | undefined,
   rawText: string,
   state: BotState,
+  templates: LivestreamReplyTemplates,
 ) {
   const last5 = parseAccountLast5(rawText);
   if (!last5) {
@@ -831,7 +892,7 @@ async function handleRemittanceLast5Submission(
 
   await supabase.from("community_livestream_orders").update({ payment_status: "confirming" }).in("id", orderIds);
   await setBotState(supabase, userId, { awaiting_remittance_last5: false, remittance_order_ids: null, remittance_amount: null });
-  await reply(replyToken, "已收到您的匯款回報，我們將盡快為您核對，感謝您！");
+  await replyTemplate(replyToken, templates, "remittance_success");
 }
 
 async function handleTextMessage(
@@ -844,58 +905,59 @@ async function handleTextMessage(
   if (!text) return;
 
   const state = await getBotState(supabase, userId);
+  const templates = await getLivestreamReplyTemplates();
 
   if (state.awaiting_nickname) {
-    await handleNicknameSubmission(supabase, userId, replyToken, text);
+    await handleNicknameSubmission(supabase, userId, replyToken, text, templates);
     return;
   }
 
   if (state.awaiting_remittance_last5) {
-    await handleRemittanceLast5Submission(supabase, userId, replyToken, text, state);
+    await handleRemittanceLast5Submission(supabase, userId, replyToken, text, state, templates);
     return;
   }
 
   if (state.awaiting_quantity_for_order_id) {
     const parsed = parsePositiveInteger(text);
     if (parsed === null) {
-      await reply(replyToken, "請輸入一個大於 0 的數字（例如：6）。");
+      await replyTemplate(replyToken, templates, "quantity_invalid_number");
       return;
     }
     const orderId = state.awaiting_quantity_for_order_id;
     await setBotState(supabase, userId, { awaiting_quantity_for_order_id: null });
-    await applyQuantityUpdate(supabase, userId, orderId, parsed, replyToken);
+    await applyQuantityUpdate(supabase, userId, orderId, parsed, replyToken, templates);
     return;
   }
 
   const keywords = await getLivestreamKeywords();
 
   if (matchesAny(text, keywords.done)) {
-    await handleDoneCommand(supabase, userId, replyToken);
+    await handleDoneCommand(supabase, userId, replyToken, templates);
     return;
   }
 
   if (matchesAny(text, keywords.order)) {
-    await handleOrderTrigger(supabase, userId, replyToken);
+    await handleOrderTrigger(supabase, userId, replyToken, templates);
     return;
   }
 
   if (matchesAny(text, keywords.remittance)) {
-    await handleRemittanceTrigger(supabase, userId, replyToken);
+    await handleRemittanceTrigger(supabase, userId, replyToken, templates);
     return;
   }
 
   if (matchesAny(text, keywords.cancel)) {
-    await handleCancelTrigger(supabase, userId, replyToken);
+    await handleCancelTrigger(supabase, userId, replyToken, templates);
     return;
   }
 
   if (matchesAny(text, keywords.quantity_confirm)) {
-    await handleQuantityConfirmTrigger(supabase, userId, replyToken);
+    await handleQuantityConfirmTrigger(supabase, userId, replyToken, templates);
     return;
   }
 
   if (matchesAny(text, keywords.edit_nickname)) {
-    await handleEditNicknameTrigger(supabase, userId, replyToken);
+    await handleEditNicknameTrigger(supabase, userId, replyToken, templates);
     return;
   }
 
