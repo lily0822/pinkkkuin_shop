@@ -8,7 +8,21 @@ const nextConfig: NextConfig = {
   // ERR_DLOPEN_FAILED on Vercel even though the right platform package was
   // installed. Marking it external makes Next leave it as a plain
   // node_modules require instead, which Vercel includes wholesale.
-  serverExternalPackages: ["sharp"],
+  //
+  // tesseract.js needs the same treatment for a different reason: it spawns
+  // its OCR worker via `new Worker(path.join(__dirname, ...))` — Turbopack
+  // rewrites `__dirname` for bundled modules, so that computed path no
+  // longer matches where the file actually lives post-deploy, and the
+  // worker thread's own independent module resolution then can't find it
+  // ("Cannot find module '.../tesseract.js/src/worker-script/node/
+  // index.js'", confirmed via a real Vercel crash log, exit status 129).
+  // Marking it external leaves tesseract.js's own files untouched by the
+  // bundler, so its real on-disk __dirname stays correct. This alone isn't
+  // enough by itself (see naptha/tesseract.js#868) — also needs an explicit
+  // `workerPath` passed to createWorker() (see price-ocr.ts) and the
+  // outputFileTracingIncludes entries below for the actual file bytes
+  // (particularly the .wasm files) to be included in the deployment at all.
+  serverExternalPackages: ["sharp", "tesseract.js", "tesseract.js-core"],
   images: {
     remotePatterns: [
       {

@@ -226,10 +226,28 @@ let workerPromise: Promise<TesseractWorker> | null = null;
 
 async function getTextWorker(): Promise<TesseractWorker> {
   if (!workerPromise) {
-    // cachePath 指到 /tmp——Vercel serverless function 唯一可寫的目錄，
-    // 讓語言資料（eng.traineddata，第一次會從 jsdelivr CDN 下載）在同一個
-    // warm 容器的後續呼叫間可以被快取住，不用每次都重新下載。
-    workerPromise = createWorker("eng", undefined, { cachePath: "/tmp" }).catch((error) => {
+    workerPromise = createWorker("eng", undefined, {
+      // cachePath 指到 /tmp——Vercel serverless function 唯一可寫的目錄，
+      // 讓語言資料（eng.traineddata，第一次會從 jsdelivr CDN 下載）在同一個
+      // warm 容器的後續呼叫間可以被快取住，不用每次都重新下載。
+      cachePath: "/tmp",
+      // 明確指定 workerPath，不要依賴 tesseract.js 自己用
+      // path.join(__dirname, ...) 算出來的預設值——這是這個套件在
+      // Next.js/Vercel 上一個有名的問題（naptha/tesseract.js#868）：worker
+      // thread 的進入點路徑是執行時動態算出來的，不是 require()/import()，
+      // bundler（這裡是 Turbopack）打包時會重寫模組自己的 __dirname，跟
+      // 部署後檔案實際的位置對不上，導致 worker thread 開新的
+      // module resolution 時找不到這個檔案（"Cannot find module .../
+      // tesseract.js/src/worker-script/node/index.js"，exit status
+      // 129）——這個路徑改成明確指定、相對於部署後的工作目錄（Vercel
+      // 的 function 執行時 cwd 就是專案根目錄），搭配 next.config.ts 的
+      // serverExternalPackages（讓 Next 不要去動 tesseract.js 的原始檔，
+      // 維持它自己原本的目錄結構）才會真的解決，光靠其中一個都不夠
+      // （實測 outputFileTracingIncludes 單獨用完全沒用，檔案有被追蹤進
+      // 部署包，但 worker thread 還是找不到——問題不是「檔案沒帶到」，
+      // 是「__dirname 被改寫，算出來的路徑是錯的」）。
+      workerPath: "./node_modules/tesseract.js/src/worker-script/node/index.js",
+    }).catch((error) => {
       workerPromise = null;
       throw error;
     });
