@@ -10,6 +10,7 @@ import {
   type LineReplyMessage,
 } from "./client";
 import { recognizeProductPhoto } from "./vision";
+import { recognizePriceFromPhoto } from "./price-ocr";
 import { getLivestreamBankInfo } from "./livestream-bank-info";
 import { getLivestreamKeywords } from "./livestream-keywords";
 import {
@@ -316,12 +317,21 @@ async function handleImageMessage(
   const recognized = await recognizeProductPhoto(content.buffer, content.contentType);
   const productName = recognized?.productName || (await generateFallbackProductName(supabase, userId, binding));
 
+  // Anthropic 視覺辨識沒抓到價格（目前甚至完全沒設定 API 金鑰，一律回傳
+  // price:null）時，用免費的白框 OCR 備援試一次（見 price-ocr.ts）。一樣
+  // 遵守「不確定就跳過」——OCR 也認不出數字就維持 null，不會拿一個猜測值
+  // 蓋掉「沒辦法辨識」這個誠實的狀態。
+  let unitPrice = recognized?.price ?? null;
+  if (unitPrice == null) {
+    unitPrice = await recognizePriceFromPhoto(content.buffer);
+  }
+
   const { error: insertError } = await supabase.from("community_livestream_orders").insert({
     line_user_id: userId,
     line_display_name: binding.line_display_name,
     nickname: binding.nickname,
     product_name: productName,
-    unit_price: recognized?.price ?? null,
+    unit_price: unitPrice,
     recognized_confidence: recognized?.confidence ?? null,
     quantity: 1,
     photo_storage_path: storagePath,
