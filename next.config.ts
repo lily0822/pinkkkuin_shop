@@ -48,10 +48,13 @@ const nextConfig: NextConfig = {
     // a Vercel Production crash: "Cannot find module '.../tesseract.js/src/
     // worker-script/node/index.js'", exit status 129 — not reproducible by
     // any local check (tsc/eslint/build/direct `node` run), only by an
-    // actual Vercel deploy. Scoped to every route under /api/line/ (not
-    // just /webhook) so the temporary /api/line/debug-ocr-test diagnostic
-    // route (see that file — delete once this fix is confirmed) gets the
-    // same trace fix.
+    // actual Vercel deploy. Combined with serverExternalPackages above and
+    // the explicit workerPath in price-ocr.ts, re-verified against a real
+    // Vercel Staging deployment (a temporary diagnostic route, since
+    // deleted, called recognizePriceFromPhoto directly on the 4 real
+    // reference photos — all 4 matched the expected local results, no
+    // crash in `vercel logs`). Scoped to every route under /api/line/, not
+    // just /webhook, in case a future route there needs it too.
     "/api/line/*": [
       "./node_modules/tesseract.js/**/*",
       "./node_modules/tesseract.js-core/**/*",
