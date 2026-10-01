@@ -13,15 +13,6 @@ const MAX_TEMPLATE_LENGTH = 2000;
 
 export type LivestreamReplyTemplateKey =
   | "order_welcome"
-  | "photo_over_cap"
-  | "done_intro"
-  | "done_empty"
-  | "quantity_updated"
-  | "quantity_ask_number"
-  | "quantity_invalid_number"
-  | "quantity_locked"
-  | "quantity_confirmed"
-  | "quantity_confirm_empty"
   | "cancel_empty"
   | "cancel_intro_all"
   | "cancel_intro_partial"
@@ -29,27 +20,11 @@ export type LivestreamReplyTemplateKey =
   | "cancel_blocked_paying"
   | "cancel_success"
   | "remittance_empty"
-  | "remittance_unresolved"
   | "remittance_summary"
-  | "remittance_success"
-  | "price_dispute_ask_amount"
-  | "price_dispute_invalid_amount"
-  | "price_dispute_received"
-  | "pending_delete_locked"
-  | "pending_delete_success_with_list"
-  | "pending_delete_success_empty";
+  | "remittance_success";
 
 export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
   "order_welcome",
-  "photo_over_cap",
-  "done_intro",
-  "done_empty",
-  "quantity_updated",
-  "quantity_ask_number",
-  "quantity_invalid_number",
-  "quantity_locked",
-  "quantity_confirmed",
-  "quantity_confirm_empty",
   "cancel_empty",
   "cancel_intro_all",
   "cancel_intro_partial",
@@ -57,15 +32,8 @@ export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
   "cancel_blocked_paying",
   "cancel_success",
   "remittance_empty",
-  "remittance_unresolved",
   "remittance_summary",
   "remittance_success",
-  "price_dispute_ask_amount",
-  "price_dispute_invalid_amount",
-  "price_dispute_received",
-  "pending_delete_locked",
-  "pending_delete_success_with_list",
-  "pending_delete_success_empty",
 ];
 
 export type LivestreamReplyTemplates = Record<LivestreamReplyTemplateKey, string>;
@@ -74,16 +42,7 @@ export type LivestreamReplyTemplates = Record<LivestreamReplyTemplateKey, string
 // 也跟改動前完全一樣，不會突然改變。
 export const DEFAULT_LIVESTREAM_REPLY_TEMPLATES: LivestreamReplyTemplates = {
   order_welcome:
-    "已開啟下單功能，請上傳您要的商品圖片（單次最多 10 張），傳完後請回覆「好了」，我就會列出所有收到的商品讓您填寫數量！",
-  photo_over_cap: "這輪已收到 10 張，請先回覆「好了」，我先幫您整理目前收到的商品！",
-  done_intro: "已登錄您的商品，請確認以下數量，如果都沒問題請回覆「數量正確」：",
-  done_empty: "目前沒有待確認的商品圖片喔，請先上傳圖片再回覆「好了」。",
-  quantity_updated: "已將「{{商品名稱}}」數量更新為 {{數量}} 件。",
-  quantity_ask_number: "請直接輸入您要的數量（例如：6）。",
-  quantity_invalid_number: "請輸入一個大於 0 的數字（例如：6）。",
-  quantity_locked: "此訂單數量已確認，如需修改請聯繫客服。",
-  quantity_confirmed: "以上已經記錄囉！",
-  quantity_confirm_empty: "目前沒有待確認的商品數量喔。",
+    "已開啟下單功能，請直接上傳您要的商品圖片即可，不需要再輸入其他文字！提醒您：若超過 10 分鐘沒有上傳新照片，請重新輸入「我要下單」繼續使用。",
   cancel_empty: "目前沒有可以取消的商品喔（已購買或已在匯款流程中的商品無法取消）。",
   cancel_intro_all: "以下是您目前可以取消的商品：",
   cancel_intro_partial: "您已購買或已在匯款流程中的 {{數量}} 項商品不會列在這裡，恕無法取消。以下是可以取消的商品：",
@@ -91,15 +50,8 @@ export const DEFAULT_LIVESTREAM_REPLY_TEMPLATES: LivestreamReplyTemplates = {
   cancel_blocked_paying: "這項商品已在匯款流程中，無法取消。",
   cancel_success: "已為您取消「{{商品名稱}}」，感謝您的訂購！",
   remittance_empty: "目前沒有待匯款的訂單喔。",
-  remittance_unresolved: "您有 {{數量}} 項商品尚未確認金額，請等候客服確認金額後才能匯款，確認後可以再次輸入「我要匯款」。",
-  remittance_summary: "應付總額：NT${{總額}}\n\n收款資訊：\n{{收款資訊}}\n\n請回覆您的匯款帳號後 5 碼完成申報（例如：12345）。",
+  remittance_summary: "以上是您目前下單的所有商品，請完成匯款後回來告知我們您的匯款帳號後 5 碼。\n\n收款資訊：\n{{收款資訊}}",
   remittance_success: "已收到您的匯款回報，我們將盡快為您核對，感謝您！",
-  price_dispute_ask_amount: "請輸入您看到的正確金額（純數字）。",
-  price_dispute_invalid_amount: "請輸入正確的金額（純數字，例如：300）。",
-  price_dispute_received: "已收到您回報的金額，我們會盡快確認，謝謝！",
-  pending_delete_locked: "此訂單已確認，如需刪除請聯繫客服。",
-  pending_delete_success_with_list: "已刪除「{{商品名稱}}」",
-  pending_delete_success_empty: "已刪除「{{商品名稱}}」，目前沒有其他待確認商品了。",
 };
 
 function sanitizeTemplates(input: Partial<Record<LivestreamReplyTemplateKey, unknown>>): LivestreamReplyTemplates {

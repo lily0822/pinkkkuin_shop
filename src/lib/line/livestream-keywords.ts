@@ -2,38 +2,31 @@ import "server-only";
 
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 
-// 五組觸發關鍵字改成後台可設定 (schedule_settings KV，比照
+// 三組觸發關鍵字改成後台可設定 (schedule_settings KV，比照
 // livestream-bank-info.ts 的模式，不開新表)。讀取失敗或還沒設定過時，
 // 一律 fallback 回這裡的預設值——所以即使從未進過後台設定畫面，bot 的
 // 行為也跟改動前完全一樣，不會突然失效。
+//
+// 「完成」(好了) 跟「數量確認」(數量正確) 兩組關鍵字已整組移除——客人端
+// 數量/價格互動整組拿掉後，這兩個觸發詞失去意義，不留殘餘的半套邏輯。
 const SETTINGS_TYPE = "community-livestream-keywords";
 const MAX_KEYWORDS_PER_GROUP = 30;
 const MAX_KEYWORD_LENGTH = 40;
 
-export type LivestreamKeywordGroup = "order" | "done" | "remittance" | "cancel" | "quantity_confirm";
+export type LivestreamKeywordGroup = "order" | "remittance" | "cancel";
 
-export const LIVESTREAM_KEYWORD_GROUPS: LivestreamKeywordGroup[] = [
-  "order",
-  "done",
-  "remittance",
-  "cancel",
-  "quantity_confirm",
-];
+export const LIVESTREAM_KEYWORD_GROUPS: LivestreamKeywordGroup[] = ["order", "remittance", "cancel"];
 
 export const LIVESTREAM_KEYWORD_GROUP_LABELS: Record<LivestreamKeywordGroup, string> = {
   order: "下單觸發詞",
-  done: "完成觸發詞",
   remittance: "匯款觸發詞",
   cancel: "取消觸發詞",
-  quantity_confirm: "數量確認觸發詞",
 };
 
 export const DEFAULT_LIVESTREAM_KEYWORDS: Record<LivestreamKeywordGroup, string[]> = {
   order: ["我要下單", "下單", "開始下單", "開通", "綁定", "加入社群", "註冊"],
-  done: ["好了", "傳完了", "傳完", "完成", "ok", "OK", "好囉"],
   remittance: ["我要匯款", "匯款申報", "回報匯款", "匯款"],
   cancel: ["取消訂單", "我要取消", "取消"],
-  quantity_confirm: ["數量正確"],
 };
 
 export type LivestreamKeywords = Record<LivestreamKeywordGroup, string[]>;
@@ -86,9 +79,8 @@ export async function saveLivestreamKeywords(next: LivestreamKeywords): Promise<
 export type LivestreamKeywordDuplicate = { keyword: string; groups: LivestreamKeywordGroup[] };
 
 // 存檔時偵測「完全重複」的詞出現在不只一組裡——不是強制擋下，只是給
-// 管理員一個提示，因為 bot 判斷觸發詞是照固定順序（好了→下單→匯款→
-// 取消→數量確認）一組一組比對，同一個詞如果放進兩組，後面那組永遠不會
-// 被命中。
+// 管理員一個提示，因為 bot 判斷觸發詞是照固定順序（下單→匯款→取消）
+// 一組一組比對，同一個詞如果放進兩組，後面那組永遠不會被命中。
 export function findDuplicateKeywords(groups: LivestreamKeywords): LivestreamKeywordDuplicate[] {
   const seen = new Map<string, Set<LivestreamKeywordGroup>>();
   LIVESTREAM_KEYWORD_GROUPS.forEach((group) => {

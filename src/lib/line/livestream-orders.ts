@@ -33,6 +33,14 @@ import {
 // LINE OA's monthly push quota). Never sendLineUserText/sendLineUserFlex
 // here — this entire feature is reply-only now (the one push it used to
 // have, on order confirmation, was removed by request — see AI_HANDOFF.md).
+//
+// 客人端數量/價格互動已整組移除（this round）：「好了」觸發詞、數量
+// 確認清單 (Flex + 1/2/3/4/5+ 按鈕)、「價格有誤」回報、清單上的「刪除」
+// 按鈕、「數量正確」鎖定機制全部拿掉——客人只剩「傳照片」「我要匯款」
+// 「取消訂單」三件事，數量/價格交給後台人工處理。背景的
+// recognizeProductPhoto/recognizePriceFromPhoto 自動辨識完全沒有改動，
+// 只是客人不會再看到/調整這些值。匯款/取消訂單清單也都改成純展示
+// （只剩照片＋商品名稱），匯款不再計算/顯示金額。
 
 export type LineWebhookEvent = {
   type?: string;
@@ -47,10 +55,12 @@ const MAX_PHOTOS_PER_ROUND = 10;
 const CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days — long enough for LINE to fetch/cache the bubble image
 const MAX_REPLY_MESSAGES = 5; // LINE reply API hard limit
 
-// 四組觸發關鍵字（下單/完成/匯款/取消）改成後台可設定——實際的預設值/
+// 三組觸發關鍵字（下單/匯款/取消）改成後台可設定——實際的預設值/
 // 讀取/fallback 邏輯都在 src/lib/line/livestream-keywords.ts，這裡不再
 // 寫死陣列，一律透過 getLivestreamKeywords() 在 handleTextMessage 裡
 // 每則訊息抓一次（讀取失敗會自動 fallback 回預設值，不會直接失效）。
+// 「完成」（好了）跟「數量確認」兩組關鍵字已整組移除，見下方「數量/
+// 價格互動整組移除」說明。
 
 function normalizeText(text: string) {
   return text.replace(/\s+/g, "").toLowerCase();
@@ -60,22 +70,6 @@ function matchesAny(text: string, keywords: string[]) {
   const normalized = normalizeText(text);
   if (!normalized) return false;
   return keywords.some((keyword) => normalized.includes(normalizeText(keyword)));
-}
-
-function parsePositiveInteger(text: string) {
-  const trimmed = text.trim();
-  if (!/^\d{1,4}$/.test(trimmed)) return null;
-  const value = Number(trimmed);
-  return value > 0 ? value : null;
-}
-
-// 價格有誤回報用的金額輸入——跟 parsePositiveInteger（數量，上限 4 位數）
-// 分開寫，金額沒道理卡在 9999 以內。
-function parsePriceAmount(text: string) {
-  const trimmed = text.trim();
-  if (!/^\d{1,9}$/.test(trimmed)) return null;
-  const value = Number(trimmed);
-  return value > 0 ? value : null;
 }
 
 function parseAccountLast5(text: string) {
@@ -94,7 +88,7 @@ async function reply(replyToken: string | undefined, text: string) {
   await sendLineReplyText(replyToken, text);
 }
 
-// 25 則客人會實際看到的「主要流程」文案改成後台可編輯（見
+// 10 則客人會實際看到的「主要流程」文案改成後台可編輯（見
 // livestream-reply-templates.ts）；系統內部的錯誤/邊界文案不在這套機制
 // 裡，繼續直接呼叫上面的 reply() 寫死文字。templates 一律由呼叫鏈最上層
 // （handleTextMessage/handleImageMessage/handlePostback，三個 handleLineEvent
@@ -132,34 +126,24 @@ async function getLineDisplayName(userId: string): Promise<string> {
 }
 
 type BotState = {
-  awaiting_quantity_for_order_id: string | null;
   // 功能五 (自助匯款申報)：這個人現在在等他回覆帳號後 5 碼，以及觸發當下
-  // 算好的「這次結算涵蓋哪些訂單、總金額多少」快照，避免客人回覆的當下
-  // 訂單內容/金額跟觸發當下不一致（例如中途被管理員改了單價）。
+  // 記錄的「這次申報涵蓋哪些訂單」快照，避免客人回覆的當下訂單範圍跟
+  // 觸發當下不一致（例如中途有新訂單進來或被取消）。不再計算/快照金額
+  // ——數量/價格互動已整組移除，匯款申報不再算總額。
   awaiting_remittance_last5: boolean;
   remittance_order_ids: string[] | null;
-  remittance_amount: number | null;
-  // 客人回報「價格有誤」：點了某一筆訂單的「價格有誤」按鈕後，bot 在等
-  // 他輸入認為正確的金額——跟 awaiting_quantity_for_order_id 同樣的
-  // 「指向哪一筆訂單」做法。
-  awaiting_price_dispute_for_order_id: string | null;
 };
 
 async function getBotState(supabase: SupabaseService, userId: string): Promise<BotState> {
   const { data } = await supabase
     .from("community_line_bot_states")
-    .select(
-      "awaiting_quantity_for_order_id, awaiting_remittance_last5, remittance_order_ids, remittance_amount, awaiting_price_dispute_for_order_id",
-    )
+    .select("awaiting_remittance_last5, remittance_order_ids")
     .eq("line_user_id", userId)
     .maybeSingle();
   const row = data as BotState | null;
   return {
-    awaiting_quantity_for_order_id: row?.awaiting_quantity_for_order_id || null,
     awaiting_remittance_last5: Boolean(row?.awaiting_remittance_last5),
     remittance_order_ids: Array.isArray(row?.remittance_order_ids) ? row.remittance_order_ids : null,
-    remittance_amount: row?.remittance_amount ?? null,
-    awaiting_price_dispute_for_order_id: row?.awaiting_price_dispute_for_order_id || null,
   };
 }
 
@@ -181,15 +165,6 @@ async function handleOrderTrigger(replyToken: string | undefined, templates: Liv
 // 功能二：LINE 圖片下單
 // ---------------------------------------------------------------------------
 
-async function countPendingPhotos(supabase: SupabaseService, userId: string) {
-  const { count } = await supabase
-    .from("community_livestream_orders")
-    .select("id", { count: "exact", head: true })
-    .eq("line_user_id", userId)
-    .is("carousel_sent_at", null);
-  return count || 0;
-}
-
 // 辨識不出商品名稱時，不存 null、也不顯示「未辨識商品」——自動產生一個
 // 看得懂的名稱：{LINE顯示名稱}-商品{N}。N 是這個 line_user_id 目前總共
 // 有幾筆 community_livestream_orders（不分辨識成功或失敗、跨輪次跨批次
@@ -208,10 +183,7 @@ async function handleImageMessage(
   replyToken: string | undefined,
   messageId: string,
 ) {
-  const templates = await getLivestreamReplyTemplates();
   if (!messageId) return;
-
-  const pendingBefore = await countPendingPhotos(supabase, userId);
 
   const content = await downloadLineMessageContent(messageId);
   if (!content) {
@@ -268,129 +240,16 @@ async function handleImageMessage(
     return;
   }
 
-  // Every other outcome here is intentionally silent — no per-photo "已收到
-  // 第 N 張圖片" ack anymore (per instructions: the upload flow should stay
-  // quiet until "好了"). The over-10-per-round warning is the one exception,
-  // since without it the customer would have no idea why a later photo
-  // didn't make it into this round's carousel.
-  if (pendingBefore >= MAX_PHOTOS_PER_ROUND) {
-    await replyTemplate(replyToken, templates, "photo_over_cap");
-  }
+  // 全程安靜——不回覆任何確認訊息。數量/價格互動已整組移除，客人這端
+  // 不再需要看到或確認任何東西，商品名稱/單價仍照常嘗試自動辨識並存進
+  // 資料庫，由後台管理員檢視/編輯（見上面的 recognizeProductPhoto /
+  // recognizePriceFromPhoto，本輪完全沒有改動這兩支函式本身）。
 }
 
-type PendingOrderRow = {
-  id: string;
-  product_name: string | null;
-  unit_price: number | null;
-  quantity: number;
-  photo_storage_path: string | null;
-};
-
-// 數量確認畫面：從 Carousel（左右滑動的卡片）改成單一 Flex bubble、內容
-// 直向堆疊——客人用一般聊天視窗往下捲動瀏覽，不用左右滑動。每個商品的
-// 縮圖/名稱/單價/數量/按鈕邏輯不變，只是排版方向從橫向卡片變成直向清單
-// 裡的一個區塊；每個按鈕一樣各自帶自己的 order_id 做 postback。
-async function buildOrderItemBlock(row: PendingOrderRow) {
-  const imageUrl = row.photo_storage_path
-    ? await createSignedUrl(PHOTO_BUCKET, row.photo_storage_path, CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS)
-    : null;
-  // 單價未知時整段不提價格，不再顯示「價格未辨識」這種字樣——只留商品
-  // 名稱＋目前數量，看起來就是正常商品。
-  const detailText = row.unit_price != null ? `NT$${row.unit_price}　目前數量：${row.quantity}` : `目前數量：${row.quantity}`;
-
-  const rowContents: object[] = [];
-  if (imageUrl) {
-    rowContents.push({ type: "image", url: imageUrl, size: "60px", aspectMode: "cover", aspectRatio: "1:1", flex: 0 });
-  }
-  rowContents.push({
-    type: "box",
-    layout: "vertical",
-    flex: 1,
-    justifyContent: "center",
-    contents: [
-      { type: "text", text: row.product_name || "商品", weight: "bold", wrap: true, size: "sm" },
-      { type: "text", text: detailText, size: "xs", color: "#888888", margin: "sm" },
-    ],
-  });
-
-  return {
-    type: "box",
-    layout: "vertical",
-    spacing: "sm",
-    contents: [
-      { type: "box", layout: "horizontal", spacing: "md", contents: rowContents },
-      {
-        type: "box",
-        layout: "horizontal",
-        spacing: "sm",
-        contents: [
-          // 新建立的訂單 quantity 預設就是 1，所以這顆用跟其他不同的
-          // primary/粉色樣式，視覺上標示「這是目前的數量」——只在訊息
-          // 第一次送出時看得出來，客人之後點別的數量，這則舊訊息本身
-          // 不會跟著變色（LINE 平台限制，Flex 訊息發送後內容是靜態的），
-          // 但文字確認訊息照常會回覆新數量，這不算 bug。
-          // 按鈕標籤改成純數字（1/2/3/4/5+）——5 顆按鈕擠在同一排時，
-          // 原本「1件/2件/3件/4件/5件以上」在手機版 LINE 寬度不夠會被
-          // 截斷顯示成「...」；postback 的 data/displayText 維持完整
-          // 文字不變，只改按鈕上顯示的 label。
-          {
-            type: "button",
-            style: "primary",
-            height: "sm",
-            color: "#ec4899",
-            action: { type: "postback", label: "1", data: `action=set_qty&order_id=${row.id}&qty=1`, displayText: "設定為 1 件" },
-          },
-          ...[2, 3, 4].map((qty) => ({
-            type: "button",
-            style: "secondary",
-            height: "sm",
-            action: { type: "postback", label: `${qty}`, data: `action=set_qty&order_id=${row.id}&qty=${qty}`, displayText: `設定為 ${qty} 件` },
-          })),
-          {
-            type: "button",
-            style: "secondary",
-            height: "sm",
-            action: { type: "postback", label: "5+", data: `action=ask_qty&order_id=${row.id}`, displayText: "5 件以上" },
-          },
-        ],
-      },
-      // 「價格有誤」「刪除」這類非數量的操作按鈕獨立一排，不跟 5 顆數量
-      // 按鈕擠在同一排——塞進同一排會重新變回原本「1件/2件/3件/4件/5件
-      // 以上」太寬被截斷成「...」的老問題（當時就是因為擠不下才把標籤
-      // 縮成純數字），這些是不常用的次要動作，獨立一排也比較不會被誤觸。
-      {
-        type: "box",
-        layout: "horizontal",
-        spacing: "sm",
-        contents: [
-          {
-            type: "button",
-            style: "secondary",
-            height: "sm",
-            action: {
-              type: "postback",
-              label: "價格有誤",
-              data: `action=flag_price_dispute&order_id=${row.id}`,
-              displayText: "回報價格有誤",
-            },
-          },
-          {
-            type: "button",
-            style: "secondary",
-            height: "sm",
-            action: {
-              type: "postback",
-              label: "刪除",
-              data: `action=delete_pending_order&order_id=${row.id}`,
-              displayText: "刪除這項",
-            },
-          },
-        ],
-      },
-    ],
-  };
-}
-
+// 匯款/取消訂單清單共用的 Flex 容器——把已經組好的 item block 陣列接上
+// separator 包成一個直向堆疊的 bubble。原本也被「好了」的數量確認清單
+// 共用，那個功能整組移除後，這支純容器函式本身還有用（匯款清單繼續
+// 靠它），所以留著。
 function buildOrderListBubble(itemBlocks: object[]) {
   const bodyContents: object[] = [];
   itemBlocks.forEach((block, index) => {
@@ -408,141 +267,6 @@ function buildOrderListBubble(itemBlocks: object[]) {
   };
 }
 
-async function handleDoneCommand(
-  supabase: SupabaseService,
-  userId: string,
-  replyToken: string | undefined,
-  templates: LivestreamReplyTemplates,
-) {
-  const maxBatches = MAX_REPLY_MESSAGES - 1; // one reply slot is used by the leading confirmation text below
-  const { data, error } = await supabase
-    .from("community_livestream_orders")
-    .select("id, product_name, unit_price, quantity, photo_storage_path")
-    .eq("line_user_id", userId)
-    .is("carousel_sent_at", null)
-    .order("created_at", { ascending: true })
-    .limit(MAX_PHOTOS_PER_ROUND * maxBatches);
-
-  const pendingRows = (data as PendingOrderRow[] | null) || [];
-  if (error || !pendingRows.length) {
-    await replyTemplate(replyToken, templates, "done_empty");
-    return;
-  }
-
-  // Each batch of 10 becomes ONE vertical-list bubble (not a 10-bubble
-  // carousel) — no longer bound by LINE's 12-bubble carousel limit, but kept
-  // at the same "one round" batch size for now per instructions (10-20 is
-  // fine; revisit only if a single bubble this size turns out too large in
-  // practice). LINE still caps a single reply call at 5 messages total —
-  // one of those slots is used by the leading "已登錄您的商品" confirmation
-  // text below, so up to 4 batches (40 photos) go out per "好了". Anything
-  // beyond that stays queued (carousel_sent_at still null) for whatever
-  // "好了" comes next; nothing is discarded.
-  const batches = chunk(pendingRows, MAX_PHOTOS_PER_ROUND).slice(0, maxBatches);
-
-  const messages: LineReplyMessage[] = [
-    { type: "text", text: renderLivestreamReplyTemplate(templates.done_intro) },
-  ];
-  for (const batch of batches) {
-    const itemBlocks = await Promise.all(batch.map((row) => buildOrderItemBlock(row)));
-    messages.push({
-      type: "flex",
-      altText: "請確認您的商品數量",
-      contents: buildOrderListBubble(itemBlocks),
-    });
-  }
-
-  const sentIds = batches.flat().map((row) => row.id);
-  await supabase
-    .from("community_livestream_orders")
-    .update({ carousel_sent_at: new Date().toISOString() })
-    .in("id", sentIds);
-
-  if (replyToken) await sendLineReply(replyToken, messages);
-}
-
-async function applyQuantityUpdate(
-  supabase: SupabaseService,
-  userId: string,
-  orderId: string,
-  quantity: number,
-  replyToken: string | undefined,
-  templates: LivestreamReplyTemplates,
-) {
-  // LINE 按鈕發出去後沒辦法從視覺上變成不能點——這裡做的是「功能上鎖住」：
-  // 按鈕還在、還點得下去，但點了不會真的更新。鎖定後任何數量調整入口
-  // （2/3/4件按鈕、5件以上輸入數字，都走這支函式）一律擋下。
-  const { data: existing } = await supabase
-    .from("community_livestream_orders")
-    .select("quantity_locked_at")
-    .eq("id", orderId)
-    .eq("line_user_id", userId)
-    .maybeSingle();
-  if (existing?.quantity_locked_at) {
-    await replyTemplate(replyToken, templates, "quantity_locked");
-    return;
-  }
-
-  const { data, error } = await supabase
-    .from("community_livestream_orders")
-    .update({ quantity })
-    .eq("id", orderId)
-    .eq("line_user_id", userId)
-    .select("product_name")
-    .maybeSingle();
-  if (error || !data) {
-    await reply(replyToken, "更新數量失敗，請稍後再試一次。");
-    return;
-  }
-  // product_name is never null for LINE-sourced rows anymore (see
-  // generateFallbackProductName above), so no "這項商品" fallback needed.
-  await replyTemplate(replyToken, templates, "quantity_updated", { 商品名稱: data.product_name, 數量: String(quantity) });
-}
-
-// 客人回覆「數量正確」(可後台設定的 quantity_confirm 關鍵字組) 後，把
-// 這批「已經列在清單裡、還沒鎖定」的訂單一次鎖定——鎖定後
-// applyQuantityUpdate 會擋下任何後續的數量調整。只鎖 carousel_sent_at
-// 不是 null（已經列出過）且 quantity_locked_at 還是 null（還沒鎖過）的
-// 訂單，所以下一輪新照片不受這次鎖定影響。
-async function handleQuantityConfirmTrigger(
-  supabase: SupabaseService,
-  userId: string,
-  replyToken: string | undefined,
-  templates: LivestreamReplyTemplates,
-) {
-  const { data, error } = await supabase
-    .from("community_livestream_orders")
-    .select("id")
-    .eq("line_user_id", userId)
-    .not("carousel_sent_at", "is", null)
-    .is("quantity_locked_at", null);
-
-  if (error) {
-    await reply(replyToken, "查詢訂單失敗，請稍後再試一次。");
-    return;
-  }
-
-  const rows = (data as { id: string }[] | null) || [];
-  if (!rows.length) {
-    await replyTemplate(replyToken, templates, "quantity_confirm_empty");
-    return;
-  }
-
-  const { error: updateError } = await supabase
-    .from("community_livestream_orders")
-    .update({ quantity_locked_at: new Date().toISOString() })
-    .in(
-      "id",
-      rows.map((row) => row.id),
-    );
-  if (updateError) {
-    await reply(replyToken, "確認失敗，請稍後再試一次。");
-    return;
-  }
-
-  await replyTemplate(replyToken, templates, "quantity_confirmed");
-}
-
 async function handlePostback(
   supabase: SupabaseService,
   userId: string,
@@ -555,29 +279,8 @@ async function handlePostback(
   const orderId = params.get("order_id") || "";
   if (!orderId) return;
 
-  if (action === "set_qty") {
-    const qty = Number(params.get("qty") || "0");
-    if (qty > 0) await applyQuantityUpdate(supabase, userId, orderId, Math.round(qty), replyToken, templates);
-    return;
-  }
-  if (action === "ask_qty") {
-    await setBotState(supabase, userId, { awaiting_quantity_for_order_id: orderId });
-    await replyTemplate(replyToken, templates, "quantity_ask_number");
-    return;
-  }
   if (action === "cancel_order") {
     await handleCancelOrder(supabase, userId, orderId, replyToken, templates);
-    return;
-  }
-  if (action === "flag_price_dispute") {
-    // 已鎖定數量（quantity_locked_at 不是 null）的訂單一樣允許標記價格
-    // 有誤——鎖定只鎖數量調整，價格爭議是另一回事，不用額外擋。
-    await setBotState(supabase, userId, { awaiting_price_dispute_for_order_id: orderId });
-    await replyTemplate(replyToken, templates, "price_dispute_ask_amount");
-    return;
-  }
-  if (action === "delete_pending_order") {
-    await handleDeletePendingOrder(supabase, userId, orderId, replyToken, templates);
   }
 }
 
@@ -592,10 +295,11 @@ async function handlePostback(
 type CancellableOrderRow = {
   id: string;
   product_name: string | null;
-  quantity: number;
   photo_storage_path: string | null;
 };
 
+// 純展示 + 選取：只顯示照片＋商品名稱，不再顯示數量（數量/價格互動已
+// 整組移除，取消訂單純粹是「挑一項刪掉」，不需要任何額外資訊）。
 async function buildCancelBubble(row: CancellableOrderRow) {
   const imageUrl = row.photo_storage_path
     ? await createSignedUrl(PHOTO_BUCKET, row.photo_storage_path, CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS)
@@ -609,10 +313,7 @@ async function buildCancelBubble(row: CancellableOrderRow) {
     body: {
       type: "box",
       layout: "vertical",
-      contents: [
-        { type: "text", text: row.product_name || "商品", weight: "bold", wrap: true },
-        { type: "text", text: `數量：${row.quantity}`, size: "sm", color: "#888888", margin: "sm" },
-      ],
+      contents: [{ type: "text", text: row.product_name || "商品", weight: "bold", wrap: true }],
     },
     footer: {
       type: "box",
@@ -640,7 +341,7 @@ async function handleCancelTrigger(
   // 一旦客人回報過匯款（confirming/paid），就不該再讓他把這筆訂單取消掉。
   const { data, error } = await supabase
     .from("community_livestream_orders")
-    .select("id, product_name, quantity, photo_storage_path")
+    .select("id, product_name, photo_storage_path")
     .eq("line_user_id", userId)
     .eq("purchase_status", "not_bought")
     .eq("payment_status", "unpaid")
@@ -733,20 +434,17 @@ async function handleCancelOrder(
 type UnpaidOrderRow = {
   id: string;
   product_name: string | null;
-  unit_price: number | null;
-  quantity: number;
-  total_price: number | null;
   photo_storage_path: string | null;
 };
 
-// 待匯款商品清單：比照 buildOrderItemBlock 的「縮圖＋名稱＋數量/金額」
-// 直向清單做法，純展示用（不需要按鈕），跟 buildOrderListBubble 組成
-// 同一個 Flex bubble。
+// 純展示清單：只顯示照片＋商品名稱，不再顯示單價/數量/小計——數量/
+// 價格互動已整組移除，這裡不再算、也不再顯示任何金額，純粹是「提醒
+// 客人這些是他目前下單的商品」。跟 buildOrderListBubble 組成同一個
+// Flex bubble（純展示，無按鈕）。
 async function buildRemittanceItemBlock(row: UnpaidOrderRow) {
   const imageUrl = row.photo_storage_path
     ? await createSignedUrl(PHOTO_BUCKET, row.photo_storage_path, CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS)
     : null;
-  const detailText = `NT$${row.unit_price}　×${row.quantity}　＝　NT$${Number(row.total_price || 0)}`;
 
   const rowContents: object[] = [];
   if (imageUrl) {
@@ -757,10 +455,7 @@ async function buildRemittanceItemBlock(row: UnpaidOrderRow) {
     layout: "vertical",
     flex: 1,
     justifyContent: "center",
-    contents: [
-      { type: "text", text: row.product_name || "未命名商品", weight: "bold", wrap: true, size: "sm" },
-      { type: "text", text: detailText, size: "xs", color: "#888888", margin: "sm" },
-    ],
+    contents: [{ type: "text", text: row.product_name || "未命名商品", weight: "bold", wrap: true, size: "sm" }],
   });
 
   return { type: "box", layout: "horizontal", spacing: "md", contents: rowContents };
@@ -774,7 +469,7 @@ async function handleRemittanceTrigger(
 ) {
   const { data, error } = await supabase
     .from("community_livestream_orders")
-    .select("id, product_name, unit_price, quantity, total_price, photo_storage_path")
+    .select("id, product_name, photo_storage_path")
     .eq("line_user_id", userId)
     .eq("payment_status", "unpaid");
 
@@ -789,29 +484,24 @@ async function handleRemittanceTrigger(
     return;
   }
 
-  const unresolvedCount = rows.filter((row) => row.unit_price == null).length;
-  if (unresolvedCount > 0) {
-    await replyTemplate(replyToken, templates, "remittance_unresolved", { 數量: String(unresolvedCount) });
-    return;
-  }
-
-  const total = rows.reduce((sum, row) => sum + Number(row.total_price || 0), 0);
+  // 不再檢查/擋下「有商品還沒確認金額」——反正這裡不算金額了，任何
+  // unpaid 訂單（不論單價是否已辨識）都直接列出。
   const bankInfo = await getLivestreamBankInfo();
 
   await setBotState(supabase, userId, {
     awaiting_remittance_last5: true,
     remittance_order_ids: rows.map((row) => row.id),
-    remittance_amount: total,
   });
 
-  // 商品清單改用帶圖片的 Flex（跟功能二的直向清單同一套做法），總額／
-  // 收款資訊／回覆提示接續放在同一次 reply 裡的第二則文字訊息。
+  // 商品清單改用帶圖片的 Flex（跟功能二的直向清單同一套做法），收款
+  // 資訊／回覆提示接續放在同一次 reply 裡的第二則文字訊息——不再提
+  // 應付總額，因為不再計算金額。
   const itemBlocks = await Promise.all(rows.map((row) => buildRemittanceItemBlock(row)));
   const messages: LineReplyMessage[] = [
-    { type: "flex", altText: "本次待匯款商品", contents: buildOrderListBubble(itemBlocks) },
+    { type: "flex", altText: "本次下單商品", contents: buildOrderListBubble(itemBlocks) },
     {
       type: "text",
-      text: renderLivestreamReplyTemplate(templates.remittance_summary, { 總額: String(total), 收款資訊: bankInfo || "" }),
+      text: renderLivestreamReplyTemplate(templates.remittance_summary, { 收款資訊: bankInfo || "" }),
     },
   ];
   if (replyToken) await sendLineReply(replyToken, messages);
@@ -832,20 +522,21 @@ async function handleRemittanceLast5Submission(
   }
 
   const orderIds = state.remittance_order_ids || [];
-  const amount = state.remittance_amount ?? 0;
   if (!orderIds.length) {
-    await setBotState(supabase, userId, { awaiting_remittance_last5: false, remittance_order_ids: null, remittance_amount: null });
+    await setBotState(supabase, userId, { awaiting_remittance_last5: false, remittance_order_ids: null });
     await reply(replyToken, "找不到待申報的匯款資料，請重新輸入「我要匯款」。");
     return;
   }
 
   const displayName = await getLineDisplayName(userId);
+  // 不再傳 amount——數量/價格互動已整組移除，不計算金額。
+  // community_livestream_remittances.amount 這欄已改成可為 null
+  // （202610020001 migration），省略這個欄位會直接寫入 null。
   const { error: insertError } = await supabase.from("community_livestream_remittances").insert({
     line_user_id: userId,
     nickname: displayName,
     order_ids: orderIds,
     account_last5: last5,
-    amount,
   });
   if (insertError) {
     await reply(replyToken, "匯款申報失敗，請稍後再試一次。");
@@ -853,104 +544,8 @@ async function handleRemittanceLast5Submission(
   }
 
   await supabase.from("community_livestream_orders").update({ payment_status: "confirming" }).in("id", orderIds);
-  await setBotState(supabase, userId, { awaiting_remittance_last5: false, remittance_order_ids: null, remittance_amount: null });
+  await setBotState(supabase, userId, { awaiting_remittance_last5: false, remittance_order_ids: null });
   await replyTemplate(replyToken, templates, "remittance_success");
-}
-
-// ---------------------------------------------------------------------------
-// 客人回報「價格有誤」：純粹留一個給管理員參考的標記 + 建議金額，不會
-// 自動覆蓋 unit_price——真正要不要採用、怎麼修正由管理員在後台決定。
-// ---------------------------------------------------------------------------
-
-async function handlePriceDisputeSubmission(
-  supabase: SupabaseService,
-  userId: string,
-  replyToken: string | undefined,
-  rawText: string,
-  orderId: string,
-  templates: LivestreamReplyTemplates,
-) {
-  const amount = parsePriceAmount(rawText);
-  if (amount === null) {
-    await replyTemplate(replyToken, templates, "price_dispute_invalid_amount");
-    return; // stays in awaiting_price_dispute_for_order_id so the next message can retry
-  }
-
-  await supabase
-    .from("community_livestream_orders")
-    .update({ price_disputed_at: new Date().toISOString(), price_dispute_suggested_price: amount })
-    .eq("id", orderId)
-    .eq("line_user_id", userId);
-  await setBotState(supabase, userId, { awaiting_price_dispute_for_order_id: null });
-  await replyTemplate(replyToken, templates, "price_dispute_received");
-}
-
-// ---------------------------------------------------------------------------
-// 客人在數量確認清單裡直接刪除傳錯/多傳的商品——跟後台的刪除按鈕、
-// 功能六的自助取消訂單共用同一支 deleteLivestreamOrder，不另外寫一套。
-// ---------------------------------------------------------------------------
-
-async function handleDeletePendingOrder(
-  supabase: SupabaseService,
-  userId: string,
-  orderId: string,
-  replyToken: string | undefined,
-  templates: LivestreamReplyTemplates,
-) {
-  // 比照自助取消訂單的安全檢查：id 跟 line_user_id 一起查，確保客人不能
-  // 用猜/重放 postback 的方式刪到別人的訂單。
-  const { data: row } = await supabase
-    .from("community_livestream_orders")
-    .select("product_name, quantity_locked_at")
-    .eq("id", orderId)
-    .eq("line_user_id", userId)
-    .maybeSingle();
-  if (!row) {
-    await reply(replyToken, "找不到這筆訂單，可能已經被取消過了。");
-    return;
-  }
-  if (row.quantity_locked_at) {
-    await replyTemplate(replyToken, templates, "pending_delete_locked");
-    return;
-  }
-
-  const label = row.product_name || "這項商品";
-  const ok = await deleteLivestreamOrder(supabase, orderId);
-  if (!ok) {
-    await reply(replyToken, "刪除失敗，請稍後再試一次。");
-    return;
-  }
-
-  // 查剩餘待確認清單：跟「數量正確」查詢剩餘清單同一個條件（已經列過
-  // 清單、還沒鎖定）直接沿用，不是重新發明一套。
-  const { data: remainingData } = await supabase
-    .from("community_livestream_orders")
-    .select("id, product_name, unit_price, quantity, photo_storage_path")
-    .eq("line_user_id", userId)
-    .not("carousel_sent_at", "is", null)
-    .is("quantity_locked_at", null)
-    .order("created_at", { ascending: true });
-
-  const remaining = (remainingData as PendingOrderRow[] | null) || [];
-  if (!remaining.length) {
-    await replyTemplate(replyToken, templates, "pending_delete_success_empty", { 商品名稱: label });
-    return;
-  }
-
-  // 跟 handleDoneCommand 同樣的批次邏輯（每批最多 10 筆、最多
-  // MAX_REPLY_MESSAGES-1 批，因為第一則文字訊息也佔一個 reply 名額）——
-  // 刪除後剩餘清單理論上通常很小，但還是比照同一套上限，避免真的刪到
-  // 剩一堆時超過 LINE 單次 reply 的訊息數量限制。
-  const maxBatches = MAX_REPLY_MESSAGES - 1;
-  const batches = chunk(remaining, MAX_PHOTOS_PER_ROUND).slice(0, maxBatches);
-  const messages: LineReplyMessage[] = [
-    { type: "text", text: renderLivestreamReplyTemplate(templates.pending_delete_success_with_list, { 商品名稱: label }) },
-  ];
-  for (const batch of batches) {
-    const itemBlocks = await Promise.all(batch.map((r) => buildOrderItemBlock(r)));
-    messages.push({ type: "flex", altText: "請確認您的商品數量", contents: buildOrderListBubble(itemBlocks) });
-  }
-  if (replyToken) await sendLineReply(replyToken, messages);
 }
 
 async function handleTextMessage(
@@ -970,29 +565,7 @@ async function handleTextMessage(
     return;
   }
 
-  if (state.awaiting_price_dispute_for_order_id) {
-    await handlePriceDisputeSubmission(supabase, userId, replyToken, text, state.awaiting_price_dispute_for_order_id, templates);
-    return;
-  }
-
-  if (state.awaiting_quantity_for_order_id) {
-    const parsed = parsePositiveInteger(text);
-    if (parsed === null) {
-      await replyTemplate(replyToken, templates, "quantity_invalid_number");
-      return;
-    }
-    const orderId = state.awaiting_quantity_for_order_id;
-    await setBotState(supabase, userId, { awaiting_quantity_for_order_id: null });
-    await applyQuantityUpdate(supabase, userId, orderId, parsed, replyToken, templates);
-    return;
-  }
-
   const keywords = await getLivestreamKeywords();
-
-  if (matchesAny(text, keywords.done)) {
-    await handleDoneCommand(supabase, userId, replyToken, templates);
-    return;
-  }
 
   if (matchesAny(text, keywords.order)) {
     await handleOrderTrigger(replyToken, templates);
@@ -1006,11 +579,6 @@ async function handleTextMessage(
 
   if (matchesAny(text, keywords.cancel)) {
     await handleCancelTrigger(supabase, userId, replyToken, templates);
-    return;
-  }
-
-  if (matchesAny(text, keywords.quantity_confirm)) {
-    await handleQuantityConfirmTrigger(supabase, userId, replyToken, templates);
     return;
   }
 
