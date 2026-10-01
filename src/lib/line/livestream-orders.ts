@@ -456,10 +456,10 @@ async function buildOrderItemBlock(row: PendingOrderRow) {
           },
         ],
       },
-      // 「價格有誤」獨立一排，不跟 5 顆數量按鈕擠在同一排——塞進同一排
-      // 會重新變回原本「1件/2件/3件/4件/5件以上」太寬被截斷成「...」的
-      // 老問題（當時就是因為擠不下才把標籤縮成純數字），這是不常用的
-      // 次要動作，獨立一排也比較不會被誤觸。
+      // 「價格有誤」「刪除」這類非數量的操作按鈕獨立一排，不跟 5 顆數量
+      // 按鈕擠在同一排——塞進同一排會重新變回原本「1件/2件/3件/4件/5件
+      // 以上」太寬被截斷成「...」的老問題（當時就是因為擠不下才把標籤
+      // 縮成純數字），這些是不常用的次要動作，獨立一排也比較不會被誤觸。
       {
         type: "box",
         layout: "horizontal",
@@ -474,6 +474,17 @@ async function buildOrderItemBlock(row: PendingOrderRow) {
               label: "價格有誤",
               data: `action=flag_price_dispute&order_id=${row.id}`,
               displayText: "回報價格有誤",
+            },
+          },
+          {
+            type: "button",
+            style: "secondary",
+            height: "sm",
+            action: {
+              type: "postback",
+              label: "刪除",
+              data: `action=delete_pending_order&order_id=${row.id}`,
+              displayText: "刪除這項",
             },
           },
         ],
@@ -671,6 +682,10 @@ async function handlePostback(
     // 有誤——鎖定只鎖數量調整，價格爭議是另一回事，不用額外擋。
     await setBotState(supabase, userId, { awaiting_price_dispute_for_order_id: orderId });
     await replyTemplate(replyToken, templates, "price_dispute_ask_amount");
+    return;
+  }
+  if (action === "delete_pending_order") {
+    await handleDeletePendingOrder(supabase, userId, orderId, replyToken, templates);
   }
 }
 
@@ -988,6 +1003,74 @@ async function handlePriceDisputeSubmission(
     .eq("line_user_id", userId);
   await setBotState(supabase, userId, { awaiting_price_dispute_for_order_id: null });
   await replyTemplate(replyToken, templates, "price_dispute_received");
+}
+
+// ---------------------------------------------------------------------------
+// 客人在數量確認清單裡直接刪除傳錯/多傳的商品——跟後台的刪除按鈕、
+// 功能六的自助取消訂單共用同一支 deleteLivestreamOrder，不另外寫一套。
+// ---------------------------------------------------------------------------
+
+async function handleDeletePendingOrder(
+  supabase: SupabaseService,
+  userId: string,
+  orderId: string,
+  replyToken: string | undefined,
+  templates: LivestreamReplyTemplates,
+) {
+  // 比照自助取消訂單的安全檢查：id 跟 line_user_id 一起查，確保客人不能
+  // 用猜/重放 postback 的方式刪到別人的訂單。
+  const { data: row } = await supabase
+    .from("community_livestream_orders")
+    .select("product_name, quantity_locked_at")
+    .eq("id", orderId)
+    .eq("line_user_id", userId)
+    .maybeSingle();
+  if (!row) {
+    await reply(replyToken, "找不到這筆訂單，可能已經被取消過了。");
+    return;
+  }
+  if (row.quantity_locked_at) {
+    await replyTemplate(replyToken, templates, "pending_delete_locked");
+    return;
+  }
+
+  const label = row.product_name || "這項商品";
+  const ok = await deleteLivestreamOrder(supabase, orderId);
+  if (!ok) {
+    await reply(replyToken, "刪除失敗，請稍後再試一次。");
+    return;
+  }
+
+  // 查剩餘待確認清單：跟「數量正確」查詢剩餘清單同一個條件（已經列過
+  // 清單、還沒鎖定）直接沿用，不是重新發明一套。
+  const { data: remainingData } = await supabase
+    .from("community_livestream_orders")
+    .select("id, product_name, unit_price, quantity, photo_storage_path")
+    .eq("line_user_id", userId)
+    .not("carousel_sent_at", "is", null)
+    .is("quantity_locked_at", null)
+    .order("created_at", { ascending: true });
+
+  const remaining = (remainingData as PendingOrderRow[] | null) || [];
+  if (!remaining.length) {
+    await replyTemplate(replyToken, templates, "pending_delete_success_empty", { 商品名稱: label });
+    return;
+  }
+
+  // 跟 handleDoneCommand 同樣的批次邏輯（每批最多 10 筆、最多
+  // MAX_REPLY_MESSAGES-1 批，因為第一則文字訊息也佔一個 reply 名額）——
+  // 刪除後剩餘清單理論上通常很小，但還是比照同一套上限，避免真的刪到
+  // 剩一堆時超過 LINE 單次 reply 的訊息數量限制。
+  const maxBatches = MAX_REPLY_MESSAGES - 1;
+  const batches = chunk(remaining, MAX_PHOTOS_PER_ROUND).slice(0, maxBatches);
+  const messages: LineReplyMessage[] = [
+    { type: "text", text: renderLivestreamReplyTemplate(templates.pending_delete_success_with_list, { 商品名稱: label }) },
+  ];
+  for (const batch of batches) {
+    const itemBlocks = await Promise.all(batch.map((r) => buildOrderItemBlock(r)));
+    messages.push({ type: "flex", altText: "請確認您的商品數量", contents: buildOrderListBubble(itemBlocks) });
+  }
+  if (replyToken) await sendLineReply(replyToken, messages);
 }
 
 async function handleTextMessage(

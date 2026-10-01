@@ -39,7 +39,10 @@ export type LivestreamReplyTemplateKey =
   | "remittance_success"
   | "price_dispute_ask_amount"
   | "price_dispute_invalid_amount"
-  | "price_dispute_received";
+  | "price_dispute_received"
+  | "pending_delete_locked"
+  | "pending_delete_success_with_list"
+  | "pending_delete_success_empty";
 
 export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
   "nickname_ask",
@@ -70,6 +73,9 @@ export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
   "price_dispute_ask_amount",
   "price_dispute_invalid_amount",
   "price_dispute_received",
+  "pending_delete_locked",
+  "pending_delete_success_with_list",
+  "pending_delete_success_empty",
 ];
 
 export type LivestreamReplyTemplates = Record<LivestreamReplyTemplateKey, string>;
@@ -107,6 +113,9 @@ export const DEFAULT_LIVESTREAM_REPLY_TEMPLATES: LivestreamReplyTemplates = {
   price_dispute_ask_amount: "請輸入您看到的正確金額（純數字）。",
   price_dispute_invalid_amount: "請輸入正確的金額（純數字，例如：300）。",
   price_dispute_received: "已收到您回報的金額，我們會盡快確認，謝謝！",
+  pending_delete_locked: "此訂單已確認，如需刪除請聯繫客服。",
+  pending_delete_success_with_list: "已刪除「{{商品名稱}}」",
+  pending_delete_success_empty: "已刪除「{{商品名稱}}」，目前沒有其他待確認商品了。",
 };
 
 function sanitizeTemplates(input: Partial<Record<LivestreamReplyTemplateKey, unknown>>): LivestreamReplyTemplates {
