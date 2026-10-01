@@ -20,12 +20,13 @@ import {
   type LivestreamReplyTemplates,
 } from "./livestream-reply-templates";
 
-// 功能一 (自助綁定) + 功能二 (LINE 圖片下單對話流程). Everything here talks to
-// community_line_bindings (read + insert/update of the self-service columns
-// only — requested_nickname/review_status/line_display_name; never touches
-// the admin-approval columns directly) and the brand-new
-// community_livestream_orders / community_line_bot_states tables. Nothing
-// here ever writes to community_orders/community_order_items.
+// 功能一 (下單觸發) + 功能二 (LINE 圖片下單對話流程). 社群暱稱綁定/審核機制
+// 已移除——真正區分客人身份的是 line_user_id 本身，nickname 欄位直接拿
+// getLineUserProfile() 當下的 LINE 顯示名稱寫入，完全不讀寫
+// community_line_bindings（那張表是另一套舊的記事本/社群訂單系統在用，
+// 跟這裡無關，見 getLineDisplayName()）。這裡只碰全新獨立的
+// community_livestream_orders / community_line_bot_states 兩張表，從不
+// 寫入 community_orders/community_order_items。
 //
 // Every reply in this file MUST go through sendLineReply/sendLineReplyText
 // (uses the incoming event's replyToken — free, doesn't count against the
@@ -120,29 +121,17 @@ export async function deleteLivestreamOrder(supabase: SupabaseService, orderId: 
   return !error;
 }
 
-type BindingRow = {
-  line_user_id: string;
-  line_display_name: string | null;
-  nickname: string | null;
-  requested_nickname: string | null;
-  review_status: string;
-};
-
-async function getBinding(supabase: SupabaseService, userId: string): Promise<BindingRow | null> {
-  const { data } = await supabase
-    .from("community_line_bindings")
-    .select("line_user_id, line_display_name, nickname, requested_nickname, review_status")
-    .eq("line_user_id", userId)
-    .maybeSingle();
-  return (data as BindingRow) || null;
-}
-
-function isApprovedBinding(binding: BindingRow | null): binding is BindingRow & { nickname: string } {
-  return Boolean(binding && binding.review_status === "approved" && binding.nickname);
+// 不再有「社群暱稱審核」這道關卡——真正區分客人身份的是 line_user_id
+// 本身（LINE 帳號的唯一識別碼，沒辦法偽造），暱稱只是疊加上去給人看的
+// 標籤。community_line_bindings/社群名單審核頁面是另一套舊的記事本/
+// 社群訂單系統在用，這裡完全不碰那張表——nickname 欄位直接拿客人當下
+// 的 LINE 顯示名稱寫入即可。
+async function getLineDisplayName(userId: string): Promise<string> {
+  const profile = await getLineUserProfile(userId);
+  return profile?.displayName || "客人";
 }
 
 type BotState = {
-  awaiting_nickname: boolean;
   awaiting_quantity_for_order_id: string | null;
   // 功能五 (自助匯款申報)：這個人現在在等他回覆帳號後 5 碼，以及觸發當下
   // 算好的「這次結算涵蓋哪些訂單、總金額多少」快照，避免客人回覆的當下
@@ -160,13 +149,12 @@ async function getBotState(supabase: SupabaseService, userId: string): Promise<B
   const { data } = await supabase
     .from("community_line_bot_states")
     .select(
-      "awaiting_nickname, awaiting_quantity_for_order_id, awaiting_remittance_last5, remittance_order_ids, remittance_amount, awaiting_price_dispute_for_order_id",
+      "awaiting_quantity_for_order_id, awaiting_remittance_last5, remittance_order_ids, remittance_amount, awaiting_price_dispute_for_order_id",
     )
     .eq("line_user_id", userId)
     .maybeSingle();
   const row = data as BotState | null;
   return {
-    awaiting_nickname: Boolean(row?.awaiting_nickname),
     awaiting_quantity_for_order_id: row?.awaiting_quantity_for_order_id || null,
     awaiting_remittance_last5: Boolean(row?.awaiting_remittance_last5),
     remittance_order_ids: Array.isArray(row?.remittance_order_ids) ? row.remittance_order_ids : null,
@@ -182,96 +170,11 @@ async function setBotState(supabase: SupabaseService, userId: string, patch: Par
 }
 
 // ---------------------------------------------------------------------------
-// 功能一：自助綁定
+// 功能一：下單觸發（不再需要任何綁定/審核）
 // ---------------------------------------------------------------------------
 
-async function startNicknameRequest(
-  supabase: SupabaseService,
-  userId: string,
-  replyToken: string | undefined,
-  templates: LivestreamReplyTemplates,
-) {
-  await setBotState(supabase, userId, { awaiting_nickname: true });
-  await replyTemplate(replyToken, templates, "nickname_ask");
-}
-
-async function handleNicknameSubmission(
-  supabase: SupabaseService,
-  userId: string,
-  replyToken: string | undefined,
-  rawText: string,
-  templates: LivestreamReplyTemplates,
-) {
-  const nickname = rawText.trim().slice(0, 120);
-  if (!nickname) {
-    await reply(replyToken, "請輸入有效的社群暱稱喔。");
-    return;
-  }
-
-  // Collision check against already-APPROVED bindings only (not other
-  // pending requests) — matches the existing admin-approval flow's own
-  // duplicate check in src/app/api/backend/community/members/route.ts,
-  // which likewise only rejects against the final `nickname` column.
-  const { data: conflict } = await supabase
-    .from("community_line_bindings")
-    .select("id")
-    .ilike("nickname", nickname)
-    .neq("line_user_id", userId)
-    .limit(1)
-    .maybeSingle();
-  if (conflict) {
-    await replyTemplate(replyToken, templates, "nickname_taken", { 暱稱: nickname });
-    return; // stays in awaiting_nickname so the very next message can retry
-  }
-
-  const profile = await getLineUserProfile(userId);
-  const { error } = await supabase.from("community_line_bindings").upsert(
-    {
-      line_user_id: userId,
-      line_display_name: profile?.displayName || null,
-      requested_nickname: nickname,
-      review_status: "pending",
-    },
-    { onConflict: "line_user_id" },
-  );
-  await setBotState(supabase, userId, { awaiting_nickname: false });
-
-  if (error) {
-    await reply(replyToken, "申請送出失敗，請稍後再試一次。");
-    return;
-  }
-  await replyTemplate(replyToken, templates, "nickname_submitted", { 暱稱: nickname });
-}
-
-async function handleOrderTrigger(
-  supabase: SupabaseService,
-  userId: string,
-  replyToken: string | undefined,
-  templates: LivestreamReplyTemplates,
-) {
-  const binding = await getBinding(supabase, userId);
-  if (isApprovedBinding(binding)) {
-    await replyTemplate(replyToken, templates, "order_welcome");
-    return;
-  }
-  if (binding?.review_status === "pending") {
-    await replyTemplate(replyToken, templates, "nickname_pending", { 暱稱: binding.requested_nickname || "" });
-    return;
-  }
-  await startNicknameRequest(supabase, userId, replyToken, templates);
-}
-
-// 修改暱稱：跟 handleOrderTrigger 不同，不管目前是完全沒申請過、pending
-// 審核中、還是已經 approved，一律直接進入「請輸入您的社群暱稱」流程——
-// pending 狀態的人原本用 ORDER_TRIGGER 會卡在「審核中請耐心等候」，這裡
-// 刻意不做那個檢查，讓客人隨時都能改成想要的暱稱重新送審。
-async function handleEditNicknameTrigger(
-  supabase: SupabaseService,
-  userId: string,
-  replyToken: string | undefined,
-  templates: LivestreamReplyTemplates,
-) {
-  await startNicknameRequest(supabase, userId, replyToken, templates);
+async function handleOrderTrigger(replyToken: string | undefined, templates: LivestreamReplyTemplates) {
+  await replyTemplate(replyToken, templates, "order_welcome");
 }
 
 // ---------------------------------------------------------------------------
@@ -291,12 +194,11 @@ async function countPendingPhotos(supabase: SupabaseService, userId: string) {
 // 看得懂的名稱：{LINE顯示名稱}-商品{N}。N 是這個 line_user_id 目前總共
 // 有幾筆 community_livestream_orders（不分辨識成功或失敗、跨輪次跨批次
 // 都算）+1，直接從資料庫實際筆數算出來，天然不會歸零重算。
-async function generateFallbackProductName(supabase: SupabaseService, userId: string, binding: BindingRow) {
+async function generateFallbackProductName(supabase: SupabaseService, userId: string, displayName: string) {
   const { count } = await supabase
     .from("community_livestream_orders")
     .select("id", { count: "exact", head: true })
     .eq("line_user_id", userId);
-  const displayName = binding.line_display_name || binding.nickname || "客人";
   return `${displayName}-商品${(count || 0) + 1}`;
 }
 
@@ -307,11 +209,6 @@ async function handleImageMessage(
   messageId: string,
 ) {
   const templates = await getLivestreamReplyTemplates();
-  const binding = await getBinding(supabase, userId);
-  if (!isApprovedBinding(binding)) {
-    await replyTemplate(replyToken, templates, "not_bound_yet", { 功能名稱: "下單" });
-    return;
-  }
   if (!messageId) return;
 
   const pendingBefore = await countPendingPhotos(supabase, userId);
@@ -330,8 +227,9 @@ async function handleImageMessage(
     return;
   }
 
+  const displayName = await getLineDisplayName(userId);
   const recognized = await recognizeProductPhoto(content.buffer, content.contentType);
-  const productName = recognized?.productName || (await generateFallbackProductName(supabase, userId, binding));
+  const productName = recognized?.productName || (await generateFallbackProductName(supabase, userId, displayName));
 
   // Anthropic 視覺辨識沒抓到價格（目前甚至完全沒設定 API 金鑰，一律回傳
   // price:null）時，用免費的白框 OCR 備援試一次（見 price-ocr.ts）。一樣
@@ -356,8 +254,8 @@ async function handleImageMessage(
 
   const { error: insertError } = await supabase.from("community_livestream_orders").insert({
     line_user_id: userId,
-    line_display_name: binding.line_display_name,
-    nickname: binding.nickname,
+    line_display_name: displayName,
+    nickname: displayName,
     product_name: productName,
     unit_price: unitPrice,
     recognized_confidence: recognized?.confidence ?? null,
@@ -516,12 +414,6 @@ async function handleDoneCommand(
   replyToken: string | undefined,
   templates: LivestreamReplyTemplates,
 ) {
-  const binding = await getBinding(supabase, userId);
-  if (!isApprovedBinding(binding)) {
-    await replyTemplate(replyToken, templates, "not_bound_yet", { 功能名稱: "下單" });
-    return;
-  }
-
   const maxBatches = MAX_REPLY_MESSAGES - 1; // one reply slot is used by the leading confirmation text below
   const { data, error } = await supabase
     .from("community_livestream_orders")
@@ -744,12 +636,6 @@ async function handleCancelTrigger(
   replyToken: string | undefined,
   templates: LivestreamReplyTemplates,
 ) {
-  const binding = await getBinding(supabase, userId);
-  if (!isApprovedBinding(binding)) {
-    await replyTemplate(replyToken, templates, "not_bound_yet", { 功能名稱: "取消訂單" });
-    return;
-  }
-
   // 只有「還沒購買」且「還沒付款（含匯款確認中）」的訂單才能自助取消——
   // 一旦客人回報過匯款（confirming/paid），就不該再讓他把這筆訂單取消掉。
   const { data, error } = await supabase
@@ -886,12 +772,6 @@ async function handleRemittanceTrigger(
   replyToken: string | undefined,
   templates: LivestreamReplyTemplates,
 ) {
-  const binding = await getBinding(supabase, userId);
-  if (!isApprovedBinding(binding)) {
-    await replyTemplate(replyToken, templates, "not_bound_yet", { 功能名稱: "匯款申報" });
-    return;
-  }
-
   const { data, error } = await supabase
     .from("community_livestream_orders")
     .select("id, product_name, unit_price, quantity, total_price, photo_storage_path")
@@ -959,10 +839,10 @@ async function handleRemittanceLast5Submission(
     return;
   }
 
-  const binding = await getBinding(supabase, userId);
+  const displayName = await getLineDisplayName(userId);
   const { error: insertError } = await supabase.from("community_livestream_remittances").insert({
     line_user_id: userId,
-    nickname: binding?.nickname || "",
+    nickname: displayName,
     order_ids: orderIds,
     account_last5: last5,
     amount,
@@ -1085,11 +965,6 @@ async function handleTextMessage(
   const state = await getBotState(supabase, userId);
   const templates = await getLivestreamReplyTemplates();
 
-  if (state.awaiting_nickname) {
-    await handleNicknameSubmission(supabase, userId, replyToken, text, templates);
-    return;
-  }
-
   if (state.awaiting_remittance_last5) {
     await handleRemittanceLast5Submission(supabase, userId, replyToken, text, state, templates);
     return;
@@ -1120,7 +995,7 @@ async function handleTextMessage(
   }
 
   if (matchesAny(text, keywords.order)) {
-    await handleOrderTrigger(supabase, userId, replyToken, templates);
+    await handleOrderTrigger(replyToken, templates);
     return;
   }
 
@@ -1136,11 +1011,6 @@ async function handleTextMessage(
 
   if (matchesAny(text, keywords.quantity_confirm)) {
     await handleQuantityConfirmTrigger(supabase, userId, replyToken, templates);
-    return;
-  }
-
-  if (matchesAny(text, keywords.edit_nickname)) {
-    await handleEditNicknameTrigger(supabase, userId, replyToken, templates);
     return;
   }
 

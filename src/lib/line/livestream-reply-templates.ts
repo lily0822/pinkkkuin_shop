@@ -12,11 +12,6 @@ const SETTINGS_TYPE = "community-livestream-reply-templates";
 const MAX_TEMPLATE_LENGTH = 2000;
 
 export type LivestreamReplyTemplateKey =
-  | "nickname_ask"
-  | "nickname_submitted"
-  | "nickname_taken"
-  | "nickname_pending"
-  | "not_bound_yet"
   | "order_welcome"
   | "photo_over_cap"
   | "done_intro"
@@ -45,11 +40,6 @@ export type LivestreamReplyTemplateKey =
   | "pending_delete_success_empty";
 
 export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
-  "nickname_ask",
-  "nickname_submitted",
-  "nickname_taken",
-  "nickname_pending",
-  "not_bound_yet",
   "order_welcome",
   "photo_over_cap",
   "done_intro",
@@ -83,12 +73,6 @@ export type LivestreamReplyTemplates = Record<LivestreamReplyTemplateKey, string
 // 逐字跟改動前的寫死文案一致——即使從未進過後台設定畫面，bot 的回覆內容
 // 也跟改動前完全一樣，不會突然改變。
 export const DEFAULT_LIVESTREAM_REPLY_TEMPLATES: LivestreamReplyTemplates = {
-  nickname_ask: "請輸入您的社群暱稱，審核通過後就能使用下單功能囉！",
-  nickname_submitted:
-    "已收到您的申請暱稱「{{暱稱}}」，審核通過後即可使用下單功能，請耐心等候！如需修改暱稱請輸入「修改暱稱」。",
-  nickname_taken: "暱稱「{{暱稱}}」已經被其他人綁定了，請換一個暱稱再傳一次。",
-  nickname_pending: "您申請的暱稱「{{暱稱}}」正在審核中，審核通過後才能使用下單功能，請耐心等候。",
-  not_bound_yet: "請先完成社群暱稱綁定並通過審核後，才能使用{{功能名稱}}功能喔。",
   order_welcome:
     "已開啟下單功能，請上傳您要的商品圖片（單次最多 10 張），傳完後請回覆「好了」，我就會列出所有收到的商品讓您填寫數量！",
   photo_over_cap: "這輪已收到 10 張，請先回覆「好了」，我先幫您整理目前收到的商品！",

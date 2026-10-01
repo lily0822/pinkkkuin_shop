@@ -10,7 +10,7 @@ const SETTINGS_TYPE = "community-livestream-keywords";
 const MAX_KEYWORDS_PER_GROUP = 30;
 const MAX_KEYWORD_LENGTH = 40;
 
-export type LivestreamKeywordGroup = "order" | "done" | "remittance" | "cancel" | "quantity_confirm" | "edit_nickname";
+export type LivestreamKeywordGroup = "order" | "done" | "remittance" | "cancel" | "quantity_confirm";
 
 export const LIVESTREAM_KEYWORD_GROUPS: LivestreamKeywordGroup[] = [
   "order",
@@ -18,7 +18,6 @@ export const LIVESTREAM_KEYWORD_GROUPS: LivestreamKeywordGroup[] = [
   "remittance",
   "cancel",
   "quantity_confirm",
-  "edit_nickname",
 ];
 
 export const LIVESTREAM_KEYWORD_GROUP_LABELS: Record<LivestreamKeywordGroup, string> = {
@@ -27,7 +26,6 @@ export const LIVESTREAM_KEYWORD_GROUP_LABELS: Record<LivestreamKeywordGroup, str
   remittance: "匯款觸發詞",
   cancel: "取消觸發詞",
   quantity_confirm: "數量確認觸發詞",
-  edit_nickname: "修改暱稱觸發詞",
 };
 
 export const DEFAULT_LIVESTREAM_KEYWORDS: Record<LivestreamKeywordGroup, string[]> = {
@@ -36,7 +34,6 @@ export const DEFAULT_LIVESTREAM_KEYWORDS: Record<LivestreamKeywordGroup, string[
   remittance: ["我要匯款", "匯款申報", "回報匯款", "匯款"],
   cancel: ["取消訂單", "我要取消", "取消"],
   quantity_confirm: ["數量正確"],
-  edit_nickname: ["修改暱稱"],
 };
 
 export type LivestreamKeywords = Record<LivestreamKeywordGroup, string[]>;
