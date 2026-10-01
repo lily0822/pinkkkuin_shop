@@ -7,7 +7,11 @@ import {
   shouldRequireBackendAuth,
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
-import { getLivestreamBankInfo, saveLivestreamBankInfo } from "@/lib/line/livestream-bank-info";
+import {
+  getLivestreamBankAccounts,
+  saveLivestreamBankAccounts,
+  type LivestreamBankAccountKey,
+} from "@/lib/line/livestream-bank-info";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -38,8 +42,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const text = await getLivestreamBankInfo();
-    return NextResponse.json({ ok: true, text });
+    const accounts = await getLivestreamBankAccounts();
+    return NextResponse.json({ ok: true, accounts });
   } catch {
     return NextResponse.json({ ok: false, error: "收款帳號設定讀取失敗，請稍後再試。" }, { status: 500 });
   }
@@ -57,18 +61,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: { text?: unknown };
+  let body: { accounts?: Partial<Record<LivestreamBankAccountKey, unknown>> };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ ok: false, error: "請提供正確的設定資料。" }, { status: 400 });
   }
 
-  const text = typeof body.text === "string" ? body.text : "";
+  const accounts = body.accounts && typeof body.accounts === "object" ? body.accounts : {};
 
   try {
-    const saved = await saveLivestreamBankInfo(text);
-    return NextResponse.json({ ok: true, text: saved });
+    const saved = await saveLivestreamBankAccounts(accounts);
+    return NextResponse.json({ ok: true, accounts: saved });
   } catch {
     return NextResponse.json({ ok: false, error: "收款帳號設定儲存失敗，請稍後再試。" }, { status: 500 });
   }

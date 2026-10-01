@@ -11,7 +11,12 @@ import {
 } from "./client";
 import { recognizeProductPhoto } from "./vision";
 import { recognizePriceFromPhoto } from "./price-ocr";
-import { getLivestreamBankInfo } from "./livestream-bank-info";
+import {
+  getLivestreamBankAccounts,
+  LIVESTREAM_BANK_ACCOUNT_KEYS,
+  LIVESTREAM_BANK_ACCOUNT_LABELS,
+  type LivestreamBankAccounts,
+} from "./livestream-bank-info";
 import { getLivestreamKeywords } from "./livestream-keywords";
 import {
   getLivestreamReplyTemplates,
@@ -34,13 +39,15 @@ import {
 // here — this entire feature is reply-only now (the one push it used to
 // have, on order confirmation, was removed by request — see AI_HANDOFF.md).
 //
-// 客人端數量/價格互動已整組移除（this round）：「好了」觸發詞、數量
-// 確認清單 (Flex + 1/2/3/4/5+ 按鈕)、「價格有誤」回報、清單上的「刪除」
-// 按鈕、「數量正確」鎖定機制全部拿掉——客人只剩「傳照片」「我要匯款」
+// 客人端數量/價格互動已整組移除：「好了」觸發詞、數量確認清單
+// (Flex + 1/2/3/4/5+ 按鈕)、「價格有誤」回報、清單上的「刪除」按鈕、
+// 「數量正確」鎖定機制全部拿掉——客人只剩「傳照片」「我要匯款」
 // 「取消訂單」三件事，數量/價格交給後台人工處理。背景的
 // recognizeProductPhoto/recognizePriceFromPhoto 自動辨識完全沒有改動，
-// 只是客人不會再看到/調整這些值。匯款/取消訂單清單也都改成純展示
-// （只剩照片＋商品名稱），匯款不再計算/顯示金額。
+// 只是客人不會再看到/調整這些值。取消訂單清單改成純展示（只剩照片＋
+// 商品名稱）。匯款清單改成純圖片直向大圖，系統不計算金額，但客人回報
+// 時會自己依固定格式回報「銀行/金額/末五碼」三項，amount 欄位存的是
+// 客人自報的金額，純供管理員核對用，不是系統算出來的。
 
 export type LineWebhookEvent = {
   type?: string;
@@ -72,9 +79,46 @@ function matchesAny(text: string, keywords: string[]) {
   return keywords.some((keyword) => normalized.includes(normalizeText(keyword)));
 }
 
-function parseAccountLast5(text: string) {
-  const trimmed = text.trim();
-  return /^\d{5}$/.test(trimmed) ? trimmed : null;
+// 匯款回報改成固定三項格式（銀行／金額／末五碼），客人自行計算總金額
+// 後依格式回覆——用寬鬆比對解析，不要求逐字照格式打：逐行找出含有
+// 「銀行」「金額」「末五碼」關鍵字的那一行，取冒號（全/半形皆可）後面
+// 的內容當作該欄位的值，不管客人有沒有打數字編號、行順序對不對。
+type RemittanceReport = { bankName: string; amount: number; last5: string };
+
+function extractReportFieldValue(lines: string[], keyword: string): string | null {
+  for (const line of lines) {
+    if (!line.includes(keyword)) continue;
+    const colonIndex = line.search(/[:：]/);
+    if (colonIndex === -1) continue;
+    const value = line.slice(colonIndex + 1).trim();
+    if (value) return value;
+  }
+  return null;
+}
+
+function parseRemittanceReport(rawText: string): RemittanceReport | null {
+  const lines = rawText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const bankNameRaw = extractReportFieldValue(lines, "銀行");
+  if (!bankNameRaw) return null;
+  const bankName = bankNameRaw.slice(0, 50);
+
+  const amountRaw = extractReportFieldValue(lines, "金額");
+  if (!amountRaw) return null;
+  const amountMatch = amountRaw.replace(/,/g, "").match(/\d+/);
+  if (!amountMatch) return null;
+  const amount = Number(amountMatch[0]);
+  if (!(amount > 0)) return null;
+
+  const last5Raw = extractReportFieldValue(lines, "末五碼");
+  if (!last5Raw) return null;
+  const last5Digits = last5Raw.replace(/\D/g, "");
+  if (!/^\d{5}$/.test(last5Digits)) return null;
+
+  return { bankName, amount, last5: last5Digits };
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -126,10 +170,12 @@ async function getLineDisplayName(userId: string): Promise<string> {
 }
 
 type BotState = {
-  // 功能五 (自助匯款申報)：這個人現在在等他回覆帳號後 5 碼，以及觸發當下
-  // 記錄的「這次申報涵蓋哪些訂單」快照，避免客人回覆的當下訂單範圍跟
-  // 觸發當下不一致（例如中途有新訂單進來或被取消）。不再計算/快照金額
-  // ——數量/價格互動已整組移除，匯款申報不再算總額。
+  // 功能五 (自助匯款申報)：這個人現在在等他回覆匯款資訊（欄位名稱
+  // 仍叫 awaiting_remittance_last5，是從只問後 5 碼的舊版沿用下來的，
+  // 沒有為了這次改成問「銀行/金額/末五碼」三項而特地去改欄位名稱/
+  // 加 migration——語意上現在代表「等客人回報完整匯款資訊」），以及
+  // 觸發當下記錄的「這次申報涵蓋哪些訂單」快照，避免客人回覆的當下
+  // 訂單範圍跟觸發當下不一致（例如中途有新訂單進來或被取消）。
   awaiting_remittance_last5: boolean;
   remittance_order_ids: string[] | null;
 };
@@ -437,28 +483,57 @@ type UnpaidOrderRow = {
   photo_storage_path: string | null;
 };
 
-// 純展示清單：只顯示照片＋商品名稱，不再顯示單價/數量/小計——數量/
-// 價格互動已整組移除，這裡不再算、也不再顯示任何金額，純粹是「提醒
-// 客人這些是他目前下單的商品」。跟 buildOrderListBubble 組成同一個
-// Flex bubble（純展示，無按鈕）。
-async function buildRemittanceItemBlock(row: UnpaidOrderRow) {
+// 純圖片清單、直向排列、圖片放大：拿掉商品名稱文字，每一項就是一張
+// 接近滿版寬度的正方形大圖（size:"full" + aspectRatio:"1:1"），跟
+// buildOrderListBubble 的 separator 組成一張一張往下排的直向清單，不是
+// 橫向滑動的 Carousel。沒有照片的訂單不留白、不顯示壞圖——用一個灰底
+// 佔位區塊＋商品名稱文字當 fallback，跟有照片的項目一樣占滿寬度。
+async function buildRemittanceItemBlock(row: UnpaidOrderRow): Promise<object> {
   const imageUrl = row.photo_storage_path
     ? await createSignedUrl(PHOTO_BUCKET, row.photo_storage_path, CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS)
     : null;
 
-  const rowContents: object[] = [];
-  if (imageUrl) {
-    rowContents.push({ type: "image", url: imageUrl, size: "60px", aspectMode: "cover", aspectRatio: "1:1", flex: 0 });
+  if (!imageUrl) {
+    return {
+      type: "box",
+      layout: "vertical",
+      aspectRatio: "1:1",
+      cornerRadius: "md",
+      backgroundColor: "#f1f5f9",
+      justifyContent: "center",
+      alignItems: "center",
+      contents: [{ type: "text", text: row.product_name || "商品", size: "sm", color: "#94a3b8", align: "center", wrap: true }],
+    };
   }
-  rowContents.push({
-    type: "box",
-    layout: "vertical",
-    flex: 1,
-    justifyContent: "center",
-    contents: [{ type: "text", text: row.product_name || "未命名商品", weight: "bold", wrap: true, size: "sm" }],
-  });
 
-  return { type: "box", layout: "horizontal", spacing: "md", contents: rowContents };
+  return { type: "image", url: imageUrl, size: "full", aspectRatio: "1:1", aspectMode: "cover" };
+}
+
+// 收款帳號改成三顆 LINE Flex 原生的 clipboard 按鈕——點了直接把帳號文字
+// 複製到客人剪貼簿，不用跳頁、不用打後端。只有後台實際填了帳號的銀行
+// 才會出現對應按鈕；三個都沒填就整個不送這則訊息（見呼叫端）。
+function buildBankAccountButtonsBubble(accounts: LivestreamBankAccounts) {
+  const buttons = LIVESTREAM_BANK_ACCOUNT_KEYS.filter((key) => accounts[key]).map((key) => ({
+    type: "button",
+    style: "secondary",
+    height: "sm",
+    action: {
+      type: "clipboard",
+      label: `複製${LIVESTREAM_BANK_ACCOUNT_LABELS[key]}帳號`,
+      clipboardText: accounts[key],
+    },
+  }));
+  if (!buttons.length) return null;
+
+  return {
+    type: "bubble",
+    body: {
+      type: "box",
+      layout: "vertical",
+      spacing: "sm",
+      contents: buttons,
+    },
+  };
 }
 
 async function handleRemittanceTrigger(
@@ -486,24 +561,23 @@ async function handleRemittanceTrigger(
 
   // 不再檢查/擋下「有商品還沒確認金額」——反正這裡不算金額了，任何
   // unpaid 訂單（不論單價是否已辨識）都直接列出。
-  const bankInfo = await getLivestreamBankInfo();
+  const bankAccounts = await getLivestreamBankAccounts();
 
   await setBotState(supabase, userId, {
     awaiting_remittance_last5: true,
     remittance_order_ids: rows.map((row) => row.id),
   });
 
-  // 商品清單改用帶圖片的 Flex（跟功能二的直向清單同一套做法），收款
-  // 資訊／回覆提示接續放在同一次 reply 裡的第二則文字訊息——不再提
-  // 應付總額，因為不再計算金額。
+  // 商品清單（純圖片、直向排列）→ 收款帳號複製按鈕（只有填了帳號的
+  // 銀行才出現）→ 固定格式的回報說明文字，三則訊息都在同一次 reply
+  // 裡送出，沒超過 LINE 單次 reply 5 則的上限。
   const itemBlocks = await Promise.all(rows.map((row) => buildRemittanceItemBlock(row)));
-  const messages: LineReplyMessage[] = [
-    { type: "flex", altText: "本次下單商品", contents: buildOrderListBubble(itemBlocks) },
-    {
-      type: "text",
-      text: renderLivestreamReplyTemplate(templates.remittance_summary, { 收款資訊: bankInfo || "" }),
-    },
-  ];
+  const bankButtonsBubble = buildBankAccountButtonsBubble(bankAccounts);
+  const messages: LineReplyMessage[] = [{ type: "flex", altText: "本次下單商品", contents: buildOrderListBubble(itemBlocks) }];
+  if (bankButtonsBubble) {
+    messages.push({ type: "flex", altText: "收款帳號", contents: bankButtonsBubble });
+  }
+  messages.push({ type: "text", text: renderLivestreamReplyTemplate(templates.remittance_summary) });
   if (replyToken) await sendLineReply(replyToken, messages);
 }
 
@@ -515,9 +589,9 @@ async function handleRemittanceLast5Submission(
   state: BotState,
   templates: LivestreamReplyTemplates,
 ) {
-  const last5 = parseAccountLast5(rawText);
-  if (!last5) {
-    await reply(replyToken, "請輸入正確的匯款帳號後 5 碼（純數字 5 碼），例如：12345。");
+  const report = parseRemittanceReport(rawText);
+  if (!report) {
+    await replyTemplate(replyToken, templates, "remittance_format_invalid");
     return; // stays in awaiting_remittance_last5 so the next message can retry
   }
 
@@ -529,14 +603,16 @@ async function handleRemittanceLast5Submission(
   }
 
   const displayName = await getLineDisplayName(userId);
-  // 不再傳 amount——數量/價格互動已整組移除，不計算金額。
-  // community_livestream_remittances.amount 這欄已改成可為 null
-  // （202610020001 migration），省略這個欄位會直接寫入 null。
+  // amount 這次是客人自己回報的金額（不是系統算的），純記錄供管理員核對
+  // 用；community_livestream_remittances.amount 已改成可為 null
+  // （202610020001 migration），這裡有值直接寫入即可。
   const { error: insertError } = await supabase.from("community_livestream_remittances").insert({
     line_user_id: userId,
     nickname: displayName,
     order_ids: orderIds,
-    account_last5: last5,
+    bank_name: report.bankName,
+    account_last5: report.last5,
+    amount: report.amount,
   });
   if (insertError) {
     await reply(replyToken, "匯款申報失敗，請稍後再試一次。");

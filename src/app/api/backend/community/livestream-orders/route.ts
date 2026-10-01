@@ -87,16 +87,25 @@ export async function GET(request: NextRequest) {
     );
 
     // 功能五 (自助匯款申報)：payment_status='confirming' 的訂單，反查最新一筆
-    // 涵蓋該訂單 id 的申報記錄，秀出客人回報的後 5 碼跟申報金額給管理員核對。
-    // 一次查、記憶體比對，避免對每一筆 confirming 訂單各打一次查詢。
+    // 涵蓋該訂單 id 的申報記錄，秀出客人回報的銀行/後 5 碼/申報金額給
+    // 管理員核對。一次查、記憶體比對，避免對每一筆 confirming 訂單各打
+    // 一次查詢。amount 現在可能是 null（客人沒填成功、或舊資料），
+    // 轉換時要跟 remittance 本身是否存在分開判斷，不能直接 Number(null)
+    // 當成 0。
     const confirmingUserIds = [
       ...new Set(rows.filter((row) => row.payment_status === "confirming" && row.line_user_id).map((row) => String(row.line_user_id))),
     ];
-    let remittances: { order_ids: string[]; account_last5: string; amount: number; submitted_at: string }[] = [];
+    let remittances: {
+      order_ids: string[];
+      bank_name: string | null;
+      account_last5: string;
+      amount: number | null;
+      submitted_at: string;
+    }[] = [];
     if (confirmingUserIds.length) {
       const { data: remittanceData } = await supabase
         .from("community_livestream_remittances")
-        .select("order_ids, account_last5, amount, submitted_at")
+        .select("order_ids, bank_name, account_last5, amount, submitted_at")
         .in("line_user_id", confirmingUserIds)
         .order("submitted_at", { ascending: false })
         .limit(500);
@@ -124,8 +133,9 @@ export async function GET(request: NextRequest) {
           paymentStatus: String(row.payment_status || "unpaid"),
           notes: String(row.notes || ""),
           photoUrl: photoUrls[index],
+          remittanceBankName: remittance?.bank_name || null,
           remittanceLast5: remittance?.account_last5 || null,
-          remittanceAmount: remittance ? Number(remittance.amount) : null,
+          remittanceAmount: remittance && remittance.amount !== null ? Number(remittance.amount) : null,
           priceDisputedAt: row.price_disputed_at ? String(row.price_disputed_at) : null,
           priceDisputeSuggestedPrice:
             row.price_dispute_suggested_price === null || row.price_dispute_suggested_price === undefined

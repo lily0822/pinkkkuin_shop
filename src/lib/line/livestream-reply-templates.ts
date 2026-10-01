@@ -21,6 +21,7 @@ export type LivestreamReplyTemplateKey =
   | "cancel_success"
   | "remittance_empty"
   | "remittance_summary"
+  | "remittance_format_invalid"
   | "remittance_success";
 
 export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
@@ -33,6 +34,7 @@ export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
   "cancel_success",
   "remittance_empty",
   "remittance_summary",
+  "remittance_format_invalid",
   "remittance_success",
 ];
 
@@ -50,7 +52,10 @@ export const DEFAULT_LIVESTREAM_REPLY_TEMPLATES: LivestreamReplyTemplates = {
   cancel_blocked_paying: "這項商品已在匯款流程中，無法取消。",
   cancel_success: "已為您取消「{{商品名稱}}」，感謝您的訂購！",
   remittance_empty: "目前沒有待匯款的訂單喔。",
-  remittance_summary: "以上是您目前下單的所有商品，請完成匯款後回來告知我們您的匯款帳號後 5 碼。\n\n收款資訊：\n{{收款資訊}}",
+  remittance_summary:
+    "以上是您目前下單的所有商品，請自行計算總金額，完成匯款後請依照以下格式回覆：\n1.匯到哪家銀行：\n2.金額：\n3.末五碼：",
+  remittance_format_invalid:
+    "格式有誤或漏填，請依照以下格式重新回覆（三項都要填）：\n1.匯到哪家銀行：\n2.金額：\n3.末五碼：",
   remittance_success: "已收到您的匯款回報，我們將盡快為您核對，感謝您！",
 };
 
