@@ -68,6 +68,15 @@ function parsePositiveInteger(text: string) {
   return value > 0 ? value : null;
 }
 
+// 價格有誤回報用的金額輸入——跟 parsePositiveInteger（數量，上限 4 位數）
+// 分開寫，金額沒道理卡在 9999 以內。
+function parsePriceAmount(text: string) {
+  const trimmed = text.trim();
+  if (!/^\d{1,9}$/.test(trimmed)) return null;
+  const value = Number(trimmed);
+  return value > 0 ? value : null;
+}
+
 function parseAccountLast5(text: string) {
   const trimmed = text.trim();
   return /^\d{5}$/.test(trimmed) ? trimmed : null;
@@ -141,12 +150,18 @@ type BotState = {
   awaiting_remittance_last5: boolean;
   remittance_order_ids: string[] | null;
   remittance_amount: number | null;
+  // 客人回報「價格有誤」：點了某一筆訂單的「價格有誤」按鈕後，bot 在等
+  // 他輸入認為正確的金額——跟 awaiting_quantity_for_order_id 同樣的
+  // 「指向哪一筆訂單」做法。
+  awaiting_price_dispute_for_order_id: string | null;
 };
 
 async function getBotState(supabase: SupabaseService, userId: string): Promise<BotState> {
   const { data } = await supabase
     .from("community_line_bot_states")
-    .select("awaiting_nickname, awaiting_quantity_for_order_id, awaiting_remittance_last5, remittance_order_ids, remittance_amount")
+    .select(
+      "awaiting_nickname, awaiting_quantity_for_order_id, awaiting_remittance_last5, remittance_order_ids, remittance_amount, awaiting_price_dispute_for_order_id",
+    )
     .eq("line_user_id", userId)
     .maybeSingle();
   const row = data as BotState | null;
@@ -156,6 +171,7 @@ async function getBotState(supabase: SupabaseService, userId: string): Promise<B
     awaiting_remittance_last5: Boolean(row?.awaiting_remittance_last5),
     remittance_order_ids: Array.isArray(row?.remittance_order_ids) ? row.remittance_order_ids : null,
     remittance_amount: row?.remittance_amount ?? null,
+    awaiting_price_dispute_for_order_id: row?.awaiting_price_dispute_for_order_id || null,
   };
 }
 
@@ -440,6 +456,28 @@ async function buildOrderItemBlock(row: PendingOrderRow) {
           },
         ],
       },
+      // 「價格有誤」獨立一排，不跟 5 顆數量按鈕擠在同一排——塞進同一排
+      // 會重新變回原本「1件/2件/3件/4件/5件以上」太寬被截斷成「...」的
+      // 老問題（當時就是因為擠不下才把標籤縮成純數字），這是不常用的
+      // 次要動作，獨立一排也比較不會被誤觸。
+      {
+        type: "box",
+        layout: "horizontal",
+        spacing: "sm",
+        contents: [
+          {
+            type: "button",
+            style: "secondary",
+            height: "sm",
+            action: {
+              type: "postback",
+              label: "價格有誤",
+              data: `action=flag_price_dispute&order_id=${row.id}`,
+              displayText: "回報價格有誤",
+            },
+          },
+        ],
+      },
     ],
   };
 }
@@ -626,6 +664,13 @@ async function handlePostback(
   }
   if (action === "cancel_order") {
     await handleCancelOrder(supabase, userId, orderId, replyToken, templates);
+    return;
+  }
+  if (action === "flag_price_dispute") {
+    // 已鎖定數量（quantity_locked_at 不是 null）的訂單一樣允許標記價格
+    // 有誤——鎖定只鎖數量調整，價格爭議是另一回事，不用額外擋。
+    await setBotState(supabase, userId, { awaiting_price_dispute_for_order_id: orderId });
+    await replyTemplate(replyToken, templates, "price_dispute_ask_amount");
   }
 }
 
@@ -917,6 +962,34 @@ async function handleRemittanceLast5Submission(
   await replyTemplate(replyToken, templates, "remittance_success");
 }
 
+// ---------------------------------------------------------------------------
+// 客人回報「價格有誤」：純粹留一個給管理員參考的標記 + 建議金額，不會
+// 自動覆蓋 unit_price——真正要不要採用、怎麼修正由管理員在後台決定。
+// ---------------------------------------------------------------------------
+
+async function handlePriceDisputeSubmission(
+  supabase: SupabaseService,
+  userId: string,
+  replyToken: string | undefined,
+  rawText: string,
+  orderId: string,
+  templates: LivestreamReplyTemplates,
+) {
+  const amount = parsePriceAmount(rawText);
+  if (amount === null) {
+    await replyTemplate(replyToken, templates, "price_dispute_invalid_amount");
+    return; // stays in awaiting_price_dispute_for_order_id so the next message can retry
+  }
+
+  await supabase
+    .from("community_livestream_orders")
+    .update({ price_disputed_at: new Date().toISOString(), price_dispute_suggested_price: amount })
+    .eq("id", orderId)
+    .eq("line_user_id", userId);
+  await setBotState(supabase, userId, { awaiting_price_dispute_for_order_id: null });
+  await replyTemplate(replyToken, templates, "price_dispute_received");
+}
+
 async function handleTextMessage(
   supabase: SupabaseService,
   userId: string,
@@ -936,6 +1009,11 @@ async function handleTextMessage(
 
   if (state.awaiting_remittance_last5) {
     await handleRemittanceLast5Submission(supabase, userId, replyToken, text, state, templates);
+    return;
+  }
+
+  if (state.awaiting_price_dispute_for_order_id) {
+    await handlePriceDisputeSubmission(supabase, userId, replyToken, text, state.awaiting_price_dispute_for_order_id, templates);
     return;
   }
 

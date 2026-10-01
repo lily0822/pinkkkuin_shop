@@ -36,7 +36,10 @@ export type LivestreamReplyTemplateKey =
   | "remittance_empty"
   | "remittance_unresolved"
   | "remittance_summary"
-  | "remittance_success";
+  | "remittance_success"
+  | "price_dispute_ask_amount"
+  | "price_dispute_invalid_amount"
+  | "price_dispute_received";
 
 export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
   "nickname_ask",
@@ -64,6 +67,9 @@ export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
   "remittance_unresolved",
   "remittance_summary",
   "remittance_success",
+  "price_dispute_ask_amount",
+  "price_dispute_invalid_amount",
+  "price_dispute_received",
 ];
 
 export type LivestreamReplyTemplates = Record<LivestreamReplyTemplateKey, string>;
@@ -98,6 +104,9 @@ export const DEFAULT_LIVESTREAM_REPLY_TEMPLATES: LivestreamReplyTemplates = {
   remittance_unresolved: "您有 {{數量}} 項商品尚未確認金額，請等候客服確認金額後才能匯款，確認後可以再次輸入「我要匯款」。",
   remittance_summary: "應付總額：NT${{總額}}\n\n收款資訊：\n{{收款資訊}}\n\n請回覆您的匯款帳號後 5 碼完成申報（例如：12345）。",
   remittance_success: "已收到您的匯款回報，我們將盡快為您核對，感謝您！",
+  price_dispute_ask_amount: "請輸入您看到的正確金額（純數字）。",
+  price_dispute_invalid_amount: "請輸入正確的金額（純數字，例如：300）。",
+  price_dispute_received: "已收到您回報的金額，我們會盡快確認，謝謝！",
 };
 
 function sanitizeTemplates(input: Partial<Record<LivestreamReplyTemplateKey, unknown>>): LivestreamReplyTemplates {

@@ -63,8 +63,17 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   const patch: Record<string, unknown> = {};
   if (typeof body.productName === "string") patch.product_name = body.productName.trim().slice(0, 300) || null;
-  if (body.unitPrice === null) patch.unit_price = null;
-  else if (typeof body.unitPrice === "number" && Number.isFinite(body.unitPrice) && body.unitPrice >= 0) patch.unit_price = body.unitPrice;
+  if (body.unitPrice === null) {
+    patch.unit_price = null;
+  } else if (typeof body.unitPrice === "number" && Number.isFinite(body.unitPrice) && body.unitPrice >= 0) {
+    patch.unit_price = body.unitPrice;
+  }
+  // 管理員透過「單價可直接編輯」改動單價，視為已經處理完客人回報的
+  // 「價格有誤」——自動清掉標記跟建議金額，不用另外按一顆清除按鈕。
+  if ("unit_price" in patch) {
+    patch.price_disputed_at = null;
+    patch.price_dispute_suggested_price = null;
+  }
   if (typeof body.quantity === "number" && Number.isFinite(body.quantity) && body.quantity > 0) patch.quantity = Math.round(body.quantity);
   if (typeof body.purchaseStatus === "string" && PURCHASE_STATUSES.has(body.purchaseStatus)) patch.purchase_status = body.purchaseStatus;
   if (typeof body.paymentStatus === "string" && PAYMENT_STATUSES.has(body.paymentStatus)) patch.payment_status = body.paymentStatus;

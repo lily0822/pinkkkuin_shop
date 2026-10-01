@@ -46,13 +46,14 @@ export async function GET(request: NextRequest) {
   const purchaseStatus = (incoming.searchParams.get("purchaseStatus") || "").trim();
   const paymentStatus = (incoming.searchParams.get("paymentStatus") || "").trim();
   const unrecognizedOnly = incoming.searchParams.get("unrecognizedOnly") === "1";
+  const priceDisputedOnly = incoming.searchParams.get("priceDisputedOnly") === "1";
 
   try {
     const supabase = createSupabaseServiceClient();
     let query = supabase
       .from("community_livestream_orders")
       .select(
-        "id, line_user_id, line_display_name, nickname, product_name, unit_price, total_price, quantity, recognized_confidence, purchase_status, payment_status, notes, photo_storage_path, created_at, updated_at",
+        "id, line_user_id, line_display_name, nickname, product_name, unit_price, total_price, quantity, recognized_confidence, purchase_status, payment_status, notes, photo_storage_path, price_disputed_at, price_dispute_suggested_price, created_at, updated_at",
       )
       .order("created_at", { ascending: false })
       .limit(500);
@@ -60,6 +61,7 @@ export async function GET(request: NextRequest) {
     if (PURCHASE_STATUSES.has(purchaseStatus)) query = query.eq("purchase_status", purchaseStatus);
     if (PAYMENT_STATUSES.has(paymentStatus)) query = query.eq("payment_status", paymentStatus);
     if (unrecognizedOnly) query = query.is("unit_price", null);
+    if (priceDisputedOnly) query = query.not("price_disputed_at", "is", null);
 
     const { data, error } = await query;
     if (error) throw error;
@@ -124,6 +126,11 @@ export async function GET(request: NextRequest) {
           photoUrl: photoUrls[index],
           remittanceLast5: remittance?.account_last5 || null,
           remittanceAmount: remittance ? Number(remittance.amount) : null,
+          priceDisputedAt: row.price_disputed_at ? String(row.price_disputed_at) : null,
+          priceDisputeSuggestedPrice:
+            row.price_dispute_suggested_price === null || row.price_dispute_suggested_price === undefined
+              ? null
+              : Number(row.price_dispute_suggested_price),
           createdAt: String(row.created_at || ""),
           updatedAt: String(row.updated_at || ""),
         };
