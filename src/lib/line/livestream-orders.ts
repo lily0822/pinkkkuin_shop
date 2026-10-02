@@ -39,15 +39,18 @@ import {
 // here — this entire feature is reply-only now (the one push it used to
 // have, on order confirmation, was removed by request — see AI_HANDOFF.md).
 //
-// 客人端數量/價格互動已整組移除：「好了」觸發詞、數量確認清單
-// (Flex + 1/2/3/4/5+ 按鈕)、「價格有誤」回報、清單上的「刪除」按鈕、
-// 「數量正確」鎖定機制全部拿掉——客人只剩「傳照片」「我要匯款」
-// 「取消訂單」三件事，數量/價格交給後台人工處理。背景的
-// recognizeProductPhoto/recognizePriceFromPhoto 自動辨識完全沒有改動，
-// 只是客人不會再看到/調整這些值。取消訂單清單改成純展示（只剩照片＋
-// 商品名稱）。匯款清單改成純圖片直向大圖，系統不計算金額，但客人回報
-// 時會自己依固定格式回報「銀行/金額/末五碼」三項，amount 欄位存的是
-// 客人自報的金額，純供管理員核對用，不是系統算出來的。
+// 客人端數量/價格互動已整組移除：原本的數量確認清單 (Flex +
+// 1/2/3/4/5+ 按鈕)、「價格有誤」回報、清單上的「刪除」按鈕、「數量
+// 正確」鎖定機制全部拿掉——客人剩「傳照片」「我要匯款」「取消訂單」
+// 三件事，數量/價格交給後台人工處理。背景的 recognizeProductPhoto/
+// recognizePriceFromPhoto 自動辨識完全沒有改動，只是客人不會再看到/
+// 調整這些值。取消訂單清單改成純展示（只剩照片＋商品名稱）。匯款清單
+// 改成純圖片直向大圖，系統不計算金額，但客人回報時會自己依固定格式
+// 回報「銀行/金額/末五碼」三項，amount 欄位存的是客人自報的金額，純
+// 供管理員核對用，不是系統算出來的。後來加回一個極簡的「傳好了」
+// 確認信號（見 handlePhotoConfirmTrigger）——跟被整組移除的舊版數量
+// 確認清單語意完全不同，純粹是查「最近 10 分鐘內有沒有收到照片」的
+// 一句文字回覆，不附清單/按鈕/數量/價格。
 
 export type LineWebhookEvent = {
   type?: string;
@@ -61,13 +64,16 @@ const PHOTO_BUCKET = "community-livestream-photos";
 const MAX_PHOTOS_PER_ROUND = 10;
 const CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days — long enough for LINE to fetch/cache the bubble image
 const MAX_REPLY_MESSAGES = 5; // LINE reply API hard limit
+// 跟 order_welcome 文案裡「超過 10 分鐘沒上傳新照片，請重新輸入
+// 「我要下單」」用的是同一個時間概念——這裡是 handlePhotoConfirmTrigger
+// 實際查詢用的時間窗，那邊只是提醒文字本身，兩者數值要保持一致（文案
+// 後台可編輯，改了分鐘數的話記得這裡也要一併改）。
+const RECENT_PHOTO_WINDOW_MINUTES = 10;
 
-// 三組觸發關鍵字（下單/匯款/取消）改成後台可設定——實際的預設值/
-// 讀取/fallback 邏輯都在 src/lib/line/livestream-keywords.ts，這裡不再
-// 寫死陣列，一律透過 getLivestreamKeywords() 在 handleTextMessage 裡
-// 每則訊息抓一次（讀取失敗會自動 fallback 回預設值，不會直接失效）。
-// 「完成」（好了）跟「數量確認」兩組關鍵字已整組移除，見下方「數量/
-// 價格互動整組移除」說明。
+// 四組觸發關鍵字（下單/匯款/取消/傳照片確認）改成後台可設定——實際的
+// 預設值/讀取/fallback 邏輯都在 src/lib/line/livestream-keywords.ts，
+// 這裡不再寫死陣列，一律透過 getLivestreamKeywords() 在 handleTextMessage
+// 裡每則訊息抓一次（讀取失敗會自動 fallback 回預設值，不會直接失效）。
 
 function normalizeText(text: string) {
   return text.replace(/\s+/g, "").toLowerCase();
@@ -132,7 +138,7 @@ async function reply(replyToken: string | undefined, text: string) {
   await sendLineReplyText(replyToken, text);
 }
 
-// 10 則客人會實際看到的「主要流程」文案改成後台可編輯（見
+// 13 則客人會實際看到的「主要流程」文案改成後台可編輯（見
 // livestream-reply-templates.ts）；系統內部的錯誤/邊界文案不在這套機制
 // 裡，繼續直接呼叫上面的 reply() 寫死文字。templates 一律由呼叫鏈最上層
 // （handleTextMessage/handleImageMessage/handlePostback，三個 handleLineEvent
@@ -290,6 +296,35 @@ async function handleImageMessage(
   // 不再需要看到或確認任何東西，商品名稱/單價仍照常嘗試自動辨識並存進
   // 資料庫，由後台管理員檢視/編輯（見上面的 recognizeProductPhoto /
   // recognizePriceFromPhoto，本輪完全沒有改動這兩支函式本身）。
+}
+
+// 傳照片確認：客人傳完照片後打關鍵字（預設「傳好了」），查一下「這個
+// 人最近 10 分鐘內有沒有真的收到照片」，純粹回一句文字確認——不是
+// 恢復「好了」那套數量確認清單（那套已經整組移除，見上方大段說明），
+// 不附任何清單/按鈕/數量/價格資訊，單純是一句文字信號。
+async function handlePhotoConfirmTrigger(
+  supabase: SupabaseService,
+  userId: string,
+  replyToken: string | undefined,
+  templates: LivestreamReplyTemplates,
+) {
+  const sinceIso = new Date(Date.now() - RECENT_PHOTO_WINDOW_MINUTES * 60 * 1000).toISOString();
+  const { count, error } = await supabase
+    .from("community_livestream_orders")
+    .select("id", { count: "exact", head: true })
+    .eq("line_user_id", userId)
+    .gte("created_at", sinceIso);
+
+  if (error) {
+    await reply(replyToken, "查詢失敗，請稍後再試一次。");
+    return;
+  }
+
+  if (count && count > 0) {
+    await replyTemplate(replyToken, templates, "photo_confirm_success");
+  } else {
+    await replyTemplate(replyToken, templates, "photo_confirm_empty");
+  }
 }
 
 // 匯款/取消訂單清單共用的 Flex 容器——把已經組好的 item block 陣列接上
@@ -655,6 +690,11 @@ async function handleTextMessage(
 
   if (matchesAny(text, keywords.cancel)) {
     await handleCancelTrigger(supabase, userId, replyToken, templates);
+    return;
+  }
+
+  if (matchesAny(text, keywords.photo_confirm)) {
+    await handlePhotoConfirmTrigger(supabase, userId, replyToken, templates);
     return;
   }
 
