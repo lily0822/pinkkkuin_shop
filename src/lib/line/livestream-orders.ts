@@ -44,13 +44,15 @@ import {
 // 正確」鎖定機制全部拿掉——客人剩「傳照片」「我要匯款」「取消訂單」
 // 三件事，數量/價格交給後台人工處理。背景的 recognizeProductPhoto/
 // recognizePriceFromPhoto 自動辨識完全沒有改動，只是客人不會再看到/
-// 調整這些值。取消訂單清單改成純展示（只剩照片＋商品名稱）。匯款清單
-// 改成純圖片直向大圖，系統不計算金額，但客人回報時會自己依固定格式
-// 回報「銀行/金額/末五碼」三項，amount 欄位存的是客人自報的金額，純
-// 供管理員核對用，不是系統算出來的。後來加回一個極簡的「傳好了」
-// 確認信號（見 handlePhotoConfirmTrigger）——跟被整組移除的舊版數量
-// 確認清單語意完全不同，純粹是查「最近 10 分鐘內有沒有收到照片」的
-// 一句文字回覆，不附清單/按鈕/數量/價格。
+// 調整這些值。取消訂單清單維持純展示（只有照片＋商品名稱）。匯款時
+// 系統不計算金額，但客人回報時會自己依固定格式回報「銀行/金額/
+// 末五碼」三項，amount 欄位存的是客人自報的金額，純供管理員核對用，
+// 不是系統算出來的。後來加回一個極簡的「傳好了」確認信號（見
+// handlePhotoConfirmTrigger）——跟被整組移除的舊版數量確認清單語意
+// 完全不同，純粹是查「最近 10 分鐘內有沒有收到照片」，有的話連同
+// 收到的商品一起列出來，不附按鈕/數量/價格。這個「圖片+商品名稱」
+// 清單項目是共用函式 buildPhotoNameItemBlock，「傳好了」確認跟
+// 「我要匯款」清單都呼叫同一支，兩邊樣式保持一致。
 
 export type LineWebhookEvent = {
   type?: string;
@@ -298,10 +300,52 @@ async function handleImageMessage(
   // recognizePriceFromPhoto，本輪完全沒有改動這兩支函式本身）。
 }
 
+type PhotoNameOrderRow = {
+  id: string;
+  product_name: string | null;
+  photo_storage_path: string | null;
+};
+
+// 共用清單項目樣式：放大圖片在上、商品名稱文字在下，一項接一項往下
+// 排（跟呼叫端的 buildOrderListBubble 搭配使用，不是橫向滑動的
+// Carousel）。「傳好了」確認清單跟「我要匯款」清單都呼叫這同一支函式，
+// 不要各自維護一份——兩邊樣式理應完全一致。沒有照片的訂單不留白、不
+// 顯示壞圖，直接用灰底佔位區塊＋商品名稱文字當整個項目（這種情況下
+// 名稱已經在佔位區塊裡了，不再多疊一行重複的文字）。
+async function buildPhotoNameItemBlock(row: PhotoNameOrderRow): Promise<object> {
+  const imageUrl = row.photo_storage_path
+    ? await createSignedUrl(PHOTO_BUCKET, row.photo_storage_path, CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS)
+    : null;
+
+  if (!imageUrl) {
+    return {
+      type: "box",
+      layout: "vertical",
+      aspectRatio: "1:1",
+      cornerRadius: "md",
+      backgroundColor: "#f1f5f9",
+      justifyContent: "center",
+      alignItems: "center",
+      contents: [{ type: "text", text: row.product_name || "商品", size: "sm", color: "#94a3b8", align: "center", wrap: true }],
+    };
+  }
+
+  return {
+    type: "box",
+    layout: "vertical",
+    spacing: "sm",
+    contents: [
+      { type: "image", url: imageUrl, size: "full", aspectRatio: "1:1", aspectMode: "cover" },
+      { type: "text", text: row.product_name || "商品", weight: "bold", wrap: true, size: "sm" },
+    ],
+  };
+}
+
 // 傳照片確認：客人傳完照片後打關鍵字（預設「傳好了」），查一下「這個
-// 人最近 10 分鐘內有沒有真的收到照片」，純粹回一句文字確認——不是
-// 恢復「好了」那套數量確認清單（那套已經整組移除，見上方大段說明），
-// 不附任何清單/按鈕/數量/價格資訊，單純是一句文字信號。
+// 人最近 10 分鐘內有沒有真的收到照片」——不是恢復「好了」那套數量
+// 確認清單（那套已經整組移除，見上方大段說明），不附按鈕/數量/價格，
+// 但這次會把剛收到的商品用共用的「圖片+商品名稱」樣式列出來，不是只
+// 回一句話。
 async function handlePhotoConfirmTrigger(
   supabase: SupabaseService,
   userId: string,
@@ -309,22 +353,30 @@ async function handlePhotoConfirmTrigger(
   templates: LivestreamReplyTemplates,
 ) {
   const sinceIso = new Date(Date.now() - RECENT_PHOTO_WINDOW_MINUTES * 60 * 1000).toISOString();
-  const { count, error } = await supabase
+  const { data, error } = await supabase
     .from("community_livestream_orders")
-    .select("id", { count: "exact", head: true })
+    .select("id, product_name, photo_storage_path")
     .eq("line_user_id", userId)
-    .gte("created_at", sinceIso);
+    .gte("created_at", sinceIso)
+    .order("created_at", { ascending: true });
 
   if (error) {
     await reply(replyToken, "查詢失敗，請稍後再試一次。");
     return;
   }
 
-  if (count && count > 0) {
-    await replyTemplate(replyToken, templates, "photo_confirm_success");
-  } else {
+  const rows = (data as PhotoNameOrderRow[] | null) || [];
+  if (!rows.length) {
     await replyTemplate(replyToken, templates, "photo_confirm_empty");
+    return;
   }
+
+  const itemBlocks = await Promise.all(rows.map((row) => buildPhotoNameItemBlock(row)));
+  const messages: LineReplyMessage[] = [
+    { type: "text", text: renderLivestreamReplyTemplate(templates.photo_confirm_success) },
+    { type: "flex", altText: "已收到的商品照片", contents: buildOrderListBubble(itemBlocks) },
+  ];
+  if (replyToken) await sendLineReply(replyToken, messages);
 }
 
 // 匯款/取消訂單清單共用的 Flex 容器——把已經組好的 item block 陣列接上
@@ -512,38 +564,6 @@ async function handleCancelOrder(
 // 匯出的帳戶資訊，跟這裡的「這次要核對哪些訂單」完全是兩回事）。
 // ---------------------------------------------------------------------------
 
-type UnpaidOrderRow = {
-  id: string;
-  product_name: string | null;
-  photo_storage_path: string | null;
-};
-
-// 純圖片清單、直向排列、圖片放大：拿掉商品名稱文字，每一項就是一張
-// 接近滿版寬度的正方形大圖（size:"full" + aspectRatio:"1:1"），跟
-// buildOrderListBubble 的 separator 組成一張一張往下排的直向清單，不是
-// 橫向滑動的 Carousel。沒有照片的訂單不留白、不顯示壞圖——用一個灰底
-// 佔位區塊＋商品名稱文字當 fallback，跟有照片的項目一樣占滿寬度。
-async function buildRemittanceItemBlock(row: UnpaidOrderRow): Promise<object> {
-  const imageUrl = row.photo_storage_path
-    ? await createSignedUrl(PHOTO_BUCKET, row.photo_storage_path, CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS)
-    : null;
-
-  if (!imageUrl) {
-    return {
-      type: "box",
-      layout: "vertical",
-      aspectRatio: "1:1",
-      cornerRadius: "md",
-      backgroundColor: "#f1f5f9",
-      justifyContent: "center",
-      alignItems: "center",
-      contents: [{ type: "text", text: row.product_name || "商品", size: "sm", color: "#94a3b8", align: "center", wrap: true }],
-    };
-  }
-
-  return { type: "image", url: imageUrl, size: "full", aspectRatio: "1:1", aspectMode: "cover" };
-}
-
 // 收款帳號改成三顆 LINE Flex 原生的 clipboard 按鈕——點了直接把帳號文字
 // 複製到客人剪貼簿，不用跳頁、不用打後端。只有後台實際填了帳號的銀行
 // 才會出現對應按鈕；三個都沒填就整個不送這則訊息（見呼叫端）。
@@ -588,7 +608,7 @@ async function handleRemittanceTrigger(
     return;
   }
 
-  const rows = (data as UnpaidOrderRow[] | null) || [];
+  const rows = (data as PhotoNameOrderRow[] | null) || [];
   if (!rows.length) {
     await replyTemplate(replyToken, templates, "remittance_empty");
     return;
@@ -603,10 +623,11 @@ async function handleRemittanceTrigger(
     remittance_order_ids: rows.map((row) => row.id),
   });
 
-  // 商品清單（純圖片、直向排列）→ 收款帳號複製按鈕（只有填了帳號的
-  // 銀行才出現）→ 固定格式的回報說明文字，三則訊息都在同一次 reply
-  // 裡送出，沒超過 LINE 單次 reply 5 則的上限。
-  const itemBlocks = await Promise.all(rows.map((row) => buildRemittanceItemBlock(row)));
+  // 商品清單（共用的「圖片+商品名稱」樣式，跟「傳好了」確認清單一致）
+  // → 收款帳號複製按鈕（只有填了帳號的銀行才出現）→ 固定格式的回報
+  // 說明文字，三則訊息都在同一次 reply 裡送出，沒超過 LINE 單次 reply
+  // 5 則的上限。
+  const itemBlocks = await Promise.all(rows.map((row) => buildPhotoNameItemBlock(row)));
   const bankButtonsBubble = buildBankAccountButtonsBubble(bankAccounts);
   const messages: LineReplyMessage[] = [{ type: "flex", altText: "本次下單商品", contents: buildOrderListBubble(itemBlocks) }];
   if (bankButtonsBubble) {
