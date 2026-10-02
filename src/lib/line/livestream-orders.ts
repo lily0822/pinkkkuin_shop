@@ -53,6 +53,13 @@ import {
 // 收到的商品一起列出來，不附按鈕/數量/價格。這個「圖片+商品名稱」
 // 清單項目是共用函式 buildPhotoNameItemBlock，「傳好了」確認跟
 // 「我要匯款」清單都呼叫同一支，兩邊樣式保持一致。
+//
+// awaiting_remittance_last5 等待狀態不再是「獨佔」文字輸入的黑洞：
+// handleTextMessage 進入這個狀態後，會先比對 order/remittance/cancel/
+// photo_confirm 任一組已知關鍵字，符合就自動清掉等待狀態、照常執行
+// 該指令；另外新增 remittance_cancel（預設「取消匯款」）明確逃生
+// 指令，客人隨時可以直接退出。都是為了避免客人不小心碰到「我要匯款」
+// 後卡在格式提醒裡出不來。
 
 export type LineWebhookEvent = {
   type?: string;
@@ -683,13 +690,43 @@ async function handleTextMessage(
 
   const state = await getBotState(supabase, userId);
   const templates = await getLivestreamReplyTemplates();
+  const keywords = await getLivestreamKeywords();
 
-  if (state.awaiting_remittance_last5) {
-    await handleRemittanceLast5Submission(supabase, userId, replyToken, text, state, templates);
+  // 明確的「取消匯款」逃生指令——檢查順序刻意放在最前面、獨立於下面的
+  // awaiting 分支：預設詞「取消匯款」本身同時包含「取消」「匯款」兩個
+  // 字，如果放給下面一般的關鍵字比對，客人在非等待狀態打這個詞會被
+  // substring 比對誤判成「我要匯款」（或「取消訂單」），反而意外觸發
+  // 一個全新的匯款流程——跟這整個功能想避免的「意外觸發」正好相反。
+  // 所以提前判斷：有在等待格式才真的執行取消、回覆確認；不在等待狀態
+  // 就單純不處理，不落入下面任何一般指令的分派。
+  if (matchesAny(text, keywords.remittance_cancel)) {
+    if (state.awaiting_remittance_last5) {
+      await setBotState(supabase, userId, { awaiting_remittance_last5: false, remittance_order_ids: null });
+      await replyTemplate(replyToken, templates, "remittance_cancelled");
+    }
     return;
   }
 
-  const keywords = await getLivestreamKeywords();
+  if (state.awaiting_remittance_last5) {
+    // 其他已知指令優先於「等待匯款格式」狀態：客人可能是不小心點到/
+    // 打到「我要匯款」才卡在這裡，根本沒有要匯款。只要這則文字符合
+    // order/remittance/cancel/photo_confirm 任一組關鍵字，就視為客人
+    // 其實是要做別的事——自動清掉等待狀態，直接照該指令執行，客人完全
+    // 不會感覺到有「卡住」這回事。完全不符合任何已知關鍵字，才真的當
+    // 作格式回報來解析。
+    const matchesKnownCommand =
+      matchesAny(text, keywords.order) ||
+      matchesAny(text, keywords.remittance) ||
+      matchesAny(text, keywords.cancel) ||
+      matchesAny(text, keywords.photo_confirm);
+
+    if (matchesKnownCommand) {
+      await setBotState(supabase, userId, { awaiting_remittance_last5: false, remittance_order_ids: null });
+    } else {
+      await handleRemittanceLast5Submission(supabase, userId, replyToken, text, state, templates);
+      return;
+    }
+  }
 
   if (matchesAny(text, keywords.order)) {
     await handleOrderTrigger(replyToken, templates);

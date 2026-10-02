@@ -2,29 +2,41 @@ import "server-only";
 
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 
-// 四組觸發關鍵字改成後台可設定 (schedule_settings KV，比照
+// 五組觸發關鍵字改成後台可設定 (schedule_settings KV，比照
 // livestream-bank-info.ts 的模式，不開新表)。讀取失敗或還沒設定過時，
 // 一律 fallback 回這裡的預設值——所以即使從未進過後台設定畫面，bot 的
 // 行為也跟改動前完全一樣，不會突然失效。
 //
 // 原本的「完成」(好了) 跟「數量確認」(數量正確) 兩組關鍵字曾經整組
 // 移除過——客人端數量/價格互動整組拿掉後，那兩個觸發詞一度失去意義。
-// 這次新增的 photo_confirm 組（預設「傳好了」）雖然詞面類似，但語意
+// 之後新增的 photo_confirm 組（預設「傳好了」）雖然詞面類似，但語意
 // 完全不同：不是回傳數量確認清單，純粹是「查一下最近 10 分鐘內有沒有
 // 收到照片」的一句文字回覆，見 livestream-orders.ts::handlePhotoConfirmTrigger。
+//
+// remittance_cancel（預設「取消匯款」）是給卡在 awaiting_remittance_last5
+// 等待狀態的客人用的明確逃生指令——見 livestream-orders.ts::
+// handleTextMessage 開頭那段「等待匯款格式時優先比對其他已知指令」的
+// 說明，這組關鍵字只在那個等待狀態下才有意義，不在一般對話觸發。
 const SETTINGS_TYPE = "community-livestream-keywords";
 const MAX_KEYWORDS_PER_GROUP = 30;
 const MAX_KEYWORD_LENGTH = 40;
 
-export type LivestreamKeywordGroup = "order" | "remittance" | "cancel" | "photo_confirm";
+export type LivestreamKeywordGroup = "order" | "remittance" | "cancel" | "photo_confirm" | "remittance_cancel";
 
-export const LIVESTREAM_KEYWORD_GROUPS: LivestreamKeywordGroup[] = ["order", "remittance", "cancel", "photo_confirm"];
+export const LIVESTREAM_KEYWORD_GROUPS: LivestreamKeywordGroup[] = [
+  "order",
+  "remittance",
+  "cancel",
+  "photo_confirm",
+  "remittance_cancel",
+];
 
 export const LIVESTREAM_KEYWORD_GROUP_LABELS: Record<LivestreamKeywordGroup, string> = {
   order: "下單觸發詞",
   remittance: "匯款觸發詞",
   cancel: "取消觸發詞",
   photo_confirm: "傳照片確認觸發詞",
+  remittance_cancel: "取消匯款觸發詞",
 };
 
 export const DEFAULT_LIVESTREAM_KEYWORDS: Record<LivestreamKeywordGroup, string[]> = {
@@ -32,6 +44,7 @@ export const DEFAULT_LIVESTREAM_KEYWORDS: Record<LivestreamKeywordGroup, string[
   remittance: ["我要匯款", "匯款申報", "回報匯款", "匯款"],
   cancel: ["取消訂單", "我要取消", "取消"],
   photo_confirm: ["傳好了", "好了", "傳完了", "完成"],
+  remittance_cancel: ["取消匯款"],
 };
 
 export type LivestreamKeywords = Record<LivestreamKeywordGroup, string[]>;
@@ -85,8 +98,8 @@ export type LivestreamKeywordDuplicate = { keyword: string; groups: LivestreamKe
 
 // 存檔時偵測「完全重複」的詞出現在不只一組裡——不是強制擋下，只是給
 // 管理員一個提示，因為 bot 判斷觸發詞是照固定順序（下單→匯款→取消→
-// 傳照片確認）一組一組比對，同一個詞如果放進兩組，後面那組永遠不會
-// 被命中。
+// 傳照片確認→取消匯款）一組一組比對，同一個詞如果放進兩組，後面那組
+// 永遠不會被命中。
 export function findDuplicateKeywords(groups: LivestreamKeywords): LivestreamKeywordDuplicate[] {
   const seen = new Map<string, Set<LivestreamKeywordGroup>>();
   LIVESTREAM_KEYWORD_GROUPS.forEach((group) => {
