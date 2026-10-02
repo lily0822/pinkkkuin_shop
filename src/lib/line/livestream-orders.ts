@@ -232,15 +232,26 @@ async function handleOrderTrigger(replyToken: string | undefined, templates: Liv
 // ---------------------------------------------------------------------------
 
 // 辨識不出商品名稱時，不存 null、也不顯示「未辨識商品」——自動產生一個
-// 看得懂的名稱：{LINE顯示名稱}-商品{N}。N 是這個 line_user_id 目前總共
-// 有幾筆 community_livestream_orders（不分辨識成功或失敗、跨輪次跨批次
-// 都算）+1，直接從資料庫實際筆數算出來，天然不會歸零重算。
+// 看得懂的名稱：{LINE顯示名稱}-商品{N}。N 曾經是「查詢這個 line_user_id
+// 目前總共有幾筆 community_livestream_orders + 1」算出來的——客人連續
+// 快速傳好幾張照片時，多個 handleImageMessage 呼叫會在前一筆真正寫進
+// 資料庫之前幾乎同時查到同一個筆數，算出同一個編號，造成兩筆不同訂單
+// 撞號（都叫「商品3」）。改呼叫 increment_livestream_product_number
+// 這支 Postgres function（202610050001 migration）——內部是單一 SQL
+// 陳述式的 INSERT ... ON CONFLICT DO UPDATE ... RETURNING，Postgres
+// 對同一列的並行寫入會自動排隊，從根本上不會有兩次呼叫拿到同一個號碼。
 async function generateFallbackProductName(supabase: SupabaseService, userId: string, displayName: string) {
-  const { count } = await supabase
-    .from("community_livestream_orders")
-    .select("id", { count: "exact", head: true })
-    .eq("line_user_id", userId);
-  return `${displayName}-商品${(count || 0) + 1}`;
+  const { data, error } = await supabase.rpc("increment_livestream_product_number", { p_line_user_id: userId });
+  if (!error && typeof data === "number") {
+    return `${displayName}-商品${data}`;
+  }
+
+  // RPC 失敗時的最後防線（例如 migration 還沒套用到這個環境）——刻意
+  // 不退回原本「查詢現有筆數＋1」那套算法，那正是這次要修掉的競態
+  // 來源；改用時間戳記＋亂碼尾碼，犧牲編號的連續性/可讀性，換取任何
+  // 情況下都不會跟其他商品撞名。
+  const fallbackSuffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+  return `${displayName}-商品-${fallbackSuffix}`;
 }
 
 async function handleImageMessage(
