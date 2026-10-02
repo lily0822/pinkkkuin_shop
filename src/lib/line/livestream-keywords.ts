@@ -17,6 +17,10 @@ import { createSupabaseServiceClient } from "@/lib/supabase/service";
 // 等待狀態的客人用的明確逃生指令——見 livestream-orders.ts::
 // handleTextMessage 開頭那段「等待匯款格式時優先比對其他已知指令」的
 // 說明，這組關鍵字只在那個等待狀態下才有意義，不在一般對話觸發。
+//
+// cancel 組的「查詢訂單」是後來加的別名，不是獨立功能——純粹讓客人
+// 多一種方式叫出同一份可取消清單（見 livestream-orders.ts 功能六），
+// bot 完全不分辨客人打的是「取消訂單」還是「查詢訂單」。
 const SETTINGS_TYPE = "community-livestream-keywords";
 const MAX_KEYWORDS_PER_GROUP = 30;
 const MAX_KEYWORD_LENGTH = 40;
@@ -42,7 +46,7 @@ export const LIVESTREAM_KEYWORD_GROUP_LABELS: Record<LivestreamKeywordGroup, str
 export const DEFAULT_LIVESTREAM_KEYWORDS: Record<LivestreamKeywordGroup, string[]> = {
   order: ["我要下單", "下單", "開始下單", "開通", "綁定", "加入社群", "註冊"],
   remittance: ["我要匯款", "匯款申報", "回報匯款", "匯款"],
-  cancel: ["取消訂單", "我要取消", "取消"],
+  cancel: ["取消訂單", "我要取消", "取消", "查詢訂單"],
   photo_confirm: ["傳好了", "好了", "傳完了", "完成"],
   remittance_cancel: ["取消匯款"],
 };

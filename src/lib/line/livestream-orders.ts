@@ -49,10 +49,11 @@ import {
 // 末五碼」三項，amount 欄位存的是客人自報的金額，純供管理員核對用，
 // 不是系統算出來的。後來加回一個極簡的「傳好了」確認信號（見
 // handlePhotoConfirmTrigger）——跟被整組移除的舊版數量確認清單語意
-// 完全不同，純粹是查「最近 10 分鐘內有沒有收到照片」，有的話連同
-// 收到的商品一起列出來，不附按鈕/數量/價格。這個「圖片+商品名稱」
-// 清單項目是共用函式 buildPhotoNameItemBlock，「傳好了」確認跟
-// 「我要匯款」清單都呼叫同一支，兩邊樣式保持一致。
+// 完全不同，純粹是查「最近 10 分鐘內有沒有收到照片」的輕量 count，
+// 回一句純文字，不附清單/按鈕/數量/價格。客人想看目前訂單要自己另外
+// 輸入「查詢訂單」（跟「取消訂單」共用同一套 handleCancelTrigger 清單，
+// 見功能六）。「圖片+商品名稱」清單項目共用函式 buildPhotoNameItemBlock
+// 目前只有「我要匯款」清單（handleRemittanceTrigger）在呼叫。
 //
 // awaiting_remittance_last5 等待狀態不再是「獨佔」文字輸入的黑洞：
 // handleTextMessage 進入這個狀態後，會先比對 order/remittance/cancel/
@@ -342,9 +343,10 @@ async function buildPhotoNameItemBlock(row: PhotoNameOrderRow): Promise<object> 
 
 // 傳照片確認：客人傳完照片後打關鍵字（預設「傳好了」），查一下「這個
 // 人最近 10 分鐘內有沒有真的收到照片」——不是恢復「好了」那套數量
-// 確認清單（那套已經整組移除，見上方大段說明），不附按鈕/數量/價格，
-// 但這次會把剛收到的商品用共用的「圖片+商品名稱」樣式列出來，不是只
-// 回一句話。
+// 確認清單（那套已經整組移除，見上方大段說明），純粹是輕量的 count
+// 查詢，只用來判斷要回哪句文字，不抓完整欄位、不附清單/按鈕/數量/
+// 價格。客人想看目前訂單，要自己另外輸入「查詢訂單」（見 handleCancelTrigger，
+// 兩個關鍵字共用同一套清單邏輯）。
 async function handlePhotoConfirmTrigger(
   supabase: SupabaseService,
   userId: string,
@@ -352,30 +354,23 @@ async function handlePhotoConfirmTrigger(
   templates: LivestreamReplyTemplates,
 ) {
   const sinceIso = new Date(Date.now() - RECENT_PHOTO_WINDOW_MINUTES * 60 * 1000).toISOString();
-  const { data, error } = await supabase
+  const { count, error } = await supabase
     .from("community_livestream_orders")
-    .select("id, product_name, photo_storage_path")
+    .select("id", { count: "exact", head: true })
     .eq("line_user_id", userId)
-    .gte("created_at", sinceIso)
-    .order("created_at", { ascending: true });
+    .gte("created_at", sinceIso);
 
   if (error) {
     await reply(replyToken, "查詢失敗，請稍後再試一次。");
     return;
   }
 
-  const rows = (data as PhotoNameOrderRow[] | null) || [];
-  if (!rows.length) {
+  if (!count) {
     await replyTemplate(replyToken, templates, "photo_confirm_empty");
     return;
   }
 
-  const itemBlocks = await Promise.all(rows.map((row) => buildPhotoNameItemBlock(row)));
-  const messages: LineReplyMessage[] = [
-    { type: "text", text: renderLivestreamReplyTemplate(templates.photo_confirm_success) },
-    { type: "flex", altText: "已收到的商品照片", contents: buildOrderListBubble(itemBlocks) },
-  ];
-  if (replyToken) await sendLineReply(replyToken, messages);
+  await replyTemplate(replyToken, templates, "photo_confirm_success");
 }
 
 // 匯款/取消訂單清單共用的 Flex 容器——把已經組好的 item block 陣列接上
@@ -422,6 +417,11 @@ async function handlePostback(
 // 流程）的訂單能取消；取消即直接硬刪除該筆 community_livestream_orders
 // （跟後台的刪除按鈕共用 deleteLivestreamOrder，不另外寫一套邏輯），不留
 // 取消紀錄。
+//
+// 「查詢訂單」是 cancel 這組關鍵字的預設詞之一（不是獨立功能），純粹讓
+// 客人多一種方式叫出這份清單——兩個詞走的是完全同一條路徑
+// （handleTextMessage 裡只比對 keywords.cancel，不分辨客人打的是哪個詞），
+// 清單本身維持「挑一項就刪掉」的取消語意，沒有另外做一個唯讀的查詢版本。
 // ---------------------------------------------------------------------------
 
 type CancellableOrderRow = {
