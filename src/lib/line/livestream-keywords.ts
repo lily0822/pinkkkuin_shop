@@ -18,19 +18,28 @@ import { createSupabaseServiceClient } from "@/lib/supabase/service";
 // handleTextMessage 開頭那段「等待匯款格式時優先比對其他已知指令」的
 // 說明，這組關鍵字只在那個等待狀態下才有意義，不在一般對話觸發。
 //
-// cancel 組的「查詢訂單」是後來加的別名，不是獨立功能——純粹讓客人
-// 多一種方式叫出同一份可取消清單（見 livestream-orders.ts 功能六），
-// bot 完全不分辨客人打的是「取消訂單」還是「查詢訂單」。
+// order_query（預設「查詢訂單」）是獨立的一組——**上一輪曾經誤把它當成
+// cancel 組的同義詞**（純粹多一種方式叫出取消清單），這輪拆開成真正
+// 獨立的功能：查詢訂單不篩選任何狀態、列出客人全部商品，純展示沒有
+// 取消按鈕；取消訂單維持原本只篩可取消子集 + 取消按鈕。兩組關鍵字
+// 完全不重疊，見 livestream-orders.ts 功能六/功能七。
 const SETTINGS_TYPE = "community-livestream-keywords";
 const MAX_KEYWORDS_PER_GROUP = 30;
 const MAX_KEYWORD_LENGTH = 40;
 
-export type LivestreamKeywordGroup = "order" | "remittance" | "cancel" | "photo_confirm" | "remittance_cancel";
+export type LivestreamKeywordGroup =
+  | "order"
+  | "remittance"
+  | "cancel"
+  | "order_query"
+  | "photo_confirm"
+  | "remittance_cancel";
 
 export const LIVESTREAM_KEYWORD_GROUPS: LivestreamKeywordGroup[] = [
   "order",
   "remittance",
   "cancel",
+  "order_query",
   "photo_confirm",
   "remittance_cancel",
 ];
@@ -39,6 +48,7 @@ export const LIVESTREAM_KEYWORD_GROUP_LABELS: Record<LivestreamKeywordGroup, str
   order: "下單觸發詞",
   remittance: "匯款觸發詞",
   cancel: "取消觸發詞",
+  order_query: "查詢訂單觸發詞",
   photo_confirm: "傳照片確認觸發詞",
   remittance_cancel: "取消匯款觸發詞",
 };
@@ -46,7 +56,8 @@ export const LIVESTREAM_KEYWORD_GROUP_LABELS: Record<LivestreamKeywordGroup, str
 export const DEFAULT_LIVESTREAM_KEYWORDS: Record<LivestreamKeywordGroup, string[]> = {
   order: ["我要下單", "下單", "開始下單", "開通", "綁定", "加入社群", "註冊"],
   remittance: ["我要匯款", "匯款申報", "回報匯款", "匯款"],
-  cancel: ["取消訂單", "我要取消", "取消", "查詢訂單"],
+  cancel: ["取消訂單", "我要取消", "取消"],
+  order_query: ["查詢訂單"],
   photo_confirm: ["傳好了", "好了", "傳完了", "完成"],
   remittance_cancel: ["取消匯款"],
 };
@@ -102,8 +113,8 @@ export type LivestreamKeywordDuplicate = { keyword: string; groups: LivestreamKe
 
 // 存檔時偵測「完全重複」的詞出現在不只一組裡——不是強制擋下，只是給
 // 管理員一個提示，因為 bot 判斷觸發詞是照固定順序（下單→匯款→取消→
-// 傳照片確認→取消匯款）一組一組比對，同一個詞如果放進兩組，後面那組
-// 永遠不會被命中。
+// 查詢訂單→傳照片確認→取消匯款）一組一組比對，同一個詞如果放進兩組，
+// 後面那組永遠不會被命中。
 export function findDuplicateKeywords(groups: LivestreamKeywords): LivestreamKeywordDuplicate[] {
   const seen = new Map<string, Set<LivestreamKeywordGroup>>();
   LIVESTREAM_KEYWORD_GROUPS.forEach((group) => {

@@ -25,7 +25,9 @@ export type LivestreamReplyTemplateKey =
   | "remittance_cancelled"
   | "remittance_success"
   | "photo_confirm_success"
-  | "photo_confirm_empty";
+  | "photo_confirm_empty"
+  | "order_query_empty"
+  | "order_query_intro";
 
 export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
   "order_welcome",
@@ -42,6 +44,8 @@ export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
   "remittance_success",
   "photo_confirm_success",
   "photo_confirm_empty",
+  "order_query_empty",
+  "order_query_intro",
 ];
 
 export type LivestreamReplyTemplates = Record<LivestreamReplyTemplateKey, string>;
@@ -66,6 +70,8 @@ export const DEFAULT_LIVESTREAM_REPLY_TEMPLATES: LivestreamReplyTemplates = {
   remittance_success: "已收到您的匯款回報，我們將盡快為您核對，感謝您！",
   photo_confirm_success: "已錄入商品，感謝您的訂購！如想查詢目前訂單，請輸入「查詢訂單」。",
   photo_confirm_empty: "目前沒有收到您的商品照片喔，請先上傳圖片再回覆「傳好了」。",
+  order_query_empty: "目前沒有查到您的下單紀錄喔。",
+  order_query_intro: "以下是您目前下單的所有商品：",
 };
 
 function sanitizeTemplates(input: Partial<Record<LivestreamReplyTemplateKey, unknown>>): LivestreamReplyTemplates {
