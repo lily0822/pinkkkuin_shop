@@ -306,39 +306,31 @@ type PhotoNameOrderRow = {
   photo_storage_path: string | null;
 };
 
-// 共用清單項目樣式：放大圖片在上、商品名稱文字在下，一項接一項往下
-// 排（跟呼叫端的 buildOrderListBubble 搭配使用，不是橫向滑動的
-// Carousel）。「傳好了」確認清單跟「我要匯款」清單都呼叫這同一支函式，
-// 不要各自維護一份——兩邊樣式理應完全一致。沒有照片的訂單不留白、不
-// 顯示壞圖，直接用灰底佔位區塊＋商品名稱文字當整個項目（這種情況下
-// 名稱已經在佔位區塊裡了，不再多疊一行重複的文字）。
+// 共用清單項目樣式：小縮圖在左、商品名稱在右的橫向排列——比照舊版
+// （還有數量按鈕時）buildOrderItemBlock 用過的尺寸（60px 小圖），只是
+// 拿掉了數量/按鈕，純粹是圖片+名稱。「傳好了」確認清單跟「我要匯款」
+// 清單都呼叫這同一支函式，不要各自維護一份——兩邊樣式理應完全一致。
+// 跟 buildOrderListBubble 的 separator 搭配組成一項接一項往下排的直向
+// 清單（不是橫向滑動的 Carousel，橫向排列只發生在單一項目內部）。
+// 沒有照片的訂單不顯示壞圖——直接省略圖片，整列只剩商品名稱文字。
 async function buildPhotoNameItemBlock(row: PhotoNameOrderRow): Promise<object> {
   const imageUrl = row.photo_storage_path
     ? await createSignedUrl(PHOTO_BUCKET, row.photo_storage_path, CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS)
     : null;
 
-  if (!imageUrl) {
-    return {
-      type: "box",
-      layout: "vertical",
-      aspectRatio: "1:1",
-      cornerRadius: "md",
-      backgroundColor: "#f1f5f9",
-      justifyContent: "center",
-      alignItems: "center",
-      contents: [{ type: "text", text: row.product_name || "商品", size: "sm", color: "#94a3b8", align: "center", wrap: true }],
-    };
+  const rowContents: object[] = [];
+  if (imageUrl) {
+    rowContents.push({ type: "image", url: imageUrl, size: "60px", aspectMode: "cover", aspectRatio: "1:1", flex: 0 });
   }
-
-  return {
+  rowContents.push({
     type: "box",
     layout: "vertical",
-    spacing: "sm",
-    contents: [
-      { type: "image", url: imageUrl, size: "full", aspectRatio: "1:1", aspectMode: "cover" },
-      { type: "text", text: row.product_name || "商品", weight: "bold", wrap: true, size: "sm" },
-    ],
-  };
+    flex: 1,
+    justifyContent: "center",
+    contents: [{ type: "text", text: row.product_name || "商品", weight: "bold", wrap: true, size: "sm" }],
+  });
+
+  return { type: "box", layout: "horizontal", spacing: "md", contents: rowContents };
 }
 
 // 傳照片確認：客人傳完照片後打關鍵字（預設「傳好了」），查一下「這個
