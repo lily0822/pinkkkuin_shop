@@ -121,6 +121,7 @@ export async function GET(request: NextRequest) {
         const remittance = row.payment_status === "confirming" ? findLatestRemittance(String(row.id)) : null;
         return {
           id: String(row.id || ""),
+          lineUserId: String(row.line_user_id || ""),
           lineDisplayName: String(row.line_display_name || ""),
           nickname: String(row.nickname || ""),
           productName: row.product_name ? String(row.product_name) : "",

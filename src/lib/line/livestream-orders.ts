@@ -17,6 +17,7 @@ import {
   LIVESTREAM_BANK_ACCOUNT_LABELS,
   type LivestreamBankAccounts,
 } from "./livestream-bank-info";
+import { normalizeLivestreamBankName } from "./livestream-bank-aliases";
 import { getLivestreamKeywords } from "./livestream-keywords";
 import {
   getLivestreamReplyTemplates,
@@ -124,7 +125,10 @@ function parseRemittanceReport(rawText: string): RemittanceReport | null {
 
   const bankNameRaw = extractReportFieldValue(lines, "銀行");
   if (!bankNameRaw) return null;
-  const bankName = bankNameRaw.slice(0, 50);
+  // 客人打的銀行名稱先查別名表正規化成標準名稱（中信/富邦/國泰）——
+  // 對照不到的名稱原文照存，後台「匯款紀錄」頁籤會把它標成「異常」，
+  // 不會因為查無此名就擋下整筆申報（見 livestream-bank-aliases.ts）。
+  const bankName = normalizeLivestreamBankName(bankNameRaw.slice(0, 50));
 
   const amountRaw = extractReportFieldValue(lines, "金額");
   if (!amountRaw) return null;

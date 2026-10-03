@@ -8,6 +8,7 @@ import {
   shouldRequireBackendAuth,
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
+import { LIVESTREAM_STANDARD_BANK_NAMES } from "@/lib/line/livestream-bank-aliases";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -56,7 +57,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
 
   const patch: Record<string, unknown> = {};
-  if (typeof body.bankName === "string") patch.bank_name = body.bankName.trim().slice(0, 50) || null;
+  // 後台這欄從自由輸入框改成下拉選單（中信/富邦/國泰）——用來修正
+  // 「異常」資料，所以只接受這三個標準名稱，不是任意字串了。
+  if (typeof body.bankName === "string") {
+    const bankName = body.bankName.trim();
+    if (!LIVESTREAM_STANDARD_BANK_NAMES.includes(bankName)) {
+      return NextResponse.json({ ok: false, error: "請選擇正確的銀行。" }, { status: 400 });
+    }
+    patch.bank_name = bankName;
+  }
 
   if (typeof body.accountLast5 === "string") {
     const last5 = body.accountLast5.trim();
