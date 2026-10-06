@@ -775,12 +775,24 @@ async function handleTextMessage(
   }
 
   if (state.awaiting_remittance_last5) {
+    // 先真的嘗試解析格式，解析成功就直接當有效回報處理，不管文字裡
+    // 還夾雜了什麼別的關鍵字——客人很常把機器人剛剛送出的提示文字
+    // 整段複製貼上、自己填完答案再送出，提示文字本身就含有「完成」
+    // 「匯款」這類字，照舊版「文字裡出現任何已知指令關鍵字就整個放棄
+    // 解析格式」的邏輯會被誤判成別的指令，整筆匯款申報從未被記錄。
+    // 只有在真的解析不出完整的銀行/金額/末五碼時，才落到下面檢查
+    // 客人是不是其實想做別的事。
+    if (parseRemittanceReport(text)) {
+      await handleRemittanceLast5Submission(supabase, userId, replyToken, text, state, templates);
+      return;
+    }
+
     // 其他已知指令優先於「等待匯款格式」狀態：客人可能是不小心點到/
     // 打到「我要匯款」才卡在這裡，根本沒有要匯款。只要這則文字符合
     // order/remittance/cancel/order_query/photo_confirm 任一組關鍵字，
     // 就視為客人其實是要做別的事——自動清掉等待狀態，直接照該指令執行，
     // 客人完全不會感覺到有「卡住」這回事。完全不符合任何已知關鍵字，
-    // 才真的當作格式回報來解析。
+    // 才真的當作格式回報來解析（會再次解析失敗，回格式提醒）。
     const matchesKnownCommand =
       matchesAny(text, keywords.order) ||
       matchesAny(text, keywords.remittance) ||

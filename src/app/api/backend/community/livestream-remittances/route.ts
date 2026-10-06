@@ -5,11 +5,12 @@ import {
   backendAuthJsonError,
   getBackendRuntime,
   isBackendSessionValid,
+  isSameOriginMutation,
   shouldRequireBackendAuth,
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
 import { LIVESTREAM_BANK_ACCOUNT_KEYS, LIVESTREAM_BANK_ACCOUNT_LABELS } from "@/lib/line/livestream-bank-info";
-import { isLivestreamBankNameAnomaly } from "@/lib/line/livestream-bank-aliases";
+import { isLivestreamBankNameAnomaly, LIVESTREAM_STANDARD_BANK_NAMES } from "@/lib/line/livestream-bank-aliases";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -19,7 +20,7 @@ const SIGNED_URL_TTL_SECONDS = 60 * 10; // admin-view thumbnail only, short-live
 // 跟 customer-summary 那支一樣，沒有真正分頁，直接抓一個夠大的上限。
 const FETCH_LIMIT = 5000;
 
-async function guardBackendRequest(request: NextRequest) {
+async function guardBackendRequest(request: NextRequest, mutation = false) {
   if (getBackendRuntime() === "unknown") {
     return new NextResponse("Not found", {
       status: 404,
@@ -28,6 +29,7 @@ async function guardBackendRequest(request: NextRequest) {
   }
   if (!shouldRequireBackendAuth()) return null;
   if (!(await isBackendSessionValid(request))) return backendAuthJsonError();
+  if (mutation && !isSameOriginMutation(request)) return backendAuthJsonError("請從後台頁面操作。", 403);
   return null;
 }
 
@@ -246,5 +248,113 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: true, customers });
   } catch {
     return NextResponse.json({ ok: false, error: "匯款紀錄讀取失敗，請稍後再試。" }, { status: 500 });
+  }
+}
+
+type ManualRemittanceBody = {
+  lineUserId?: unknown;
+  orderIds?: unknown;
+  bankName?: unknown;
+  accountLast5?: unknown;
+  amount?: unknown;
+};
+
+// 後台手動新增匯款紀錄——給客人一直沒辦法透過 LINE 自助送出匯款格式
+// 的情況補登。跟 LINE 那條路徑（handleRemittanceLast5Submission）的
+// 欄位語意保持一致：nickname 存這個客人目前的 line_display_name 快照、
+// 寫完紀錄後把涵蓋的訂單都改成 confirming，不然這筆手動補登的紀錄會
+// 跟訂單實際狀態對不起來。
+export async function POST(request: NextRequest) {
+  const guard = await guardBackendRequest(request, true);
+  if (guard) return guard;
+
+  const rate = await backendRateLimit(request, "backend_community_livestream_remittances_create", 20);
+  if (!rate.ok) {
+    return NextResponse.json(
+      { ok: false, error: "操作太頻繁，請稍後再試。" },
+      { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } },
+    );
+  }
+
+  let body: ManualRemittanceBody;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ ok: false, error: "請提供正確的新增資料。" }, { status: 400 });
+  }
+
+  const lineUserId = typeof body.lineUserId === "string" ? body.lineUserId.trim() : "";
+  if (!lineUserId) return NextResponse.json({ ok: false, error: "請選擇客人。" }, { status: 400 });
+
+  const orderIds = Array.isArray(body.orderIds)
+    ? body.orderIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+    : [];
+  if (!orderIds.length) return NextResponse.json({ ok: false, error: "請至少勾選一筆訂單。" }, { status: 400 });
+
+  const bankName = typeof body.bankName === "string" ? body.bankName.trim() : "";
+  if (!LIVESTREAM_STANDARD_BANK_NAMES.includes(bankName)) {
+    return NextResponse.json({ ok: false, error: "請選擇正確的銀行。" }, { status: 400 });
+  }
+
+  const accountLast5 = typeof body.accountLast5 === "string" ? body.accountLast5.trim() : "";
+  if (!/^\d{5}$/.test(accountLast5)) {
+    return NextResponse.json({ ok: false, error: "末五碼需為 5 碼數字。" }, { status: 400 });
+  }
+
+  let amount: number | null = null;
+  if (body.amount !== null && body.amount !== undefined && body.amount !== "") {
+    if (typeof body.amount !== "number" || !Number.isFinite(body.amount) || body.amount < 0) {
+      return NextResponse.json({ ok: false, error: "金額請輸入正確的數字。" }, { status: 400 });
+    }
+    amount = body.amount;
+  }
+
+  try {
+    const supabase = createSupabaseServiceClient();
+
+    // 驗證每筆 orderId 都真的屬於這個客人、而且目前還是 unpaid——避免
+    // 前端被竄改或資料過期而選到不相干、或已經處理過的訂單。用「符合
+    // 條件的筆數剛好等於請求的筆數」確認全部都通過，不是只檢查第一筆。
+    const { data: matchedOrders, error: orderError } = await supabase
+      .from("community_livestream_orders")
+      .select("id, line_display_name")
+      .eq("line_user_id", lineUserId)
+      .eq("payment_status", "unpaid")
+      .in("id", orderIds);
+    if (orderError) throw orderError;
+
+    const matchedRows = Array.isArray(matchedOrders) ? matchedOrders : [];
+    if (matchedRows.length !== orderIds.length) {
+      return NextResponse.json(
+        { ok: false, error: "選取的訂單有變化（可能已被處理），請重新整理後再試。" },
+        { status: 409 },
+      );
+    }
+
+    const lineDisplayName = String(matchedRows[0]?.line_display_name || "客人");
+
+    const { data: inserted, error: insertError } = await supabase
+      .from("community_livestream_remittances")
+      .insert({
+        line_user_id: lineUserId,
+        nickname: lineDisplayName,
+        order_ids: orderIds,
+        bank_name: bankName,
+        account_last5: accountLast5,
+        amount,
+      })
+      .select("id")
+      .single();
+    if (insertError) throw insertError;
+
+    const { error: updateError } = await supabase
+      .from("community_livestream_orders")
+      .update({ payment_status: "confirming" })
+      .in("id", orderIds);
+    if (updateError) throw updateError;
+
+    return NextResponse.json({ ok: true, id: String(inserted.id) });
+  } catch {
+    return NextResponse.json({ ok: false, error: "新增匯款紀錄失敗，請稍後再試。" }, { status: 500 });
   }
 }
