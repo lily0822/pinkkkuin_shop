@@ -18,7 +18,12 @@ import {
   type LivestreamBankAccounts,
 } from "./livestream-bank-info";
 import { normalizeLivestreamBankName } from "./livestream-bank-aliases";
-import { getLivestreamKeywords } from "./livestream-keywords";
+import {
+  getLivestreamKeywordSettings,
+  type LivestreamKeywordEnabled,
+  type LivestreamKeywordGroup,
+  type LivestreamKeywords,
+} from "./livestream-keywords";
 import {
   getLivestreamReplyTemplates,
   renderLivestreamReplyTemplate,
@@ -85,10 +90,12 @@ const MAX_REPLY_MESSAGES = 5; // LINE reply API hard limit
 // 後台可編輯，改了分鐘數的話記得這裡也要一併改）。
 const RECENT_PHOTO_WINDOW_MINUTES = 10;
 
-// 四組觸發關鍵字（下單/匯款/取消/傳照片確認）改成後台可設定——實際的
-// 預設值/讀取/fallback 邏輯都在 src/lib/line/livestream-keywords.ts，
-// 這裡不再寫死陣列，一律透過 getLivestreamKeywords() 在 handleTextMessage
-// 裡每則訊息抓一次（讀取失敗會自動 fallback 回預設值，不會直接失效）。
+// 六組觸發關鍵字（下單/匯款/取消/查詢訂單/傳照片確認/取消匯款）改成
+// 後台可設定——實際的預設值/讀取/fallback 邏輯都在
+// src/lib/line/livestream-keywords.ts，這裡不再寫死陣列，一律透過
+// getLivestreamKeywordSettings() 在 handleTextMessage 裡每則訊息抓一次
+// （讀取失敗會自動 fallback 回預設值，不會直接失效）。每組現在還多了
+// 一顆「啟用/停用」開關，一起在同一次呼叫裡拿到，見 matchesEnabledGroup。
 
 function normalizeText(text: string) {
   return text.replace(/\s+/g, "").toLowerCase();
@@ -98,6 +105,20 @@ function matchesAny(text: string, keywords: string[]) {
   const normalized = normalizeText(text);
   if (!normalized) return false;
   return keywords.some((keyword) => normalized.includes(normalizeText(keyword)));
+}
+
+// 每組關鍵字現在多了「啟用/停用」開關（見 livestream-keywords.ts）——
+// 停用的組一律當作沒匹配到，不是跳過檢查而是直接回傳 false，所以
+// handleTextMessage 裡原本每一處 matchesAny(text, keywords.X) 都換成
+// 呼叫這支，統一先查 enabled[group] 再真的比對關鍵字。
+function matchesEnabledGroup(
+  text: string,
+  keywords: LivestreamKeywords,
+  enabled: LivestreamKeywordEnabled,
+  group: LivestreamKeywordGroup,
+) {
+  if (!enabled[group]) return false;
+  return matchesAny(text, keywords[group]);
 }
 
 // 匯款回報改成固定三項格式（銀行／金額／末五碼），客人自行計算總金額
@@ -757,7 +778,7 @@ async function handleTextMessage(
 
   const state = await getBotState(supabase, userId);
   const templates = await getLivestreamReplyTemplates();
-  const keywords = await getLivestreamKeywords();
+  const { keywords, enabled } = await getLivestreamKeywordSettings();
 
   // 明確的「取消匯款」逃生指令——檢查順序刻意放在最前面、獨立於下面的
   // awaiting 分支：預設詞「取消匯款」本身同時包含「取消」「匯款」兩個
@@ -766,7 +787,7 @@ async function handleTextMessage(
   // 一個全新的匯款流程——跟這整個功能想避免的「意外觸發」正好相反。
   // 所以提前判斷：有在等待格式才真的執行取消、回覆確認；不在等待狀態
   // 就單純不處理，不落入下面任何一般指令的分派。
-  if (matchesAny(text, keywords.remittance_cancel)) {
+  if (matchesEnabledGroup(text, keywords, enabled, "remittance_cancel")) {
     if (state.awaiting_remittance_last5) {
       await setBotState(supabase, userId, { awaiting_remittance_last5: false, remittance_order_ids: null });
       await replyTemplate(replyToken, templates, "remittance_cancelled");
@@ -789,16 +810,18 @@ async function handleTextMessage(
 
     // 其他已知指令優先於「等待匯款格式」狀態：客人可能是不小心點到/
     // 打到「我要匯款」才卡在這裡，根本沒有要匯款。只要這則文字符合
-    // order/remittance/cancel/order_query/photo_confirm 任一組關鍵字，
-    // 就視為客人其實是要做別的事——自動清掉等待狀態，直接照該指令執行，
-    // 客人完全不會感覺到有「卡住」這回事。完全不符合任何已知關鍵字，
-    // 才真的當作格式回報來解析（會再次解析失敗，回格式提醒）。
+    // order/remittance/cancel/order_query/photo_confirm 任一組**已啟用**
+    // 的關鍵字，就視為客人其實是要做別的事——自動清掉等待狀態，直接
+    // 照該指令執行，客人完全不會感覺到有「卡住」這回事。停用的組
+    // 一律不算數（matchesEnabledGroup 內部已經處理），完全不符合任何
+    // 已知關鍵字，才真的當作格式回報來解析（會再次解析失敗，回格式
+    // 提醒）。
     const matchesKnownCommand =
-      matchesAny(text, keywords.order) ||
-      matchesAny(text, keywords.remittance) ||
-      matchesAny(text, keywords.cancel) ||
-      matchesAny(text, keywords.order_query) ||
-      matchesAny(text, keywords.photo_confirm);
+      matchesEnabledGroup(text, keywords, enabled, "order") ||
+      matchesEnabledGroup(text, keywords, enabled, "remittance") ||
+      matchesEnabledGroup(text, keywords, enabled, "cancel") ||
+      matchesEnabledGroup(text, keywords, enabled, "order_query") ||
+      matchesEnabledGroup(text, keywords, enabled, "photo_confirm");
 
     if (matchesKnownCommand) {
       await setBotState(supabase, userId, { awaiting_remittance_last5: false, remittance_order_ids: null });
@@ -808,27 +831,27 @@ async function handleTextMessage(
     }
   }
 
-  if (matchesAny(text, keywords.order)) {
+  if (matchesEnabledGroup(text, keywords, enabled, "order")) {
     await handleOrderTrigger(replyToken, templates);
     return;
   }
 
-  if (matchesAny(text, keywords.remittance)) {
+  if (matchesEnabledGroup(text, keywords, enabled, "remittance")) {
     await handleRemittanceTrigger(supabase, userId, replyToken, templates);
     return;
   }
 
-  if (matchesAny(text, keywords.cancel)) {
+  if (matchesEnabledGroup(text, keywords, enabled, "cancel")) {
     await handleCancelTrigger(supabase, userId, replyToken, templates);
     return;
   }
 
-  if (matchesAny(text, keywords.order_query)) {
+  if (matchesEnabledGroup(text, keywords, enabled, "order_query")) {
     await handleOrderQueryTrigger(supabase, userId, replyToken, templates);
     return;
   }
 
-  if (matchesAny(text, keywords.photo_confirm)) {
+  if (matchesEnabledGroup(text, keywords, enabled, "photo_confirm")) {
     await handlePhotoConfirmTrigger(supabase, userId, replyToken, templates);
     return;
   }

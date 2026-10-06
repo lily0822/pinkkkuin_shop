@@ -23,6 +23,14 @@ import { createSupabaseServiceClient } from "@/lib/supabase/service";
 // 獨立的功能：查詢訂單不篩選任何狀態、列出客人全部商品，純展示沒有
 // 取消按鈕；取消訂單維持原本只篩可取消子集 + 取消按鈕。兩組關鍵字
 // 完全不重疊，見 livestream-orders.ts 功能六/功能七。
+//
+// 每組新增「啟用/停用」開關（this round）：schedule_settings 存的 JSON
+// 從單純 Record<group, string[]> 改成 { groups, enabled } 兩個子物件。
+// 相容舊資料——讀取時如果解析出來的 JSON 沒有 groups/enabled 這兩個
+// key（舊格式，整包本身就是 Record<group,string[]>），就把整包當成
+// groups，enabled 全部預設 true，行為跟改版前完全一樣。停用只影響
+// 「客人端會不會觸發」（見 livestream-orders.ts::handleTextMessage），
+// 不影響後台能不能照常編輯詞庫內容。
 const SETTINGS_TYPE = "community-livestream-keywords";
 const MAX_KEYWORDS_PER_GROUP = 30;
 const MAX_KEYWORD_LENGTH = 40;
@@ -64,6 +72,22 @@ export const DEFAULT_LIVESTREAM_KEYWORDS: Record<LivestreamKeywordGroup, string[
 
 export type LivestreamKeywords = Record<LivestreamKeywordGroup, string[]>;
 
+export type LivestreamKeywordEnabled = Record<LivestreamKeywordGroup, boolean>;
+
+export const DEFAULT_LIVESTREAM_KEYWORD_ENABLED: LivestreamKeywordEnabled = {
+  order: true,
+  remittance: true,
+  cancel: true,
+  order_query: true,
+  photo_confirm: true,
+  remittance_cancel: true,
+};
+
+export type LivestreamKeywordSettings = {
+  keywords: LivestreamKeywords;
+  enabled: LivestreamKeywordEnabled;
+};
+
 function sanitizeGroup(value: unknown, fallback: string[]): string[] {
   if (!Array.isArray(value)) return fallback;
   const cleaned = value
@@ -83,7 +107,44 @@ function sanitizeAllGroups(input: Partial<Record<LivestreamKeywordGroup, unknown
   return result;
 }
 
-export async function getLivestreamKeywords(): Promise<LivestreamKeywords> {
+// 只接受 boolean——缺漏或型別不對的組別預設 true（啟用），跟「還沒
+// 存過 enabled 欄位」的舊資料走的是同一條 fallback 路徑，不用另外
+// 判斷資料是不是舊格式。
+function sanitizeEnabled(input: unknown): LivestreamKeywordEnabled {
+  const record = input && typeof input === "object" ? (input as Partial<Record<LivestreamKeywordGroup, unknown>>) : {};
+  const result = {} as LivestreamKeywordEnabled;
+  LIVESTREAM_KEYWORD_GROUPS.forEach((group) => {
+    result[group] = typeof record[group] === "boolean" ? record[group] : true;
+  });
+  return result;
+}
+
+function defaultSettings(): LivestreamKeywordSettings {
+  return { keywords: { ...DEFAULT_LIVESTREAM_KEYWORDS }, enabled: { ...DEFAULT_LIVESTREAM_KEYWORD_ENABLED } };
+}
+
+// 新舊格式都在這裡判斷：新格式是 { groups, enabled } 兩個子物件；舊
+// 格式整包本身就是 Record<group, string[]>，沒有 groups/enabled 這兩個
+// key。用「有沒有其中一個 key」判斷，不要求兩個都要有——哪天只想先加
+// enabled、暫不動 groups 的寫法也能正確辨識成新格式。
+function parseStoredSettings(raw: string): LivestreamKeywordSettings {
+  const parsed = JSON.parse(raw) as unknown;
+  if (parsed && typeof parsed === "object" && ("groups" in parsed || "enabled" in parsed)) {
+    const record = parsed as { groups?: unknown; enabled?: unknown };
+    const groupsInput = record.groups && typeof record.groups === "object" ? (record.groups as Partial<Record<LivestreamKeywordGroup, unknown>>) : {};
+    return {
+      keywords: sanitizeAllGroups(groupsInput),
+      enabled: sanitizeEnabled(record.enabled),
+    };
+  }
+  return {
+    keywords: sanitizeAllGroups(parsed as Partial<Record<LivestreamKeywordGroup, unknown>>),
+    enabled: { ...DEFAULT_LIVESTREAM_KEYWORD_ENABLED },
+  };
+}
+
+// 一次讀取就拿到 keywords + enabled，不分兩次查 schedule_settings。
+export async function getLivestreamKeywordSettings(): Promise<LivestreamKeywordSettings> {
   try {
     const supabase = createSupabaseServiceClient();
     const { data, error } = await supabase
@@ -91,22 +152,28 @@ export async function getLivestreamKeywords(): Promise<LivestreamKeywords> {
       .select("image")
       .eq("type", SETTINGS_TYPE)
       .maybeSingle();
-    if (error || !data?.image) return { ...DEFAULT_LIVESTREAM_KEYWORDS };
-    const parsed = JSON.parse(data.image) as Partial<Record<LivestreamKeywordGroup, unknown>>;
-    return sanitizeAllGroups(parsed);
+    if (error || !data?.image) return defaultSettings();
+    return parseStoredSettings(data.image);
   } catch {
-    return { ...DEFAULT_LIVESTREAM_KEYWORDS };
+    return defaultSettings();
   }
 }
 
-export async function saveLivestreamKeywords(next: LivestreamKeywords): Promise<LivestreamKeywords> {
-  const sanitized = sanitizeAllGroups(next);
+export async function saveLivestreamKeywords(
+  nextKeywords: Partial<Record<LivestreamKeywordGroup, unknown>>,
+  nextEnabled: Partial<Record<LivestreamKeywordGroup, unknown>>,
+): Promise<LivestreamKeywordSettings> {
+  const sanitizedKeywords = sanitizeAllGroups(nextKeywords);
+  const sanitizedEnabled = sanitizeEnabled(nextEnabled);
   const supabase = createSupabaseServiceClient();
   const { error } = await supabase
     .from("schedule_settings")
-    .upsert({ legacy_id: SETTINGS_TYPE, type: SETTINGS_TYPE, image: JSON.stringify(sanitized) }, { onConflict: "type" });
+    .upsert(
+      { legacy_id: SETTINGS_TYPE, type: SETTINGS_TYPE, image: JSON.stringify({ groups: sanitizedKeywords, enabled: sanitizedEnabled }) },
+      { onConflict: "type" },
+    );
   if (error) throw error;
-  return sanitized;
+  return { keywords: sanitizedKeywords, enabled: sanitizedEnabled };
 }
 
 export type LivestreamKeywordDuplicate = { keyword: string; groups: LivestreamKeywordGroup[] };
@@ -114,7 +181,9 @@ export type LivestreamKeywordDuplicate = { keyword: string; groups: LivestreamKe
 // 存檔時偵測「完全重複」的詞出現在不只一組裡——不是強制擋下，只是給
 // 管理員一個提示，因為 bot 判斷觸發詞是照固定順序（下單→匯款→取消→
 // 查詢訂單→傳照片確認→取消匯款）一組一組比對，同一個詞如果放進兩組，
-// 後面那組永遠不會被命中。
+// 後面那組永遠不會被命中。跟「啟用/停用」無關——即使停用的那組被
+// 停用了，重複偵測仍然原樣比對，純粹是提醒詞庫本身的重疊，不是提醒
+// 實際會不會觸發。
 export function findDuplicateKeywords(groups: LivestreamKeywords): LivestreamKeywordDuplicate[] {
   const seen = new Map<string, Set<LivestreamKeywordGroup>>();
   LIVESTREAM_KEYWORD_GROUPS.forEach((group) => {

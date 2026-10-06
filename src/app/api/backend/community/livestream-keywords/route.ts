@@ -8,10 +8,11 @@ import {
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
 import {
+  DEFAULT_LIVESTREAM_KEYWORD_ENABLED,
   DEFAULT_LIVESTREAM_KEYWORDS,
   LIVESTREAM_KEYWORD_GROUPS,
   findDuplicateKeywords,
-  getLivestreamKeywords,
+  getLivestreamKeywordSettings,
   saveLivestreamKeywords,
   type LivestreamKeywords,
 } from "@/lib/line/livestream-keywords";
@@ -45,8 +46,14 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const keywords = await getLivestreamKeywords();
-    return NextResponse.json({ ok: true, keywords, defaults: DEFAULT_LIVESTREAM_KEYWORDS });
+    const { keywords, enabled } = await getLivestreamKeywordSettings();
+    return NextResponse.json({
+      ok: true,
+      keywords,
+      enabled,
+      defaults: DEFAULT_LIVESTREAM_KEYWORDS,
+      defaultsEnabled: DEFAULT_LIVESTREAM_KEYWORD_ENABLED,
+    });
   } catch {
     return NextResponse.json({ ok: false, error: "關鍵字設定讀取失敗，請稍後再試。" }, { status: 500 });
   }
@@ -64,7 +71,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: { keywords?: Partial<Record<string, unknown>>; force?: unknown };
+  let body: { keywords?: Partial<Record<string, unknown>>; enabled?: Partial<Record<string, unknown>>; force?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -81,14 +88,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "請至少為每一組輸入關鍵字。" }, { status: 400 });
   }
 
+  // enabled 只接受 boolean，其他型別或缺漏的組別預設 true（啟用）——
+  // 實際的 sanitize/fallback 邏輯在 saveLivestreamKeywords 內部做，這裡
+  // 只負責把 body 原始帶過去，不用在路由層重複一份驗證規則。
+  const incomingEnabled = body.enabled && typeof body.enabled === "object" ? body.enabled : {};
+
   const duplicates = findDuplicateKeywords(groups);
   if (duplicates.length && body.force !== true) {
     return NextResponse.json({ ok: false, needsConfirm: true, duplicates });
   }
 
   try {
-    const saved = await saveLivestreamKeywords(groups);
-    return NextResponse.json({ ok: true, keywords: saved });
+    const saved = await saveLivestreamKeywords(groups, incomingEnabled);
+    return NextResponse.json({ ok: true, keywords: saved.keywords, enabled: saved.enabled });
   } catch {
     return NextResponse.json({ ok: false, error: "關鍵字設定儲存失敗，請稍後再試。" }, { status: 500 });
   }
