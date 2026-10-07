@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { KeyRound, Link2, Unlink } from "lucide-react";
+import { KeyRound, Link2 } from "lucide-react";
 import { PasswordInput } from "@/components/password-input";
 
 type BannerMessage = { kind: "success" | "error"; text: string } | null;
@@ -228,9 +228,8 @@ export function MemberSecurityPanel({
                   type="button"
                   onClick={unbindLine}
                   disabled={lineBusy}
-                  className="inline-flex items-center gap-2 rounded-full border-2 border-red-100 bg-white px-5 py-2 text-sm font-black text-red-500 disabled:opacity-60"
+                  className="rounded-full border-2 border-penguin-peach bg-white px-5 py-2 text-sm font-black text-penguin-gray disabled:opacity-60"
                 >
-                  <Unlink size={16} />
                   {lineBusy ? "處理中..." : "解除綁定"}
                 </button>
               ) : (

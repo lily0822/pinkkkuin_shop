@@ -33,7 +33,7 @@ export function PasswordInput({
           aria-label={visible ? "隱藏密碼" : "顯示密碼"}
           className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition hover:text-penguin-pink-dark"
         >
-          {visible ? <EyeOff size={18} /> : <Eye size={18} />}
+          {visible ? <Eye size={18} /> : <EyeOff size={18} />}
         </button>
       </div>
     </label>
