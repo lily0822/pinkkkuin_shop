@@ -43,12 +43,10 @@ function GoogleIcon() {
 
 function LineIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+    <svg width="100%" height="100%" viewBox="0 0 24 24" aria-hidden="true" className="block">
       <rect width="24" height="24" rx="6" fill="#06C755" />
-      <path
-        fill="#fff"
-        d="M12 2C6.5 2 2 5.8 2 10.5c0 4.1 3.5 7.6 8.3 8.3-.3 1.2-1.2 3.1-1.3 3.6-.2.6.2.6.5.4.2-.1 3.3-2.2 4.7-3.1.6.1 1.2.1 1.8.1 5.5 0 10-3.8 10-8.5S17.5 2 12 2Z"
-      />
+      <rect x="5" y="6" width="14" height="10" rx="3" fill="#fff" />
+      <path d="M8 15.5 7 19 11.5 15.5Z" fill="#fff" />
     </svg>
   );
 }
@@ -59,17 +57,25 @@ function MethodRow({
   statusText,
   statusOn,
   action,
+  iconFillsContainer = false,
 }: {
   icon: React.ReactNode;
   name: string;
   statusText: string;
   statusOn: boolean;
   action: React.ReactNode;
+  iconFillsContainer?: boolean;
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border-2 border-penguin-peach bg-penguin-cream px-4 py-3.5">
       <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] border-2 border-penguin-peach bg-white">
+        <div
+          className={
+            iconFillsContainer
+              ? "h-10 w-10 flex-shrink-0 overflow-hidden rounded-[10px]"
+              : "flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] border-2 border-penguin-peach bg-white"
+          }
+        >
           {icon}
         </div>
         <div>
@@ -223,6 +229,7 @@ export function MemberSecurityPanel({
 
           <MethodRow
             icon={<LineIcon />}
+            iconFillsContainer
             name="LINE"
             statusText={isLineLinked ? `已綁定 · 可用於登入與連線下單紀錄查詢（${dateText(lineLinkedAt)}）` : "尚未綁定"}
             statusOn={isLineLinked}
