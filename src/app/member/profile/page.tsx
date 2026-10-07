@@ -9,6 +9,8 @@ export default async function MemberProfilePage() {
     redirect(`/login?next=${encodeURIComponent("/member/profile")}`);
   }
 
+  const joinedYear = new Date(data.user.created_at).getFullYear();
+
   const [{ data: profile }, { data: addresses }] = await Promise.all([
     supabase.from("member_profiles").select("display_name,phone,status").eq("user_id", data.user.id).maybeSingle(),
     supabase
@@ -23,6 +25,7 @@ export default async function MemberProfilePage() {
     <MemberProfileManager
       email={data.user.email || ""}
       emailVerified={Boolean(data.user.email_confirmed_at)}
+      joinedYear={joinedYear}
       initialProfile={profile ? { displayName: profile.display_name || "", phone: profile.phone || "", status: profile.status || "active" } : null}
       initialAddresses={(addresses || []).map((address) => ({
         id: address.id,

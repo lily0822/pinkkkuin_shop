@@ -25,6 +25,7 @@ type AddressForm = Omit<MemberAddress, "id">;
 type MemberProfileManagerProps = {
   email: string;
   emailVerified: boolean;
+  joinedYear: number;
   initialProfile: MemberProfile | null;
   initialAddresses: MemberAddress[];
 };
@@ -58,7 +59,7 @@ function TextInput({ label, value, onChange, placeholder }: {
   );
 }
 
-export function MemberProfileManager({ email, emailVerified, initialProfile, initialAddresses }: MemberProfileManagerProps) {
+export function MemberProfileManager({ email, emailVerified, joinedYear, initialProfile, initialAddresses }: MemberProfileManagerProps) {
   const [displayName, setDisplayName] = useState(initialProfile?.displayName || "");
   const [phone, setPhone] = useState(initialProfile?.phone || "");
   const [addresses, setAddresses] = useState<MemberAddress[]>(initialAddresses);
@@ -218,6 +219,10 @@ export function MemberProfileManager({ email, emailVerified, initialProfile, ini
           <div className="rounded-2xl bg-penguin-pink-light/60 p-4">
             <dt className="text-xs font-black text-gray-500">Email</dt>
             <dd className="mt-1 break-all text-sm font-black text-penguin-gray">{email || "未提供"}</dd>
+          </div>
+          <div className="rounded-2xl bg-penguin-pink-light/60 p-4">
+            <dt className="text-xs font-black text-gray-500">加入時間</dt>
+            <dd className="mt-1 text-sm font-black text-penguin-gray">會員自 {joinedYear} 年加入</dd>
           </div>
         </dl>
 

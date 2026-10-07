@@ -7,7 +7,6 @@ import { useState } from "react";
 
 type MemberSidebarProps = {
   displayName: string;
-  joinedYear: number;
 };
 
 const navItems = [
@@ -31,7 +30,7 @@ function useLogout() {
   return { logout, submitting };
 }
 
-export function MemberSidebar({ displayName, joinedYear }: MemberSidebarProps) {
+export function MemberSidebar({ displayName }: MemberSidebarProps) {
   const pathname = usePathname();
   const { logout, submitting } = useLogout();
   const avatarChar = displayName.trim().charAt(0) || "會";
@@ -43,9 +42,8 @@ export function MemberSidebar({ displayName, joinedYear }: MemberSidebarProps) {
           <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-penguin-pink to-penguin-peach-dark text-base font-black text-white">
             {avatarChar}
           </div>
-          <div>
-            <p className="text-sm font-black text-penguin-gray">{displayName}</p>
-            <p className="text-xs font-bold text-gray-400">會員自 {joinedYear} 年加入</p>
+          <div className="min-w-0">
+            <p className="break-words text-sm font-black text-penguin-gray">{displayName}</p>
           </div>
         </div>
 

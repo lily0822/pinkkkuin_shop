@@ -18,7 +18,6 @@ export default async function MemberLayout({ children }: { children: ReactNode }
     .maybeSingle();
 
   const displayName = profile?.display_name || data.user.email || "會員";
-  const joinedYear = new Date(data.user.created_at).getFullYear();
 
   return (
     <main className="bg-penguin-cream px-4 py-12 sm:px-6 lg:px-8">
@@ -27,7 +26,7 @@ export default async function MemberLayout({ children }: { children: ReactNode }
         <h1 className="mt-2 text-3xl font-black text-penguin-gray">會員中心</h1>
 
         <div className="mt-6 grid gap-5 md:grid-cols-[236px_1fr] md:items-start">
-          <MemberSidebar displayName={displayName} joinedYear={joinedYear} />
+          <MemberSidebar displayName={displayName} />
           <div>{children}</div>
         </div>
       </section>

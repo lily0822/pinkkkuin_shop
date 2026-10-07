@@ -43,8 +43,12 @@ function GoogleIcon() {
 
 function LineIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="#06C755" aria-hidden="true">
-      <path d="M12 2C6.5 2 2 5.8 2 10.5c0 4.1 3.5 7.6 8.3 8.3-.3 1.2-1.2 3.1-1.3 3.6-.2.6.2.6.5.4.2-.1 3.3-2.2 4.7-3.1.6.1 1.2.1 1.8.1 5.5 0 10-3.8 10-8.5S17.5 2 12 2Z" />
+    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+      <rect width="24" height="24" rx="6" fill="#06C755" />
+      <path
+        fill="#fff"
+        d="M12 2C6.5 2 2 5.8 2 10.5c0 4.1 3.5 7.6 8.3 8.3-.3 1.2-1.2 3.1-1.3 3.6-.2.6.2.6.5.4.2-.1 3.3-2.2 4.7-3.1.6.1 1.2.1 1.8.1 5.5 0 10-3.8 10-8.5S17.5 2 12 2Z"
+      />
     </svg>
   );
 }
