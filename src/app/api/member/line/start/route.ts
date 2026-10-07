@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createLineLoginState, buildLineAuthorizeUrl, isLineLoginConfigured, LINE_STATE_COOKIE, STATE_COOKIE_MAX_AGE } from "@/lib/line/login";
+import { createLineLoginState, buildLineAuthorizeUrl, isLineLoginConfigured, LINE_LINK_STATE_COOKIE, STATE_COOKIE_MAX_AGE } from "@/lib/line/login";
 import { isMemberDisabled } from "@/lib/member/status";
 import { appendSupabaseCookies, createSupabaseRouteClient } from "@/lib/supabase/route";
 
@@ -12,27 +12,27 @@ export async function GET(request: NextRequest) {
   const user = data.user;
   if (error || !user) {
     return appendSupabaseCookies(
-      NextResponse.redirect(new URL("/login?next=/member", request.url)),
+      NextResponse.redirect(new URL("/login?next=/member/account", request.url)),
       cookieResponse,
     );
   }
   if (await isMemberDisabled(supabase, user.id)) {
     return appendSupabaseCookies(
-      NextResponse.redirect(new URL("/member?line=disabled", request.url)),
+      NextResponse.redirect(new URL("/member/account?line=disabled", request.url)),
       cookieResponse,
     );
   }
 
-  if (!isLineLoginConfigured(request.nextUrl.origin)) {
+  if (!isLineLoginConfigured(request.nextUrl.origin, "link")) {
     return appendSupabaseCookies(
-      NextResponse.redirect(new URL("/member?line=not-configured", request.url)),
+      NextResponse.redirect(new URL("/member/account?line=not-configured", request.url)),
       cookieResponse,
     );
   }
 
-  const state = createLineLoginState(user.id, "/member");
-  const response = NextResponse.redirect(buildLineAuthorizeUrl(request.nextUrl.origin, state));
-  response.cookies.set(LINE_STATE_COOKIE, state.token, {
+  const state = createLineLoginState({ purpose: "link", userId: user.id, returnTo: "/member/account" });
+  const response = NextResponse.redirect(buildLineAuthorizeUrl(request.nextUrl.origin, "link", state));
+  response.cookies.set(LINE_LINK_STATE_COOKIE, state.token, {
     httpOnly: true,
     secure: request.nextUrl.protocol === "https:",
     sameSite: "lax",

@@ -199,7 +199,7 @@ export function MemberProfileManager({ email, emailVerified, initialProfile, ini
   }
 
   return (
-    <div className="mt-8 space-y-8">
+    <div className="space-y-8">
       {message ? <p className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">{message}</p> : null}
       {error ? <p className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-600">{error}</p> : null}
 

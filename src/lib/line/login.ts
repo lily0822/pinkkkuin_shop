@@ -7,13 +7,17 @@ const LINE_AUTH_URL = "https://access.line.me/oauth2/v2.1/authorize";
 const LINE_TOKEN_URL = "https://api.line.me/oauth2/v2.1/token";
 const LINE_PROFILE_URL = "https://api.line.me/v2/profile";
 const STATE_COOKIE_MAX_AGE = 10 * 60;
-export const LINE_STATE_COOKIE = "pinkkkuin_line_login_state";
+export const LINE_LINK_STATE_COOKIE = "pinkkkuin_line_login_state";
+export const LINE_SIGNIN_STATE_COOKIE = "pinkkkuin_line_signin_state";
+
+export type LineLoginPurpose = "link" | "signin";
 
 type LineStatePayload = {
+  purpose: LineLoginPurpose;
   state: string;
   nonce: string;
   codeVerifier: string;
-  userId: string;
+  userId?: string;
   returnTo: string;
   exp: number;
 };
@@ -59,32 +63,46 @@ function sign(value: string) {
   return crypto.createHmac("sha256", stateSecret()).update(value).digest("base64url");
 }
 
-export function getLineLoginConfig(origin: string) {
+const defaultReturnTo: Record<LineLoginPurpose, string> = {
+  link: "/member/account",
+  signin: "/member/orders",
+};
+
+export function getLineLoginConfig(origin: string, purpose: LineLoginPurpose) {
   const channelId = env("LINE_LOGIN_CHANNEL_ID");
   const channelSecret = env("LINE_LOGIN_CHANNEL_SECRET");
-  const redirectUri = env("LINE_LOGIN_REDIRECT_URI") || `${getSiteOrigin(origin)}/api/member/line/callback`;
+  const redirectUri =
+    purpose === "signin"
+      ? env("LINE_LOGIN_SIGNIN_REDIRECT_URI") || `${getSiteOrigin(origin)}/api/auth/line/callback`
+      : env("LINE_LOGIN_REDIRECT_URI") || `${getSiteOrigin(origin)}/api/member/line/callback`;
   return { channelId, channelSecret, redirectUri };
 }
 
-export function isLineLoginConfigured(origin: string) {
-  const config = getLineLoginConfig(origin);
+export function isLineLoginConfigured(origin: string, purpose: LineLoginPurpose) {
+  const config = getLineLoginConfig(origin, purpose);
   return Boolean(config.channelId && config.channelSecret && config.redirectUri);
 }
 
-export function createLineLoginState(userId: string, returnTo = "/member"): LineStateCookie {
+export function createLineLoginState(options: { purpose: LineLoginPurpose; userId?: string; returnTo?: string }): LineStateCookie {
+  const returnTo = options.returnTo || defaultReturnTo[options.purpose];
   const payload: LineStatePayload = {
+    purpose: options.purpose,
     state: crypto.randomBytes(24).toString("base64url"),
     nonce: crypto.randomBytes(24).toString("base64url"),
     codeVerifier: crypto.randomBytes(48).toString("base64url"),
-    userId,
-    returnTo: returnTo.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "/member",
+    userId: options.userId,
+    returnTo: returnTo.startsWith("/") && !returnTo.startsWith("//") ? returnTo : defaultReturnTo[options.purpose],
     exp: Math.floor(Date.now() / 1000) + STATE_COOKIE_MAX_AGE,
   };
   const encoded = base64url(JSON.stringify(payload));
   return { ...payload, token: `${encoded}.${sign(encoded)}` };
 }
 
-export function verifyLineLoginState(token: string, expectedState: string, userId: string): LineStatePayload | null {
+export function verifyLineLoginState(
+  token: string,
+  expectedState: string,
+  expect: { purpose: LineLoginPurpose; userId?: string },
+): LineStatePayload | null {
   const [encoded, signature] = token.split(".");
   if (!encoded || !signature || sign(encoded) !== signature) return null;
 
@@ -96,14 +114,15 @@ export function verifyLineLoginState(token: string, expectedState: string, userI
   }
 
   if (!payload.state || payload.state !== expectedState) return null;
-  if (!payload.userId || payload.userId !== userId) return null;
+  if (payload.purpose !== expect.purpose) return null;
+  if ((payload.userId || undefined) !== (expect.userId || undefined)) return null;
   if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) return null;
   if (!payload.codeVerifier || !payload.nonce) return null;
   return payload;
 }
 
-export function buildLineAuthorizeUrl(origin: string, state: LineStatePayload) {
-  const config = getLineLoginConfig(origin);
+export function buildLineAuthorizeUrl(origin: string, purpose: LineLoginPurpose, state: LineStatePayload) {
+  const config = getLineLoginConfig(origin, purpose);
   if (!config.channelId || !config.channelSecret || !config.redirectUri) {
     throw new Error("LINE Login is not configured.");
   }
@@ -122,8 +141,8 @@ export function buildLineAuthorizeUrl(origin: string, state: LineStatePayload) {
   return `${LINE_AUTH_URL}?${params.toString()}`;
 }
 
-export async function exchangeLineCode(origin: string, code: string, codeVerifier: string): Promise<LineTokenResponse> {
-  const config = getLineLoginConfig(origin);
+export async function exchangeLineCode(origin: string, purpose: LineLoginPurpose, code: string, codeVerifier: string): Promise<LineTokenResponse> {
+  const config = getLineLoginConfig(origin, purpose);
   if (!config.channelId || !config.channelSecret || !config.redirectUri) {
     throw new Error("LINE Login is not configured.");
   }

@@ -80,7 +80,7 @@ export type LineWebhookEvent = {
   postback?: { data?: string };
 };
 
-const PHOTO_BUCKET = "community-livestream-photos";
+export const PHOTO_BUCKET = "community-livestream-photos";
 const MAX_PHOTOS_PER_ROUND = 10;
 const CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days — long enough for LINE to fetch/cache the bubble image
 const MAX_REPLY_MESSAGES = 5; // LINE reply API hard limit

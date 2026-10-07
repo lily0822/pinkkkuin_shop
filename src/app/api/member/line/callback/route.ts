@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { exchangeLineCode, fetchLineProfile, LINE_STATE_COOKIE, verifyLineLoginState } from "@/lib/line/login";
+import { exchangeLineCode, fetchLineProfile, LINE_LINK_STATE_COOKIE, verifyLineLoginState } from "@/lib/line/login";
 import { isMemberDisabled } from "@/lib/member/status";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { appendSupabaseCookies, createSupabaseRouteClient } from "@/lib/supabase/route";
@@ -7,11 +7,11 @@ import { appendSupabaseCookies, createSupabaseRouteClient } from "@/lib/supabase
 export const dynamic = "force-dynamic";
 
 function memberRedirect(request: NextRequest, status: string) {
-  return NextResponse.redirect(new URL(`/member?line=${encodeURIComponent(status)}`, request.url));
+  return NextResponse.redirect(new URL(`/member/account?line=${encodeURIComponent(status)}`, request.url));
 }
 
 function clearStateCookie(response: NextResponse) {
-  response.cookies.set(LINE_STATE_COOKIE, "", {
+  response.cookies.set(LINE_LINK_STATE_COOKIE, "", {
     httpOnly: true,
     secure: true,
     sameSite: "lax",
@@ -35,15 +35,15 @@ export async function GET(request: NextRequest) {
 
   const code = request.nextUrl.searchParams.get("code") || "";
   const state = request.nextUrl.searchParams.get("state") || "";
-  const stateToken = request.cookies.get(LINE_STATE_COOKIE)?.value || "";
-  const verifiedState = verifyLineLoginState(stateToken, state, user.id);
+  const stateToken = request.cookies.get(LINE_LINK_STATE_COOKIE)?.value || "";
+  const verifiedState = verifyLineLoginState(stateToken, state, { purpose: "link", userId: user.id });
 
   if (!code || !verifiedState) {
     return appendSupabaseCookies(clearStateCookie(memberRedirect(request, "invalid-state")), cookieResponse);
   }
 
   try {
-    const token = await exchangeLineCode(request.nextUrl.origin, code, verifiedState.codeVerifier);
+    const token = await exchangeLineCode(request.nextUrl.origin, "link", code, verifiedState.codeVerifier);
     if (!token.access_token) throw new Error("missing access token");
     const profile = await fetchLineProfile(token.access_token);
 
