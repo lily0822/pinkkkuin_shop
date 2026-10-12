@@ -19,6 +19,7 @@ export function ProductCard({ product }: ProductCardProps) {
   const router = useRouter();
   const [quantity, setQuantity] = useState(1);
   const [message, setMessage] = useState("");
+  const isPreorder = product.status === "preorder" || product.category === "預購商品";
   const hasMultipleVariants = (product.variants || []).length > 1;
   const singleVariant = product.variants?.length === 1 ? product.variants[0] : null;
   const maxQuantity = variantStock(product, singleVariant);
@@ -42,8 +43,12 @@ export function ProductCard({ product }: ProductCardProps) {
     <article className="group flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border border-penguin-peach bg-white p-1 shadow-sm sm:p-1.5">
       <Link href={`/products/${product.id}`} className="relative block">
         <ProductArt image={product.images[0]} name={product.name_zh} width={600} />
-        <span className="absolute left-1.5 top-1.5 rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-bold text-penguin-pink-dark sm:left-2 sm:top-2 sm:px-3 sm:py-1 sm:text-xs">
-          {product.status === "preorder" || product.category === "預購商品" ? "預購" : "現貨"}
+        <span
+          className={`absolute left-1.5 top-1.5 rounded-full px-2 py-0.5 text-[10px] font-bold text-black sm:left-2 sm:top-2 sm:px-3 sm:py-1 sm:text-xs ${
+            isPreorder ? "bg-penguin-pink-light" : "bg-emerald-100"
+          }`}
+        >
+          {isPreorder ? "預購" : "現貨"}
         </span>
       </Link>
       <div className="flex flex-1 flex-col gap-1 px-1.5 py-2 sm:gap-2 sm:px-2 sm:py-2.5">

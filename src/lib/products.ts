@@ -56,7 +56,7 @@ export const statusLabels: Record<ProductStatus, string> = {
   in_stock: "現貨",
   preorder: "預購",
   live_order: "連線商品",
-  sold_out: "售完",
+  sold_out: "缺貨",
   restocking: "補貨中",
   hidden: "隱藏",
 };

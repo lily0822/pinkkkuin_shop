@@ -12,6 +12,7 @@ type SortMode = "newest" | "price_asc" | "price_desc" | "name_asc" | "name_desc"
 type PriceRange = "all" | "0-100" | "101-300" | "301-500" | "501-1000" | "1000";
 
 const defaultStatusOptions: ProductStatus[] = ["in_stock", "preorder", "live_order", "sold_out", "restocking"];
+const alwaysVisibleStatuses: ProductStatus[] = ["in_stock", "sold_out"];
 
 function matchesLegacyPrice(product: Product, range: PriceRange) {
   if (range === "all") return true;
@@ -408,9 +409,15 @@ export function ProductCatalog({
 
   const availableStatuses = useMemo<ProductStatus[]>(() => {
     const statuses = new Set(scopedProducts.map((product) => product.status));
-    if (initialStatus === "in_stock") return (["in_stock", "sold_out"] satisfies ProductStatus[]).filter((status) => statuses.has(status));
-    if (initialStatus === "preorder") return (["preorder", "sold_out"] satisfies ProductStatus[]).filter((status) => statuses.has(status));
-    return defaultStatusOptions.filter((status) => statuses.has(status));
+    const candidates =
+      initialStatus === "in_stock"
+        ? (["in_stock", "sold_out"] satisfies ProductStatus[])
+        : initialStatus === "preorder"
+          ? (["preorder", "sold_out"] satisfies ProductStatus[])
+          : defaultStatusOptions;
+    // in_stock/sold_out（有庫存/缺貨）一律固定顯示，不受目前是否有符合商品影響；
+    // 其他狀態（live_order/restocking 等）維持「有商品才顯示」的既有邏輯。
+    return candidates.filter((status) => alwaysVisibleStatuses.includes(status) || statuses.has(status));
   }, [initialStatus, scopedProducts]);
 
   function toggleValue<T extends string>(values: T[], value: T) {
