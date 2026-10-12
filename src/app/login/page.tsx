@@ -1,7 +1,7 @@
-import { AuthDisabledNotice } from "@/components/auth-disabled-notice";
 import { AuthForm } from "@/components/auth-form";
+import { FeatureDisabledNotice } from "@/components/feature-disabled-notice";
 import { getLineLoginMessage, getOAuthMessage } from "@/lib/auth/messages";
-import { getSiteFeatureFlag } from "@/lib/site-feature-flags";
+import { getDisabledMessage, getSiteFeatureFlag, isEffectivelyEnabled } from "@/lib/site-feature-flags";
 import { safeRelativePath } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -13,10 +13,10 @@ export default async function LoginPage({
 }) {
   const flag = await getSiteFeatureFlag("login");
 
-  if (!flag.enabled) {
+  if (!isEffectivelyEnabled(flag)) {
     return (
       <main className="bg-penguin-cream px-4 py-12 sm:px-6 lg:px-8">
-        <AuthDisabledNotice title="會員登入暫未開放" message={flag.message} />
+        <FeatureDisabledNotice title="會員登入暫未開放" message={getDisabledMessage(flag)} eyebrow="Pinkkkuin Member" />
       </main>
     );
   }

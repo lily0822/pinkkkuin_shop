@@ -3,12 +3,28 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, MessageCircle } from "lucide-react";
 import { AddToCartButton } from "@/components/add-to-cart-button";
 import { CopyProductButton } from "@/components/copy-product-button";
+import { FeatureDisabledNotice } from "@/components/feature-disabled-notice";
 import { ProductGallery } from "@/components/product-gallery";
-import { statusLabels, statusStyles } from "@/lib/products";
+import { statusLabels, statusStyles, type Product } from "@/lib/products";
 import { getProductDetailById } from "@/lib/product-detail";
 import { contactLinks } from "@/lib/site";
+import { getDisabledMessage, getSiteFeatureFlag, isEffectivelyEnabled } from "@/lib/site-feature-flags";
 
 export const dynamic = "force-dynamic";
+
+// products 是最上層的全域開關；再依商品本身的類型（現貨/預購）各自
+// 檢查對應的開關。live_order（代購/市集）目前沒有任何商品被歸類在
+// 底下，不在這裡的判斷範圍內。
+async function getBlockingFeatureFlag(product: Product) {
+  const productsFlag = await getSiteFeatureFlag("products");
+  if (!isEffectivelyEnabled(productsFlag)) return productsFlag;
+
+  const productType = product.category === "預購商品" ? "preorder" : "stock";
+  const typeFlag = await getSiteFeatureFlag(productType);
+  if (!isEffectivelyEnabled(typeFlag)) return typeFlag;
+
+  return null;
+}
 
 export default async function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -19,6 +35,15 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   }
 
   const { product, galleryImages } = detail;
+
+  const blockingFlag = await getBlockingFeatureFlag(product);
+  if (blockingFlag) {
+    return (
+      <main className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+        <FeatureDisabledNotice title="此商品暫未開放瀏覽" message={getDisabledMessage(blockingFlag)} />
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">

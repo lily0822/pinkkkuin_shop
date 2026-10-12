@@ -143,7 +143,7 @@ async function fetchAppearanceRows(url: string, headers: Record<string, string>)
   throw lastError instanceof Error ? lastError : new Error("Supabase appearance settings fetch failed");
 }
 
-function isWithinSchedule(startAt?: string, endAt?: string, now = Date.now()) {
+export function isWithinSchedule(startAt?: string, endAt?: string, now = Date.now()) {
   const start = startAt ? new Date(startAt).getTime() : Number.NaN;
   const end = endAt ? new Date(endAt).getTime() : Number.NaN;
   if (Number.isFinite(start) && now < start) return false;

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSiteFeatureFlag } from "@/lib/site-feature-flags";
+import { getSiteFeatureFlag, isEffectivelyEnabled } from "@/lib/site-feature-flags";
 import { getSiteOrigin } from "@/lib/supabase/config";
 import { safeRelativePath } from "@/lib/supabase/server";
 import { appendSupabaseCookies, createSupabaseRouteClient } from "@/lib/supabase/route";
@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   const loginFlag = await getSiteFeatureFlag("login");
-  if (!loginFlag.enabled) {
+  if (!isEffectivelyEnabled(loginFlag)) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 

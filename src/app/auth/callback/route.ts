@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSiteFeatureFlag } from "@/lib/site-feature-flags";
+import { getSiteFeatureFlag, isEffectivelyEnabled } from "@/lib/site-feature-flags";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { appendSupabaseCookies, createSupabaseRouteClient } from "@/lib/supabase/route";
 import { safeRelativePath } from "@/lib/supabase/server";
@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
     const service = createSupabaseServiceClient();
 
     const signupFlag = await getSiteFeatureFlag("signup");
-    if (!signupFlag.enabled) {
+    if (!isEffectivelyEnabled(signupFlag)) {
       await service.auth.admin.deleteUser(user.id, true);
       await supabase.auth.signOut();
       return appendSupabaseCookies(NextResponse.redirect(new URL("/login?oauth=signup-disabled", requestUrl.origin)), response);

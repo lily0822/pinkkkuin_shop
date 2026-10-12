@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validatePassword } from "@/lib/auth/password";
-import { getSiteFeatureFlag } from "@/lib/site-feature-flags";
+import { getDisabledMessage, getSiteFeatureFlag, isEffectivelyEnabled } from "@/lib/site-feature-flags";
 import { getSiteOrigin } from "@/lib/supabase/config";
 import { authJsonError, createSupabaseRouteClient } from "@/lib/supabase/route";
 
@@ -14,8 +14,8 @@ function normalizePassword(value: unknown) {
 
 export async function POST(request: NextRequest) {
   const signupFlag = await getSiteFeatureFlag("signup");
-  if (!signupFlag.enabled) {
-    return authJsonError(signupFlag.message, 403);
+  if (!isEffectivelyEnabled(signupFlag)) {
+    return authJsonError(getDisabledMessage(signupFlag), 403);
   }
 
   let body: { email?: unknown; password?: unknown; confirmPassword?: unknown };
