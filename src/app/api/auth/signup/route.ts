@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validatePassword } from "@/lib/auth/password";
-import { isMemberSignupEnabled } from "@/lib/member/signup";
+import { getSiteFeatureFlag } from "@/lib/site-feature-flags";
 import { getSiteOrigin } from "@/lib/supabase/config";
 import { authJsonError, createSupabaseRouteClient } from "@/lib/supabase/route";
 
@@ -13,8 +13,9 @@ function normalizePassword(value: unknown) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!isMemberSignupEnabled()) {
-    return authJsonError("會員註冊暫未開放。", 403);
+  const signupFlag = await getSiteFeatureFlag("signup");
+  if (!signupFlag.enabled) {
+    return authJsonError(signupFlag.message, 403);
   }
 
   let body: { email?: unknown; password?: unknown; confirmPassword?: unknown };

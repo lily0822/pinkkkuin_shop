@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSiteFeatureFlag } from "@/lib/site-feature-flags";
 import { authJsonError, createSupabaseRouteClient } from "@/lib/supabase/route";
 import { safeRelativePath } from "@/lib/supabase/server";
 
@@ -7,6 +8,11 @@ function normalizeEmail(value: unknown) {
 }
 
 export async function POST(request: NextRequest) {
+  const loginFlag = await getSiteFeatureFlag("login");
+  if (!loginFlag.enabled) {
+    return authJsonError(loginFlag.message, 403);
+  }
+
   let body: { email?: unknown; password?: unknown; next?: unknown };
   try {
     body = await request.json();

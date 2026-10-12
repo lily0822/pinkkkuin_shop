@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildLineAuthorizeUrl, createLineLoginState, isLineLoginConfigured, LINE_SIGNIN_STATE_COOKIE, STATE_COOKIE_MAX_AGE } from "@/lib/line/login";
+import { getSiteFeatureFlag } from "@/lib/site-feature-flags";
 import { safeRelativePath } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  const loginFlag = await getSiteFeatureFlag("login");
+  if (!loginFlag.enabled) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
   if (!isLineLoginConfigured(request.nextUrl.origin, "signin")) {
     return NextResponse.redirect(new URL("/login?line=not-configured", request.url));
   }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSiteFeatureFlag } from "@/lib/site-feature-flags";
 import { getSiteOrigin } from "@/lib/supabase/config";
 import { safeRelativePath } from "@/lib/supabase/server";
 import { appendSupabaseCookies, createSupabaseRouteClient } from "@/lib/supabase/route";
@@ -6,6 +7,11 @@ import { appendSupabaseCookies, createSupabaseRouteClient } from "@/lib/supabase
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  const loginFlag = await getSiteFeatureFlag("login");
+  if (!loginFlag.enabled) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
   const next = safeRelativePath(request.nextUrl.searchParams.get("next"), "/member/orders");
   const carrier = NextResponse.json({ ok: true });
   const supabase = createSupabaseRouteClient(request, carrier);
