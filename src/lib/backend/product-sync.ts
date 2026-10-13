@@ -205,10 +205,15 @@ export async function saveBackendProduct(
   }
   if (!savedId) throw new Error("Supabase 商品儲存未回傳 id。");
 
+  // 分類/規格/圖片三個同步步驟都只依賴 savedId，彼此不互相依賴，平行處理；
+  // 每個步驟內部「先刪除、再查詢/新增」的順序不能動（同一份資源的刪除/
+  // 新增本來就要照順序），這裡平行化的是「三個不同資源之間」的部分。
   const tagIds = Array.isArray(product.tagIds) ? product.tagIds : parseJsonArray<string | number>(product.tagIds);
-  await syncProductCategories(supabase, savedId, tagIds);
-  await syncProductVariants(supabase, savedId, product, productType, legacyId);
-  await syncProductImages(supabase, savedId, product);
+  await Promise.all([
+    syncProductCategories(supabase, savedId, tagIds),
+    syncProductVariants(supabase, savedId, product, productType, legacyId),
+    syncProductImages(supabase, savedId, product),
+  ]);
 
   return { ok: true, productType, legacyId, savedId };
 }
@@ -217,4 +222,57 @@ export async function deleteBackendProduct(productType: BackendProductType, lega
   const supabase = createSupabaseServiceClient();
   const { error } = await supabase.from("products").delete().eq("legacy_id", legacyId).eq("product_type", productType);
   if (error) throw error;
+}
+
+export type BackendProductBatchItemResult = { legacyId: string; ok: boolean; error?: string };
+
+// 批次場景（10 筆以上很常見）如果真的全部平行送出，瞬間會對 Supabase
+// 開出大量連線；用一個小小的併發池限制同時處理筆數，筆數之間還是平行，
+// 只是不會無限制地一次全上。5 是隨便挑的保守值，不是使用者指定的。
+const BATCH_CONCURRENCY = 5;
+
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await fn(items[index], index);
+    }
+  }
+  const workerCount = Math.max(1, Math.min(limit, items.length));
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
+// 批次存檔：只在呼叫端（API route）驗證一次身份/流量限制，這裡只負責
+// 把每一筆商品平行處理、個別回報成功/失敗，一筆失敗不影響其他筆。
+export async function saveBackendProductsBatch(
+  productType: BackendProductType,
+  products: BackendProductPayload[],
+): Promise<BackendProductBatchItemResult[]> {
+  return mapWithConcurrency(products, BATCH_CONCURRENCY, async (product) => {
+    const fallbackLegacyId = String(product?.id ?? "");
+    try {
+      const saved = await saveBackendProduct(productType, product);
+      return { legacyId: saved.legacyId, ok: true };
+    } catch (error) {
+      return { legacyId: fallbackLegacyId, ok: false, error: error instanceof Error ? error.message : "商品儲存失敗。" };
+    }
+  });
+}
+
+export async function deleteBackendProductsBatch(
+  productType: BackendProductType,
+  legacyIds: string[],
+): Promise<BackendProductBatchItemResult[]> {
+  return mapWithConcurrency(legacyIds, BATCH_CONCURRENCY, async (legacyId) => {
+    try {
+      await deleteBackendProduct(productType, legacyId);
+      return { legacyId, ok: true };
+    } catch (error) {
+      return { legacyId, ok: false, error: error instanceof Error ? error.message : "商品刪除失敗。" };
+    }
+  });
 }
