@@ -110,25 +110,48 @@ function injectBackendRuntimeConfig(html: string, config: string) {
 function renderAuthToolsScript() {
   return `
 document.addEventListener('DOMContentLoaded', function(){
-  var wrap = document.createElement('div');
-  wrap.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:9999;display:flex;gap:8px;align-items:center;';
-  function makeButton(text, bg){
+  function makeButton(text, iconClass){
     var button = document.createElement('button');
     button.type = 'button';
-    button.textContent = text;
-    button.style.cssText = 'border:0;border-radius:999px;background:' + bg + ';color:#fff;padding:10px 16px;font-weight:800;box-shadow:0 10px 24px rgba(190,24,93,.22);cursor:pointer;';
+    button.className = 'btn btn-secondary btn-sm topbar-account-btn';
+    button.innerHTML = '<i class="' + iconClass + '"></i><span class="btn-label"> ' + text + '</span>';
     return button;
   }
-  var changeButton = makeButton('修改密碼', '#ec4899');
-  var logoutButton = makeButton('登出', '#be185d');
-  logoutButton.addEventListener('click', async function(){
-    await fetch('/api/backend/auth/logout', { method: 'POST' });
-    location.reload();
-  });
-  changeButton.addEventListener('click', openBackendPasswordModal);
-  wrap.appendChild(changeButton);
-  wrap.appendChild(logoutButton);
-  document.body.appendChild(wrap);
+
+  function insertAccountControls(){
+    var topbarRight = document.querySelector('.topbar-right');
+    if (!topbarRight) return false;
+    var bellIcon = topbarRight.querySelector('.topbar-icon');
+    var changeButton = makeButton('修改密碼', 'fa-solid fa-key');
+    var logoutButton = makeButton('登出', 'fa-solid fa-right-from-bracket');
+    logoutButton.addEventListener('click', async function(){
+      await fetch('/api/backend/auth/logout', { method: 'POST' });
+      location.reload();
+    });
+    changeButton.addEventListener('click', openBackendPasswordModal);
+    if (bellIcon) {
+      topbarRight.insertBefore(changeButton, bellIcon);
+      topbarRight.insertBefore(logoutButton, bellIcon);
+    } else {
+      topbarRight.appendChild(changeButton);
+      topbarRight.appendChild(logoutButton);
+    }
+    return true;
+  }
+
+  // lily-backend.html 載入時 .topbar-right 本來就已經是靜態 HTML，正常情況
+  // DOMContentLoaded 時就查得到；這裡還是包一層重試，避免萬一這段注入腳本
+  // 跑得比 body 解析完還早時整個插入失敗又默默不出現。
+  function insertAccountControlsWithRetry(attemptsLeft){
+    if (insertAccountControls()) return;
+    if (attemptsLeft <= 0) {
+      console.error('Pinkkkuin backend: .topbar-right not found, could not insert 修改密碼/登出 buttons.');
+      return;
+    }
+    setTimeout(function(){ insertAccountControlsWithRetry(attemptsLeft - 1); }, 200);
+  }
+
+  insertAccountControlsWithRetry(10);
 
   function openBackendPasswordModal(){
     var overlay = document.createElement('div');
