@@ -276,3 +276,166 @@ export async function deleteBackendProductsBatch(
     }
   });
 }
+
+// 以下是列表讀取（上一輪商品存檔/刪除遷移時刻意沒做，後台列表當時還是
+// 靠 Apps Script 的 doGet()/readData() 供應）。欄位對應原樣比照
+// lily-backend-Code.gs 的 readSupabaseProducts()/applyProductImages()/
+// normalizeProductImages() 搬過來，確保回傳形狀跟後台前端
+// applyBackendData() 原本預期的 stockProducts/preorderProducts 元素
+// 完全一致，前端不用跟著大改。
+
+type RawImageRow = { url?: string; publicId?: string; isPrimary?: boolean; sortOrder?: number };
+export type BackendProductImage = { url: string; publicId: string; isPrimary: boolean; sortOrder: number };
+
+// 比照 .gs 的 normalizeProductImageUrl：只接受完整 http(s) 網址，或是
+// 本地 /images/xxx.ext 這種舊的相對路徑慣例，其餘一律視為無效回傳空字串。
+function normalizeProductImageUrl(image: string | undefined | null): string {
+  const raw = String(image || "").trim();
+  if (!raw) return "";
+  if (/^data:image\//i.test(raw)) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (/^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(raw)) return "";
+  const clean = raw.replace(/[?#].*$/, "").replace(/\\/g, "/");
+  const relative = clean.replace(/^\/?images\//i, "").replace(/^\/+/, "");
+  if (!relative || relative.split("/").includes("..")) return "";
+  if (!/\.(?:avif|gif|jpe?g|png|svg|webp)$/i.test(relative)) return "";
+  return "/images/" + relative;
+}
+
+function normalizeProductImageEntry(entry: RawImageRow, index: number): BackendProductImage | null {
+  const url = normalizeProductImageUrl(entry.url);
+  if (!url) return null;
+  const sortOrder = entry.sortOrder !== undefined ? entry.sortOrder : index;
+  return { url, publicId: String(entry.publicId || ""), isPrimary: entry.isPrimary === true, sortOrder: Number(sortOrder) };
+}
+
+// 比照 .gs 的 normalizePrimaryProductImages：重新決定唯一一張 isPrimary
+// （沒有任何一張被標記時退回第一張），並把 sortOrder 重新編號成 0,1,2...
+function normalizePrimaryProductImages(images: (BackendProductImage | null)[]): BackendProductImage[] {
+  const normalized = images.filter((image): image is BackendProductImage => !!image);
+  if (!normalized.length) return [];
+  let primaryIndex = normalized.findIndex((image) => image.isPrimary);
+  if (primaryIndex < 0) primaryIndex = 0;
+  return normalized.map((image, index) => ({ ...image, isPrimary: index === primaryIndex, sortOrder: index }));
+}
+
+// 比照 .gs 的 applyProductImages：用重新正規化過的 images[] 回推
+// product.image（取 primary 那張，沒有就取第一張），確保 image_url 欄位
+// 跟實際的 primary 圖片標記不會兜不起來。
+function applyProductImages(imageUrl: string, rawImages: RawImageRow[]): { image: string; images: BackendProductImage[] } {
+  const images = normalizePrimaryProductImages(
+    rawImages.map((entry, index) => normalizeProductImageEntry(entry, index)).sort((a, b) => Number(a?.sortOrder || 0) - Number(b?.sortOrder || 0)),
+  );
+  const fallback = normalizeProductImageEntry({ url: imageUrl }, images.length);
+  const merged = fallback && !images.some((image) => image.url === fallback.url) ? normalizePrimaryProductImages([...images, fallback]) : images;
+  const primary = merged.find((image) => image.isPrimary) || merged[0];
+  return { image: primary?.url || "", images: merged };
+}
+
+export type BackendProductListItem = {
+  id: string;
+  name: string;
+  costPrice: number;
+  listPrice: number;
+  quantity?: number;
+  quota?: number;
+  deadline: string;
+  tagIds: string[];
+  description: string;
+  image: string;
+  images: BackendProductImage[];
+  active: boolean;
+  variantsJson: string;
+  variants: { id: string; spec: string; price: number; quantity: number; link: string }[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+type RawProductRow = {
+  id: string;
+  legacy_id: string | null;
+  name: string | null;
+  description: string | null;
+  image_url: string | null;
+  cost_price: number | null;
+  base_price: number | null;
+  stock_quantity: number | null;
+  preorder_quota: number | null;
+  deadline: string | null;
+  status: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  product_variants: { id: string; legacy_id: string | null; spec: string | null; price: number | null; stock_quantity: number | null; product_url: string | null }[] | null;
+  product_images: { id: string; public_id: string | null; secure_url: string | null; sort_order: number | null; is_primary: boolean | null }[] | null;
+  product_categories: { categories: { id: string; legacy_id: string | null } | null }[] | null;
+};
+
+function mapProductRow(row: RawProductRow, productType: BackendProductType): BackendProductListItem {
+  const variants = (row.product_variants || []).map((variant) => ({
+    id: String(variant.legacy_id || variant.id),
+    spec: variant.spec || "預設款",
+    price: Number(variant.price || 0),
+    quantity: Number(variant.stock_quantity || 0),
+    link: variant.product_url || "",
+  }));
+  const tagIds = (row.product_categories || [])
+    .map((link) => link.categories)
+    .filter((category): category is NonNullable<typeof category> => !!category)
+    .map((category) => String(category.legacy_id || category.id));
+  const quantity = productType === "stock" ? Number(row.stock_quantity || 0) : Number(row.preorder_quota || 0);
+  const rawImages = (row.product_images || []).map((image) => ({
+    url: image.secure_url || "",
+    publicId: image.public_id || "",
+    isPrimary: image.is_primary === true,
+    sortOrder: image.sort_order ?? undefined,
+  }));
+  const { image, images } = applyProductImages(row.image_url || "", rawImages);
+  return {
+    id: String(row.legacy_id || row.id),
+    name: row.name || "",
+    costPrice: Number(row.cost_price || 0),
+    listPrice: Number(row.base_price || 0),
+    ...(productType === "stock" ? { quantity } : { quota: quantity }),
+    deadline: row.deadline || "",
+    tagIds,
+    description: row.description || "",
+    image,
+    images,
+    active: row.status === "active",
+    variantsJson: JSON.stringify(variants),
+    variants,
+    createdAt: row.created_at || "",
+    updatedAt: row.updated_at || "",
+  };
+}
+
+const PRODUCT_LIST_SELECT = [
+  "id",
+  "legacy_id",
+  "name",
+  "description",
+  "image_url",
+  "cost_price",
+  "base_price",
+  "stock_quantity",
+  "preorder_quota",
+  "deadline",
+  "status",
+  "created_at",
+  "updated_at",
+  "product_variants(id,legacy_id,spec,price,stock_quantity,product_url)",
+  "product_images(id,public_id,secure_url,sort_order,is_primary)",
+  "product_categories(categories(id,legacy_id))",
+].join(",");
+
+export async function listBackendProducts(productType: BackendProductType): Promise<BackendProductListItem[]> {
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("products")
+    .select(PRODUCT_LIST_SELECT)
+    .eq("product_type", productType)
+    .order("created_at", { ascending: false })
+    .returns<RawProductRow[]>();
+  if (error) throw error;
+  return (data || []).map((row) => mapProductRow(row, productType));
+}
