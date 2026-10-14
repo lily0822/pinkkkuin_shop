@@ -3,7 +3,6 @@
 import { FormEvent, useMemo, useState } from "react";
 import { Link2, Search, Wallet, PackageCheck } from "lucide-react";
 import { formatPrice } from "@/lib/products";
-import { contactLinks } from "@/lib/site";
 
 type CommunityOrderRow = {
   orderId: string;
@@ -47,7 +46,14 @@ function groupRows(rows: CommunityOrderRow[]): CommunityOrderGroup[] {
   return groups;
 }
 
-export function CommunityOrdersClient() {
+type CommunityOrdersClientProps = {
+  // LINE 連結改成後台可編輯（品牌管理 → 網站資訊），這個元件是 client
+  // component、拿不到 server 端的 getAppearanceSettings()，改由
+  // app/community-orders/page.tsx 這個 Server Component 先讀好再傳進來。
+  lineUrl: string;
+};
+
+export function CommunityOrdersClient({ lineUrl }: CommunityOrdersClientProps) {
   const [nickname, setNickname] = useState("");
   const [searchedNickname, setSearchedNickname] = useState("");
   const [groups, setGroups] = useState<CommunityOrderGroup[] | null>(null);
@@ -105,7 +111,7 @@ export function CommunityOrdersClient() {
   }, [groups, selected]);
 
   function openLineContact() {
-    window.open(contactLinks.line, "_blank", "noopener,noreferrer");
+    window.open(lineUrl, "_blank", "noopener,noreferrer");
   }
 
   return (

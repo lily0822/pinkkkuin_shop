@@ -738,7 +738,7 @@ function QuickViewModal({ product, onClose, onAddToCart }: { product: Product; o
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <section className="grid w-full max-w-3xl gap-5 rounded-3xl border-4 border-penguin-pink bg-white p-4 shadow-2xl md:grid-cols-[0.9fr_1fr]" onClick={(event) => event.stopPropagation()}>
-        <ProductArt image={product.images[0]} name={product.name_zh} width={900} />
+        <ProductArt images={product.images} name={product.name_zh} width={900} />
         <div className="flex flex-col">
           <div className="flex items-start justify-between gap-3">
             <div>

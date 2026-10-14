@@ -8,6 +8,9 @@ import type { ProductGalleryImage } from "@/lib/product-detail";
 type ProductGalleryProps = {
   images: ProductGalleryImage[];
   productName: string;
+  // 客人點選規格時，如果該規格有專屬圖片就自動切過去；沒有專屬圖片
+  // 大圖維持現狀不跳動（商品共用圖片隨時都能手動瀏覽，不受這個影響）。
+  activeVariantId?: string;
 };
 
 function cloudinaryImageUrl(image: string, width: number) {
@@ -20,16 +23,29 @@ function primaryIndex(images: ProductGalleryImage[]) {
   return index >= 0 ? index : 0;
 }
 
-export function ProductGallery({ images, productName }: ProductGalleryProps) {
+export function ProductGallery({ images, productName, activeVariantId }: ProductGalleryProps) {
   const galleryImages = useMemo(() => images.filter((image) => image.url), [images]);
   const [selectedIndex, setSelectedIndex] = useState(() => primaryIndex(galleryImages));
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const touchStartX = useRef<number | null>(null);
   const hasMultipleImages = galleryImages.length > 1;
 
+  // 這裡改成由外層（ProductDetailInteractive）在 <ProductGallery key={product.id}>
+  // 加 key，換商品時整個元件連同這個 state 一起重新掛載，不需要再靠
+  // effect 監聽 galleryImages 變化去重設 selectedIndex——重新掛載
+  // 順便也會一起重置 lightboxOpen，比原本只重設 selectedIndex 更完整。
+
+  // 這個 effect 是真的需要訂閱外部事件、不是能在算 selectedIndex 時
+  // 直接算出來的值：activeVariantId 是「客人在旁邊的 AddToCartButton
+  // 點了哪個規格」這個完全獨立的使用者互動觸發的，selectedIndex 同時
+  // 也會被這裡的使用者自己手動切圖的操作改動，兩者沒有單純的優先順序
+  // 關係可以用一個 render-time 算式表示，用 effect 反而比較清楚。
   useEffect(() => {
-    setSelectedIndex(primaryIndex(galleryImages));
-  }, [galleryImages]);
+    if (!activeVariantId) return;
+    const variantImageIndex = galleryImages.findIndex((image) => image.variantId === activeVariantId);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (variantImageIndex >= 0) setSelectedIndex(variantImageIndex);
+  }, [activeVariantId, galleryImages]);
 
   function selectImage(index: number) {
     setSelectedIndex((index + galleryImages.length) % galleryImages.length);
@@ -67,7 +83,7 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
 
   if (!galleryImages.length) {
     return (
-      <div className="mx-auto grid aspect-[4/3] max-h-[360px] min-h-[180px] w-full max-w-2xl place-items-center rounded-3xl border-2 border-dashed border-penguin-peach bg-white/80 text-sm font-bold text-gray-400 sm:min-h-[220px] lg:max-h-[440px]">
+      <div className="mx-auto grid aspect-square h-[280px] place-items-center rounded-3xl border-2 border-dashed border-penguin-peach bg-white/80 text-sm font-bold text-gray-400 sm:h-[360px] lg:h-[480px]">
         圖片準備中
       </div>
     );
@@ -79,7 +95,7 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
   return (
     <div className="space-y-3">
       <div
-        className="group relative mx-auto aspect-[4/3] max-h-[520px] min-h-[240px] w-full overflow-hidden rounded-3xl border-4 border-white bg-white shadow-xl sm:min-h-[320px] lg:max-h-[560px]"
+        className="group relative mx-auto aspect-square h-[280px] overflow-hidden rounded-3xl border-4 border-white bg-white shadow-xl sm:h-[360px] lg:h-[480px]"
         onTouchStart={(event) => {
           touchStartX.current = event.touches[0]?.clientX ?? null;
         }}

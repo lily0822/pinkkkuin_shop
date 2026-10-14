@@ -60,13 +60,15 @@ a {
   text-decoration: none;
 }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
-
+/* 這裡原本還有一條 button/input/select/textarea { font: inherit; }，
+   拿掉了——它跟 Tailwind Preflight 自己在 @layer base 裡的同一條規則
+   完全重複，但因為是寫在 @import "tailwindcss" 之後、沒有包進任何
+   @layer，屬於「未分層」規則。CSS Cascade Layers 的規則是未分層樣式
+   一律贏過任何分層樣式，不管選擇器優先度高低——所以這條重複規則會
+   蓋掉 Tailwind 的 utilities 層（包含 font-black 之類的字重 class），
+   導致所有 <button>/<input>/<select>/<textarea> 上的字重 class 失效、
+   實際字重退回繼承值。拿掉後交給 Tailwind 自己正確分層的 Preflight
+   處理，字重 class 才會像在其他元素上一樣正常生效。 */
 button {
   cursor: pointer;
 }

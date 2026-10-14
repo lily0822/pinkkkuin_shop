@@ -28,6 +28,13 @@ type BackendImageInput = {
   is_primary?: boolean;
   sortOrder?: number;
   sort_order?: number;
+  // 留空／undefined＝商品共用圖片；有值的話是「規格列當下那個規格的
+  // legacy id」（前端規格編輯器用的字串 id，不是 Supabase variant 的
+  // uuid——那個 uuid 要等 syncProductVariants 真的寫進去才會有，這裡
+  // 存的是存檔當下畫面上那個規格列的身分，兩者用下面的
+  // variantLegacyIdToUuid 對照表轉換）。
+  variantId?: string;
+  variant_id?: string;
 };
 
 type BackendVariantInput = {
@@ -50,6 +57,7 @@ export type BackendProductPayload = {
   images?: BackendImageInput[] | string;
   costPrice?: number;
   listPrice?: number;
+  originalPrice?: number;
   quantity?: number;
   quota?: number;
   deadline?: string;
@@ -118,6 +126,7 @@ function getImagesForSupabase(product: BackendProductPayload) {
       url: String(image.url || ""),
       isPrimary: image.isPrimary === true || image.is_primary === true,
       sortOrder: Number(image.sortOrder ?? image.sort_order ?? index),
+      variantLegacyId: String(image.variantId || image.variant_id || "").trim() || undefined,
     }))
     .filter((image) => image.publicId && image.url);
 }
@@ -138,32 +147,60 @@ async function syncProductCategories(supabase: SupabaseServiceClient, productId:
   await supabase.from("product_categories").insert(categoryIds.map((categoryId) => ({ product_id: productId, category_id: categoryId })));
 }
 
+// 回傳「規格 legacy id → 這次新插入的 Supabase variant uuid」對照表
+// 給 syncProductImages 用——product_variants 每次存檔都是整組刪除、
+// 重新插入（不是 upsert），uuid 每次都會換新的，圖片的 variant_id
+// 外鍵一定要等這批新的規格真的寫進去、拿到新 uuid 之後才能解析，
+// 不能跟圖片平行處理。
 async function syncProductVariants(
   supabase: SupabaseServiceClient,
   productId: string,
   product: BackendProductPayload,
   productType: BackendProductType,
   legacyId: string,
-) {
+): Promise<Map<string, string>> {
   await supabase.from("product_variants").delete().eq("product_id", productId);
   const variants = getVariantsForSupabase(product, productType, legacyId).map((variant) => ({ ...variant, product_id: productId }));
-  if (variants.length) await supabase.from("product_variants").insert(variants);
+  if (!variants.length) return new Map();
+  const { data: inserted, error } = await supabase.from("product_variants").insert(variants).select("id,legacy_id");
+  if (error) throw error;
+  return new Map((inserted || []).map((row) => [String(row.legacy_id), row.id as string]));
 }
 
-async function syncProductImages(supabase: SupabaseServiceClient, productId: string, product: BackendProductPayload) {
+async function syncProductImages(
+  supabase: SupabaseServiceClient,
+  productId: string,
+  product: BackendProductPayload,
+  variantLegacyIdToUuid: Map<string, string>,
+) {
   await supabase.from("product_images").delete().eq("product_id", productId);
   const images = getImagesForSupabase(product);
   if (!images.length) return;
-  await supabase.from("product_images").insert(
-    images.map((image, index) => ({
-      product_id: productId,
-      public_id: image.publicId,
-      secure_url: image.url,
-      alt_text: product.name || "",
-      sort_order: index,
-      is_primary: image.isPrimary === true,
-    })),
-  );
+  const rows = images.map((image, index) => ({
+    product_id: productId,
+    public_id: image.publicId,
+    secure_url: image.url,
+    alt_text: product.name || "",
+    sort_order: index,
+    is_primary: image.isPrimary === true,
+    // 對照表裡找不到（規格已經被刪掉、或這張圖本來就是商品共用圖片）
+    // 就存 null，退回「商品共用圖片」，不會讓整筆存檔失敗。
+    variant_id: image.variantLegacyId ? variantLegacyIdToUuid.get(image.variantLegacyId) || null : null,
+  }));
+  const { error } = await supabase.from("product_images").insert(rows);
+  if (error && isMissingColumnError(error)) {
+    // product_images.variant_id 這個欄位的 migration
+    // （202610140001）還沒套用到這個環境——退回沒有 variant_id 的
+    // insert，不要讓「圖片存檔」這個既有功能也被這次新增的欄位拖垮。
+    const fallbackRows = rows.map((row) => {
+      const fallback: Partial<(typeof rows)[number]> = { ...row };
+      delete fallback.variant_id;
+      return fallback;
+    });
+    await supabase.from("product_images").insert(fallbackRows);
+    return;
+  }
+  if (error) throw error;
 }
 
 export async function saveBackendProduct(
@@ -184,6 +221,9 @@ export async function saveBackendProduct(
     image_url: product.image || "",
     cost_price: Number(product.costPrice || 0),
     base_price: Number(product.listPrice || 0),
+    // 可留空：前端沒填原價就不送這個欄位，用 ?? 保留現有值，不要
+    // 讓「這次沒帶這個欄位」被誤判成「使用者把原價清空了」而寫成 null。
+    ...(product.originalPrice !== undefined ? { original_price: product.originalPrice ? Number(product.originalPrice) : null } : {}),
     stock_quantity: productType === "stock" ? qty : 0,
     preorder_quota: productType === "preorder" ? qty : null,
     deadline: productType === "preorder" && product.deadline ? product.deadline : null,
@@ -191,11 +231,22 @@ export async function saveBackendProduct(
     source: "backend_admin",
   };
 
-  const { data: rows, error } = await supabase
+  let { data: rows, error } = await supabase
     .from("products")
     .upsert(productPayload, { onConflict: "legacy_id" })
     .select("id")
     .limit(1);
+  if (error && isMissingColumnError(error) && "original_price" in productPayload) {
+    // products.original_price 這個欄位的 migration（202610140001）
+    // 還沒套用到這個環境——退回沒有這個欄位的 upsert，不要讓「商品
+    // 存檔」這個既有功能被這次新增的「原價」欄位拖垮。使用者這次填的
+    // 原價會暫時存不進去，但其他欄位照常正常儲存。
+    const fallbackPayload: Partial<typeof productPayload> = { ...productPayload };
+    delete fallbackPayload.original_price;
+    const retry = await supabase.from("products").upsert(fallbackPayload, { onConflict: "legacy_id" }).select("id").limit(1);
+    rows = retry.data;
+    error = retry.error;
+  }
   if (error) throw error;
 
   let savedId = rows?.[0]?.id as string | undefined;
@@ -205,14 +256,17 @@ export async function saveBackendProduct(
   }
   if (!savedId) throw new Error("Supabase 商品儲存未回傳 id。");
 
-  // 分類/規格/圖片三個同步步驟都只依賴 savedId，彼此不互相依賴，平行處理；
-  // 每個步驟內部「先刪除、再查詢/新增」的順序不能動（同一份資源的刪除/
-  // 新增本來就要照順序），這裡平行化的是「三個不同資源之間」的部分。
+  // 分類可以跟規格/圖片完全平行，彼此不互相依賴；但規格跟圖片這次
+  // 不能再平行了——圖片的 variant_id 外鍵要等規格這次重新插入、拿到
+  // 新的 uuid 之後才能解析（product_variants 每次存檔都整組砍掉重建，
+  // uuid 不是穩定的），所以圖片一定要排在規格完成之後。
   const tagIds = Array.isArray(product.tagIds) ? product.tagIds : parseJsonArray<string | number>(product.tagIds);
   await Promise.all([
     syncProductCategories(supabase, savedId, tagIds),
-    syncProductVariants(supabase, savedId, product, productType, legacyId),
-    syncProductImages(supabase, savedId, product),
+    (async () => {
+      const variantLegacyIdToUuid = await syncProductVariants(supabase, savedId, product, productType, legacyId);
+      await syncProductImages(supabase, savedId, product, variantLegacyIdToUuid);
+    })(),
   ]);
 
   return { ok: true, productType, legacyId, savedId };
@@ -284,8 +338,8 @@ export async function deleteBackendProductsBatch(
 // applyBackendData() 原本預期的 stockProducts/preorderProducts 元素
 // 完全一致，前端不用跟著大改。
 
-type RawImageRow = { url?: string; publicId?: string; isPrimary?: boolean; sortOrder?: number };
-export type BackendProductImage = { url: string; publicId: string; isPrimary: boolean; sortOrder: number };
+type RawImageRow = { url?: string; publicId?: string; isPrimary?: boolean; sortOrder?: number; variantId?: string };
+export type BackendProductImage = { url: string; publicId: string; isPrimary: boolean; sortOrder: number; variantId?: string };
 
 // 比照 .gs 的 normalizeProductImageUrl：只接受完整 http(s) 網址，或是
 // 本地 /images/xxx.ext 這種舊的相對路徑慣例，其餘一律視為無效回傳空字串。
@@ -306,7 +360,7 @@ function normalizeProductImageEntry(entry: RawImageRow, index: number): BackendP
   const url = normalizeProductImageUrl(entry.url);
   if (!url) return null;
   const sortOrder = entry.sortOrder !== undefined ? entry.sortOrder : index;
-  return { url, publicId: String(entry.publicId || ""), isPrimary: entry.isPrimary === true, sortOrder: Number(sortOrder) };
+  return { url, publicId: String(entry.publicId || ""), isPrimary: entry.isPrimary === true, sortOrder: Number(sortOrder), variantId: entry.variantId || undefined };
 }
 
 // 比照 .gs 的 normalizePrimaryProductImages：重新決定唯一一張 isPrimary
@@ -337,6 +391,7 @@ export type BackendProductListItem = {
   name: string;
   costPrice: number;
   listPrice: number;
+  originalPrice?: number;
   quantity?: number;
   quota?: number;
   deadline: string;
@@ -359,6 +414,7 @@ type RawProductRow = {
   image_url: string | null;
   cost_price: number | null;
   base_price: number | null;
+  original_price: number | null;
   stock_quantity: number | null;
   preorder_quota: number | null;
   deadline: string | null;
@@ -366,7 +422,7 @@ type RawProductRow = {
   created_at: string | null;
   updated_at: string | null;
   product_variants: { id: string; legacy_id: string | null; spec: string | null; price: number | null; stock_quantity: number | null; product_url: string | null }[] | null;
-  product_images: { id: string; public_id: string | null; secure_url: string | null; sort_order: number | null; is_primary: boolean | null }[] | null;
+  product_images: { id: string; public_id: string | null; secure_url: string | null; sort_order: number | null; is_primary: boolean | null; variant_id: string | null }[] | null;
   product_categories: { categories: { id: string; legacy_id: string | null } | null }[] | null;
 };
 
@@ -383,11 +439,19 @@ function mapProductRow(row: RawProductRow, productType: BackendProductType): Bac
     .filter((category): category is NonNullable<typeof category> => !!category)
     .map((category) => String(category.legacy_id || category.id));
   const quantity = productType === "stock" ? Number(row.stock_quantity || 0) : Number(row.preorder_quota || 0);
+  // 圖片的 variant_id 存的是 Supabase variant uuid，但後台畫面上規格是
+  // 用 legacy_id 辨識的（上面 variants 的 id 就是 legacy_id || uuid）——
+  // 這裡建一個 uuid → legacy_id 的對照表，把圖片的 variant_id 轉回
+  // 畫面看得懂的那個 id，前端規格下拉選單才能正確預選。
+  const variantUuidToLegacyId = new Map(
+    (row.product_variants || []).map((variant) => [variant.id, String(variant.legacy_id || variant.id)]),
+  );
   const rawImages = (row.product_images || []).map((image) => ({
     url: image.secure_url || "",
     publicId: image.public_id || "",
     isPrimary: image.is_primary === true,
     sortOrder: image.sort_order ?? undefined,
+    variantId: image.variant_id ? variantUuidToLegacyId.get(image.variant_id) : undefined,
   }));
   const { image, images } = applyProductImages(row.image_url || "", rawImages);
   return {
@@ -395,6 +459,7 @@ function mapProductRow(row: RawProductRow, productType: BackendProductType): Bac
     name: row.name || "",
     costPrice: Number(row.cost_price || 0),
     listPrice: Number(row.base_price || 0),
+    originalPrice: row.original_price != null ? Number(row.original_price) : undefined,
     ...(productType === "stock" ? { quantity } : { quota: quantity }),
     deadline: row.deadline || "",
     tagIds,
@@ -417,6 +482,34 @@ const PRODUCT_LIST_SELECT = [
   "image_url",
   "cost_price",
   "base_price",
+  "original_price",
+  "stock_quantity",
+  "preorder_quota",
+  "deadline",
+  "status",
+  "created_at",
+  "updated_at",
+  "product_variants(id,legacy_id,spec,price,stock_quantity,product_url)",
+  "product_images(id,public_id,secure_url,sort_order,is_primary,variant_id)",
+  "product_categories(categories(id,legacy_id))",
+].join(",");
+
+// original_price／product_images.variant_id 是這輪才加的新欄位
+// （202610140001 這份 migration）。Migration 還沒套用到環境時，上面
+// 那個完整 select 會整包查詢失敗（Postgres 42703: column does not
+// exist）——如果沒有這層 fallback，會連帶把「商品列表讀取」這個上一輪
+// 就已經在正常運作的既有功能也弄壞，不是只有這輪新增的特價/規格圖片
+// 兩個功能不能用而已。比照 src/lib/storefront-products.ts 已經在用的
+// 同一招：查到這個特定錯誤碼就退回一份沒有新欄位的 select 再查一次，
+// 讓既有功能在 migration 套用前還是正常可用，只是新欄位暫時拿不到。
+const PRODUCT_LIST_SELECT_LEGACY = [
+  "id",
+  "legacy_id",
+  "name",
+  "description",
+  "image_url",
+  "cost_price",
+  "base_price",
   "stock_quantity",
   "preorder_quota",
   "deadline",
@@ -428,6 +521,15 @@ const PRODUCT_LIST_SELECT = [
   "product_categories(categories(id,legacy_id))",
 ].join(",");
 
+// 欄位不存在在兩種操作下 Supabase 回傳的錯誤碼不一樣：SELECT 查詢是
+// 原始 Postgres 的 42703（undefined_column）；INSERT/UPSERT 則是
+// PostgREST 自己在送進資料庫前，對照它快取的 schema 比對到的
+// PGRST204（"Could not find the '<column>' column ... in the schema
+// cache"）——這裡兩種都要認得，只認 42703 會漏接寫入時的這個情況。
+function isMissingColumnError(error: { code?: string } | null): boolean {
+  return error?.code === "42703" || error?.code === "PGRST204";
+}
+
 export async function listBackendProducts(productType: BackendProductType): Promise<BackendProductListItem[]> {
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase
@@ -436,6 +538,18 @@ export async function listBackendProducts(productType: BackendProductType): Prom
     .eq("product_type", productType)
     .order("created_at", { ascending: false })
     .returns<RawProductRow[]>();
-  if (error) throw error;
+
+  if (error) {
+    if (!isMissingColumnError(error)) throw error;
+    const { data: legacyData, error: legacyError } = await supabase
+      .from("products")
+      .select(PRODUCT_LIST_SELECT_LEGACY)
+      .eq("product_type", productType)
+      .order("created_at", { ascending: false })
+      .returns<RawProductRow[]>();
+    if (legacyError) throw legacyError;
+    return (legacyData || []).map((row) => mapProductRow(row, productType));
+  }
+
   return (data || []).map((row) => mapProductRow(row, productType));
 }

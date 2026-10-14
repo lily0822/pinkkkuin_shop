@@ -7,6 +7,11 @@ import { formatPrice, Product, ProductVariant } from "@/lib/products";
 
 type AddToCartButtonProps = {
   product: Product;
+  // 選中的規格變了就通知外層（products/[id]/page.tsx 透過
+  // ProductDetailInteractive 拿去同步 ProductGallery 要不要自動切圖）。
+  // 不是必填——這個元件本身不依賴它，單純商品詳情頁以外如果有別的地方
+  // 重用這個按鈕，不傳也完全正常運作。
+  onVariantChange?: (variantId: string | undefined) => void;
 };
 
 function isVariantAvailable(variant: ProductVariant) {
@@ -22,7 +27,7 @@ function maxPurchasableQuantity(product: Product, variant: ProductVariant | null
   return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : null;
 }
 
-export function AddToCartButton({ product }: AddToCartButtonProps) {
+export function AddToCartButton({ product, onVariantChange }: AddToCartButtonProps) {
   const { addProduct, openCart } = useCart();
   const variants = useMemo(() => (product.variants || []).slice().sort((a, b) => a.sortOrder - b.sortOrder), [product.variants]);
   const purchasableVariants = variants.filter(isVariantAvailable);
@@ -36,15 +41,18 @@ export function AddToCartButton({ product }: AddToCartButtonProps) {
   const selectedUnavailable = selectedVariant ? !isVariantAvailable(selectedVariant) : false;
   const needsVariant = hasMultipleVariants && !selectedVariant;
   const price = variantDisplayPrice(product, selectedVariant || null);
+  const hasSalePrice = typeof product.original_price === "number" && product.original_price > price;
   const maxQuantity = maxPurchasableQuantity(product, selectedVariant || null);
-  const canIncreaseQuantity = !disabledProduct && !selectedUnavailable && !needsVariant && (maxQuantity === null || quantity < maxQuantity);
-  const canDecreaseQuantity = quantity > 1;
+  // 規格切換後 maxQuantity 可能變小，store 裡的 quantity 不會自己跟著
+  // 變——改成在 render 時算出「真正能用的數量」，不要另外開一個 effect
+  // 去把 clamp 後的值寫回 state（那樣會多一輪不必要的重新渲染）。
+  const effectiveQuantity = maxQuantity === null ? quantity : Math.min(quantity, Math.max(1, maxQuantity));
+  const canIncreaseQuantity = !disabledProduct && !selectedUnavailable && !needsVariant && (maxQuantity === null || effectiveQuantity < maxQuantity);
+  const canDecreaseQuantity = effectiveQuantity > 1;
 
   useEffect(() => {
-    if (maxQuantity !== null && quantity > maxQuantity) {
-      setQuantity(Math.max(1, maxQuantity));
-    }
-  }, [maxQuantity, quantity]);
+    onVariantChange?.(selectedVariant?.id);
+  }, [selectedVariant?.id, onVariantChange]);
 
   function updateQuantity(nextQuantity: number) {
     const normalized = Math.max(1, Math.floor(nextQuantity));
@@ -62,7 +70,7 @@ export function AddToCartButton({ product }: AddToCartButtonProps) {
       setMessage("這個規格已售完");
       return;
     }
-    const added = addProduct(product, selectedVariant || null, quantity);
+    const added = addProduct(product, selectedVariant || null, effectiveQuantity);
     setMessage(added ? "" : "已達可購買數量上限");
     if (added) openCart();
   }
@@ -72,7 +80,12 @@ export function AddToCartButton({ product }: AddToCartButtonProps) {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-black text-penguin-pink-dark">價格</p>
-          <p className="mt-1 text-3xl font-black text-penguin-pink-dark">{formatPrice(price)}</p>
+          <div className="mt-1 flex flex-wrap items-baseline gap-2">
+            <p className="text-3xl font-black text-[#ec4899]">{formatPrice(price)}</p>
+            {hasSalePrice ? (
+              <p className="text-base font-bold text-gray-400 line-through">{formatPrice(product.original_price as number)}</p>
+            ) : null}
+          </div>
         </div>
         {selectedVariant?.stockQuantity != null ? (
           <p className="rounded-full bg-penguin-cream px-3 py-1 text-xs font-black text-gray-500">
@@ -128,7 +141,7 @@ export function AddToCartButton({ product }: AddToCartButtonProps) {
           >
             -
           </button>
-          <span className="min-w-12 px-3 text-center text-sm font-black text-penguin-gray">{quantity}</span>
+          <span className="min-w-12 px-3 text-center text-sm font-black text-penguin-gray">{effectiveQuantity}</span>
           <button
             type="button"
             disabled={!canIncreaseQuantity}

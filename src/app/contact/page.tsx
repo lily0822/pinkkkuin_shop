@@ -1,11 +1,16 @@
 import Link from "next/link";
 import { Camera, MessageCircle } from "lucide-react";
 import { SectionHeading } from "@/components/section-heading";
+import { getAppearanceSettings } from "@/lib/appearance-settings";
 import { contactLinks } from "@/lib/site";
 
 const orderSteps = ["選擇想購買的商品", "複製商品名稱或截圖", "私訊 IG 或 LINE 官方帳號", "等待確認庫存與金額", "付款完成後安排出貨"];
 
-export default function ContactPage() {
+export default async function ContactPage() {
+  const { siteInfo } = await getAppearanceSettings();
+  const instagramUrl = siteInfo.instagramUrl || contactLinks.instagram;
+  const lineUrl = siteInfo.lineUrl || contactLinks.line;
+
   return (
     <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
       <SectionHeading eyebrow="Contact" title="聯絡我們 / 下單方式" description="目前採私訊下單，客服會協助確認庫存、金額與付款方式。" />
@@ -13,11 +18,11 @@ export default function ContactPage() {
         <section className="rounded-[8px] border border-border bg-white p-6">
           <h2 className="font-black">官方帳號</h2>
           <div className="mt-5 grid gap-3">
-            <Link href={contactLinks.instagram} className="inline-flex items-center justify-center gap-2 rounded-full bg-brand-pink px-5 py-3 text-sm font-black text-white">
+            <Link href={instagramUrl} className="inline-flex items-center justify-center gap-2 rounded-full bg-brand-pink px-5 py-3 text-sm font-black text-white">
               <Camera size={18} />
               前往 Instagram @pinkkkuin.jp
             </Link>
-            <Link href={contactLinks.line} className="inline-flex items-center justify-center gap-2 rounded-full bg-brand-mint px-5 py-3 text-sm font-black">
+            <Link href={lineUrl} className="inline-flex items-center justify-center gap-2 rounded-full bg-brand-mint px-5 py-3 text-sm font-black">
               <MessageCircle size={18} />
               加入 LINE 官方帳號 @pinkkkuin
             </Link>

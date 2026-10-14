@@ -8,12 +8,18 @@ type SupabaseProductRow = {
   description: string | null;
   image_url: string | null;
   base_price: number | null;
+  original_price: number | null;
   stock_quantity: number | null;
   preorder_quota: number | null;
   deadline: string | null;
   status: "active" | "sold_out" | "draft";
   created_at: string;
   updated_at: string;
+  product_images?: Array<{
+    secure_url: string;
+    sort_order: number | null;
+    is_primary: boolean | null;
+  }> | null;
   product_categories?: Array<{
     categories?: {
       name?: string | null;
@@ -92,6 +98,19 @@ function tagsFromRow(row: SupabaseProductRow): ProductTag[] {
     .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
+// 商品卡片（列表頁）的圖片滑動不需要分辨哪張圖屬於哪個規格——商品
+// 共用圖片跟各規格專屬圖片在卡片上就是同一組圖池，一視同仁，只有
+// 詳情頁（src/lib/product-detail.ts）才需要 variant_id 去判斷規格
+// 專屬圖片要不要自動切換。
+function imagesFromRow(row: SupabaseProductRow): string[] {
+  const rows = (row.product_images || []).filter((image) => image.secure_url);
+  if (!rows.length) return row.image_url ? [row.image_url] : [];
+  return rows
+    .slice()
+    .sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0))
+    .map((image) => image.secure_url);
+}
+
 function variantsFromRow(row: SupabaseProductRow): ProductVariant[] {
   const normalizeStatus = (status: "active" | "sold_out" | "draft" | null | undefined): ProductVariant["status"] => (
     status === "sold_out" || status === "draft" ? status : "active"
@@ -127,12 +146,13 @@ export function mapStorefrontProduct(row: SupabaseProductRow): Product {
     name_zh: row.name,
     sku: row.legacy_id || row.id,
     price: Number(row.base_price || 0),
+    original_price: row.original_price != null ? Number(row.original_price) : undefined,
     status,
     category: tags.find((tag) => tag.type === "category")?.name || categoryFromRow(row),
     brand: tags.find((tag) => tag.type === "ip")?.name,
     tags,
     stock_quantity: isPreorder ? row.preorder_quota : row.stock_quantity,
-    images: row.image_url ? [row.image_url] : [],
+    images: imagesFromRow(row),
     description: row.description || "",
     source: "Pinkkkuin",
     preorder_note: isPreorder && row.deadline ? `預購截止：${row.deadline}` : undefined,
@@ -151,6 +171,7 @@ export async function getStorefrontProducts() {
     "description",
     "image_url",
     "base_price",
+    "original_price",
     "stock_quantity",
     "preorder_quota",
     "deadline",
@@ -159,6 +180,7 @@ export async function getStorefrontProducts() {
     "updated_at",
     "product_categories(categories(id,legacy_id,name,type,enabled,sort_order,color))",
     "product_variants(id,legacy_id,spec,price,stock_quantity,product_url,status,sort_order)",
+    "product_images(secure_url,sort_order,is_primary)",
   ].join(",");
   const legacySelect = [
     "id",

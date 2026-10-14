@@ -7,6 +7,9 @@ export type ProductGalleryImage = {
   sortOrder: number;
   isPrimary: boolean;
   altText?: string;
+  // 留空＝商品共用圖片，隨時可以手動瀏覽；有值＝只屬於該規格，選到
+  // 那個規格時才會被 ProductGallery 自動切過去顯示。
+  variantId?: string;
 };
 
 type SupabaseVariantRow = {
@@ -29,6 +32,7 @@ type SupabaseProductRow = {
   image_url: string | null;
   cost_price: number | null;
   base_price: number | null;
+  original_price: number | null;
   stock_quantity: number | null;
   preorder_quota: number | null;
   deadline: string | null;
@@ -44,6 +48,7 @@ type SupabaseImageRow = {
   alt_text: string | null;
   sort_order: number | null;
   is_primary: boolean | null;
+  variant_id: string | null;
 };
 
 export type ProductDetailData = {
@@ -98,6 +103,7 @@ function normalizeGalleryImages(productName: string, imageUrl: string | null, ro
       sortOrder: Number(row.sort_order ?? index),
       isPrimary: row.is_primary === true,
       altText: row.alt_text || productName,
+      variantId: row.variant_id || undefined,
     }))
     .sort((a, b) => a.sortOrder - b.sortOrder);
 
@@ -158,6 +164,7 @@ function mapSupabaseProduct(row: SupabaseProductRow, galleryImages: ProductGalle
     name_zh: row.name,
     sku: row.legacy_id || row.id,
     price: Number(row.base_price || 0),
+    original_price: row.original_price != null ? Number(row.original_price) : undefined,
     status,
     category: isPreorder ? "預購商品" : "現貨商品",
     stock_quantity: isPreorder ? row.preorder_quota : row.stock_quantity,
@@ -176,7 +183,7 @@ function isUuid(value: string) {
 }
 
 async function getSupabaseProductById(id: string) {
-  const select = "id,legacy_id,product_type,name,description,image_url,cost_price,base_price,stock_quantity,preorder_quota,deadline,status,created_at,updated_at,product_variants(id,legacy_id,spec,price,stock_quantity,product_url,status,sort_order)";
+  const select = "id,legacy_id,product_type,name,description,image_url,cost_price,base_price,original_price,stock_quantity,preorder_quota,deadline,status,created_at,updated_at,product_variants(id,legacy_id,spec,price,stock_quantity,product_url,status,sort_order)";
   if (isUuid(id)) {
     const byId = await supabaseFetch<SupabaseProductRow[]>(
       `products?select=${encodeURIComponent(select)}&id=eq.${encodeURIComponent(id)}&limit=1`,
@@ -198,7 +205,7 @@ export async function getProductDetailById(id: string): Promise<ProductDetailDat
 
   if (supabaseProduct) {
     const imageRows = await supabaseFetch<SupabaseImageRow[]>(
-      `product_images?select=public_id,secure_url,alt_text,sort_order,is_primary&product_id=eq.${encodeURIComponent(supabaseProduct.id)}&order=sort_order.asc`,
+      `product_images?select=public_id,secure_url,alt_text,sort_order,is_primary,variant_id&product_id=eq.${encodeURIComponent(supabaseProduct.id)}&order=sort_order.asc`,
     );
     let galleryImages = normalizeGalleryImages(supabaseProduct.name, supabaseProduct.image_url, imageRows || []);
     if (!galleryImages.length && staticProduct) {

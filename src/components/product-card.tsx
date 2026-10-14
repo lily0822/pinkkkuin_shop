@@ -28,6 +28,8 @@ export function ProductCard({ product }: ProductCardProps) {
     && (hasMultipleVariants || maxQuantity === null || maxQuantity > 0);
   const selectedQuantity = maxQuantity === null ? quantity : Math.max(1, Math.min(quantity, maxQuantity));
   const cartLabel = hasMultipleVariants ? "選擇規格" : "加入購物車";
+  const displayPrice = singleVariant?.price ?? product.price;
+  const hasSalePrice = typeof product.original_price === "number" && product.original_price > displayPrice;
 
   function handleCartClick() {
     if (!canOrder) return;
@@ -42,7 +44,7 @@ export function ProductCard({ product }: ProductCardProps) {
   return (
     <article className="group flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border border-penguin-peach bg-white p-1 shadow-sm sm:p-1.5">
       <Link href={`/products/${product.id}`} className="relative block">
-        <ProductArt image={product.images[0]} name={product.name_zh} width={600} />
+        <ProductArt images={product.images} name={product.name_zh} width={600} />
         <span
           className={`absolute left-1.5 top-1.5 rounded-full px-2 py-0.5 text-[10px] font-bold text-black sm:left-2 sm:top-2 sm:px-3 sm:py-1 sm:text-xs ${
             isPreorder ? "bg-penguin-pink-light" : "bg-emerald-100"
@@ -56,7 +58,16 @@ export function ProductCard({ product }: ProductCardProps) {
           <h3 className="line-clamp-2 min-h-8 break-words text-xs font-bold leading-4 text-penguin-gray sm:min-h-10 sm:text-sm sm:leading-5">{product.name_zh}</h3>
         </Link>
         <div className="mt-auto flex min-w-0 flex-wrap items-center justify-between gap-1 sm:flex-nowrap sm:justify-start sm:gap-1.5">
-          <p className="min-w-0 basis-full break-words text-xs font-black leading-tight text-penguin-pink-dark sm:flex-1 sm:basis-auto sm:text-sm">{formatPrice(singleVariant?.price ?? product.price)}</p>
+          <div className="min-w-0 basis-full sm:flex-1 sm:basis-auto">
+            {hasSalePrice ? (
+              <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0">
+                <p className="break-words text-xs font-black leading-tight text-penguin-pink-dark sm:text-sm">{formatPrice(displayPrice)}</p>
+                <p className="text-[10px] font-bold leading-tight text-gray-400 line-through sm:text-xs">{formatPrice(product.original_price as number)}</p>
+              </div>
+            ) : (
+              <p className="break-words text-xs font-black leading-tight text-penguin-pink-dark sm:text-sm">{formatPrice(displayPrice)}</p>
+            )}
+          </div>
           <div role="group" aria-label={`${product.name_zh} 數量${hasMultipleVariants ? "（請先選擇規格）" : ""}`} className="flex h-7 shrink-0 items-center rounded-lg border border-penguin-peach sm:h-8">
             <button type="button" aria-label="減少數量" disabled={!canOrder || hasMultipleVariants || selectedQuantity <= 1} onClick={() => setQuantity(selectedQuantity - 1)} className="h-full w-6 rounded-l-lg disabled:text-gray-300 sm:w-7">−</button>
             <output className="min-w-4 text-center text-xs tabular-nums sm:min-w-5">{selectedQuantity}</output>
