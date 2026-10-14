@@ -1,4 +1,4 @@
-import { getProductById, Product, ProductVariant } from "@/lib/products";
+import { getProductById, pickDisplayVariant, Product, ProductVariant } from "@/lib/products";
 import { getStorefrontProducts } from "@/lib/storefront-products";
 
 export type ProductGalleryImage = {
@@ -17,6 +17,7 @@ type SupabaseVariantRow = {
   legacy_id: string | null;
   spec: string | null;
   price: number | null;
+  original_price?: number | null;
   stock_quantity: number | null;
   product_url: string | null;
   status: "active" | "sold_out" | "draft" | null;
@@ -141,6 +142,7 @@ function normalizeVariants(rows: SupabaseVariantRow[] = []): ProductVariant[] {
       legacyId: row.legacy_id || undefined,
       spec: row.spec || "",
       price: row.price,
+      originalPrice: row.original_price,
       stockQuantity: row.stock_quantity,
       productUrl: row.product_url || undefined,
       status: normalizeStatus(row.status),
@@ -159,12 +161,22 @@ function mapSupabaseProduct(row: SupabaseProductRow, galleryImages: ProductGalle
         ? "preorder"
         : "in_stock";
 
+  // 跟 storefront-products.ts 的 mapStorefrontProduct 同一個理由：詳情頁
+  // 標題旁邊還沒選規格時顯示的那個價格，要用即時的 variants 現算，不要用
+  // 存檔當下寫進 products.base_price 的舊快照（規格庫存/價格之後都可能
+  // 單獨變動，不會連帶更新 products 表）。
+  const displayVariant = pickDisplayVariant(variants);
+  const price = displayVariant ? Number(displayVariant.price ?? 0) : Number(row.base_price || 0);
+  const originalPrice = displayVariant
+    ? (displayVariant.originalPrice != null ? Number(displayVariant.originalPrice) : undefined)
+    : (row.original_price != null ? Number(row.original_price) : undefined);
+
   return {
     id: row.legacy_id || row.id,
     name_zh: row.name,
     sku: row.legacy_id || row.id,
-    price: Number(row.base_price || 0),
-    original_price: row.original_price != null ? Number(row.original_price) : undefined,
+    price,
+    original_price: originalPrice,
     status,
     category: isPreorder ? "預購商品" : "現貨商品",
     stock_quantity: isPreorder ? row.preorder_quota : row.stock_quantity,
@@ -182,19 +194,44 @@ function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(value);
 }
 
-async function getSupabaseProductById(id: string) {
-  const select = "id,legacy_id,product_type,name,description,image_url,cost_price,base_price,original_price,stock_quantity,preorder_quota,deadline,status,created_at,updated_at,product_variants(id,legacy_id,spec,price,stock_quantity,product_url,status,sort_order)";
-  if (isUuid(id)) {
-    const byId = await supabaseFetch<SupabaseProductRow[]>(
-      `products?select=${encodeURIComponent(select)}&id=eq.${encodeURIComponent(id)}&limit=1`,
-    );
-    if (byId?.[0]) return byId[0];
-  }
+// 三層 select，從新到舊：新欄位的 migration 還沒套用到環境時，整包查詢
+// 會直接失敗（Postgres 42703），退到少一點新欄位的版本重試，確保「商品
+// 詳情頁讀得到商品」這個既有功能不會被這輪、或上一輪新增的欄位拖垮。
+const PRODUCT_DETAIL_SELECT_WITH_VARIANT_ORIGINAL_PRICE =
+  "id,legacy_id,product_type,name,description,image_url,cost_price,base_price,original_price,stock_quantity,preorder_quota,deadline,status,created_at,updated_at,product_variants(id,legacy_id,spec,price,original_price,stock_quantity,product_url,status,sort_order)";
+const PRODUCT_DETAIL_SELECT_WITHOUT_VARIANT_ORIGINAL_PRICE =
+  "id,legacy_id,product_type,name,description,image_url,cost_price,base_price,original_price,stock_quantity,preorder_quota,deadline,status,created_at,updated_at,product_variants(id,legacy_id,spec,price,stock_quantity,product_url,status,sort_order)";
+const PRODUCT_DETAIL_SELECT_LEGACY =
+  "id,legacy_id,product_type,name,description,image_url,cost_price,base_price,stock_quantity,preorder_quota,deadline,status,created_at,updated_at,product_variants(id,legacy_id,spec,price,stock_quantity,product_url,status,sort_order)";
 
-  const byLegacyId = await supabaseFetch<SupabaseProductRow[]>(
-    `products?select=${encodeURIComponent(select)}&legacy_id=eq.${encodeURIComponent(id)}&limit=1`,
-  );
-  if (byLegacyId?.[0]) return byLegacyId[0];
+async function getSupabaseProductById(id: string) {
+  for (const select of [
+    PRODUCT_DETAIL_SELECT_WITH_VARIANT_ORIGINAL_PRICE,
+    PRODUCT_DETAIL_SELECT_WITHOUT_VARIANT_ORIGINAL_PRICE,
+    PRODUCT_DETAIL_SELECT_LEGACY,
+  ]) {
+    // supabaseFetch 回 null 代表這個 select 本身查詢失敗（例如新欄位還
+    // 沒套用 migration），要換下一層再試；回一個陣列（即使是空陣列）
+    // 代表這層 select 本身是有效的，只是真的查不到這個商品，不需要再
+    // 用少欄位的版本重試一次。
+    let queryFailed = false;
+
+    if (isUuid(id)) {
+      const byId = await supabaseFetch<SupabaseProductRow[]>(
+        `products?select=${encodeURIComponent(select)}&id=eq.${encodeURIComponent(id)}&limit=1`,
+      );
+      if (byId === null) queryFailed = true;
+      else if (byId[0]) return byId[0];
+    }
+
+    const byLegacyId = await supabaseFetch<SupabaseProductRow[]>(
+      `products?select=${encodeURIComponent(select)}&legacy_id=eq.${encodeURIComponent(id)}&limit=1`,
+    );
+    if (byLegacyId === null) queryFailed = true;
+    else if (byLegacyId[0]) return byLegacyId[0];
+
+    if (!queryFailed) return null;
+  }
 
   return null;
 }
@@ -204,9 +241,18 @@ export async function getProductDetailById(id: string): Promise<ProductDetailDat
   const supabaseProduct = await getSupabaseProductById(id);
 
   if (supabaseProduct) {
-    const imageRows = await supabaseFetch<SupabaseImageRow[]>(
+    let imageRows = await supabaseFetch<SupabaseImageRow[]>(
       `product_images?select=public_id,secure_url,alt_text,sort_order,is_primary,variant_id&product_id=eq.${encodeURIComponent(supabaseProduct.id)}&order=sort_order.asc`,
     );
+    if (imageRows === null) {
+      // product_images.variant_id 這個欄位的 migration（202610140001）還沒
+      // 套用時上面的查詢會直接失敗——退回沒有 variant_id 的版本重試，不要
+      // 讓「商品圖片讀取」整個失敗，退化成完全沒有圖片。
+      const fallbackRows = await supabaseFetch<Array<Omit<SupabaseImageRow, "variant_id">>>(
+        `product_images?select=public_id,secure_url,alt_text,sort_order,is_primary&product_id=eq.${encodeURIComponent(supabaseProduct.id)}&order=sort_order.asc`,
+      );
+      imageRows = fallbackRows ? fallbackRows.map((row) => ({ ...row, variant_id: null })) : null;
+    }
     let galleryImages = normalizeGalleryImages(supabaseProduct.name, supabaseProduct.image_url, imageRows || []);
     if (!galleryImages.length && staticProduct) {
       galleryImages = staticGalleryImages(staticProduct);

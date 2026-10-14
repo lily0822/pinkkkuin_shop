@@ -6,7 +6,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCart, variantStock } from "@/components/cart-provider";
 import { ProductArt } from "@/components/product-art";
-import { formatPrice, Product } from "@/lib/products";
+import { formatPrice, pickDisplayVariant, Product } from "@/lib/products";
 
 type ProductCardProps = {
   product: Product;
@@ -28,8 +28,13 @@ export function ProductCard({ product }: ProductCardProps) {
     && (hasMultipleVariants || maxQuantity === null || maxQuantity > 0);
   const selectedQuantity = maxQuantity === null ? quantity : Math.max(1, Math.min(quantity, maxQuantity));
   const cartLabel = hasMultipleVariants ? "選擇規格" : "加入購物車";
-  const displayPrice = singleVariant?.price ?? product.price;
-  const hasSalePrice = typeof product.original_price === "number" && product.original_price > displayPrice;
+  // 多規格商品卡片顯示「NT$最低價 起」，用目前有庫存、上架中的規格裡最
+  // 便宜的那個代表；單規格（或沒有規格資料）就直接用 product.price
+  // （已經是即時算好的代表值，見 storefront-products.ts）。
+  const displayVariant = hasMultipleVariants ? pickDisplayVariant(product.variants) : singleVariant;
+  const displayPrice = displayVariant?.price ?? product.price;
+  const displayOriginalPrice = displayVariant ? displayVariant.originalPrice : product.original_price;
+  const hasSalePrice = typeof displayOriginalPrice === "number" && displayOriginalPrice > displayPrice;
 
   function handleCartClick() {
     if (!canOrder) return;
@@ -61,11 +66,11 @@ export function ProductCard({ product }: ProductCardProps) {
           <div className="min-w-0 basis-full sm:flex-1 sm:basis-auto">
             {hasSalePrice ? (
               <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0">
-                <p className="break-words text-xs font-black leading-tight text-penguin-pink-dark sm:text-sm">{formatPrice(displayPrice)}</p>
-                <p className="text-[10px] font-bold leading-tight text-gray-400 line-through sm:text-xs">{formatPrice(product.original_price as number)}</p>
+                <p className="break-words text-xs font-black leading-tight text-penguin-pink-dark sm:text-sm">{formatPrice(displayPrice)}{hasMultipleVariants ? " 起" : ""}</p>
+                <p className="text-[10px] font-bold leading-tight text-gray-400 line-through sm:text-xs">{formatPrice(displayOriginalPrice as number)}</p>
               </div>
             ) : (
-              <p className="break-words text-xs font-black leading-tight text-penguin-pink-dark sm:text-sm">{formatPrice(displayPrice)}</p>
+              <p className="break-words text-xs font-black leading-tight text-penguin-pink-dark sm:text-sm">{formatPrice(displayPrice)}{hasMultipleVariants ? " 起" : ""}</p>
             )}
           </div>
           <div role="group" aria-label={`${product.name_zh} 數量${hasMultipleVariants ? "（請先選擇規格）" : ""}`} className="flex h-7 shrink-0 items-center rounded-lg border border-penguin-peach sm:h-8">

@@ -37,11 +37,30 @@ export type ProductVariant = {
   legacyId?: string;
   spec: string;
   price?: number | null;
+  // 規格層級的特價劃線用原價（成本價是後台內部欄位，故意不放進這個前台
+  // 共用型別，避免被任何前台頁面不小心讀到）。
+  originalPrice?: number | null;
   stockQuantity?: number | null;
   productUrl?: string;
   status: "active" | "sold_out" | "draft";
   sortOrder: number;
 };
+
+// 多規格商品在卡片/快速預覽這種「還沒選規格」的場合，要挑一個規格代表整個
+// 商品顯示價格（NT$最低價 起）。優先挑「上架中且有庫存」裡最便宜的；
+// 都沒庫存就退而求其次挑「上架中」裡最便宜的；再沒有就直接挑全部規格裡
+// 最便宜的——不會讓一個已下架/售完的規格價格決定卡片顯示，除非真的沒有
+// 其他選擇。
+export function pickDisplayVariant(variants: ProductVariant[] = []): ProductVariant | null {
+  if (!variants.length) return null;
+  const cheapest = (pool: ProductVariant[]) =>
+    pool.reduce((min, variant) => (Number(variant.price ?? 0) < Number(min.price ?? 0) ? variant : min), pool[0]);
+  const inStock = variants.filter((variant) => variant.status === "active" && Number(variant.stockQuantity ?? 0) > 0);
+  if (inStock.length) return cheapest(inStock);
+  const active = variants.filter((variant) => variant.status === "active");
+  if (active.length) return cheapest(active);
+  return cheapest(variants);
+}
 
 export type ProductTag = {
   id: string;

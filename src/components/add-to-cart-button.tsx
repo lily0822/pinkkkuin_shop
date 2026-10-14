@@ -41,7 +41,10 @@ export function AddToCartButton({ product, onVariantChange }: AddToCartButtonPro
   const selectedUnavailable = selectedVariant ? !isVariantAvailable(selectedVariant) : false;
   const needsVariant = hasMultipleVariants && !selectedVariant;
   const price = variantDisplayPrice(product, selectedVariant || null);
-  const hasSalePrice = typeof product.original_price === "number" && product.original_price > price;
+  // 特價現在看的是「使用者目前選中的規格」有沒有填原價，不是商品層級
+  // 的 product.original_price——同一個商品不同規格的特價可能不一樣。
+  const displayOriginalPrice = selectedVariant ? selectedVariant.originalPrice : product.original_price;
+  const hasSalePrice = typeof displayOriginalPrice === "number" && displayOriginalPrice > price;
   const maxQuantity = maxPurchasableQuantity(product, selectedVariant || null);
   // 規格切換後 maxQuantity 可能變小，store 裡的 quantity 不會自己跟著
   // 變——改成在 render 時算出「真正能用的數量」，不要另外開一個 effect
@@ -83,7 +86,7 @@ export function AddToCartButton({ product, onVariantChange }: AddToCartButtonPro
           <div className="mt-1 flex flex-wrap items-baseline gap-2">
             <p className="text-3xl font-black text-[#ec4899]">{formatPrice(price)}</p>
             {hasSalePrice ? (
-              <p className="text-base font-bold text-gray-400 line-through">{formatPrice(product.original_price as number)}</p>
+              <p className="text-base font-bold text-gray-400 line-through">{formatPrice(displayOriginalPrice as number)}</p>
             ) : null}
           </div>
         </div>

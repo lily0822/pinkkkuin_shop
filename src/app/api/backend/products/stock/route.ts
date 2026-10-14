@@ -7,7 +7,7 @@ import {
   shouldRequireBackendAuth,
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
-import { listBackendProducts, saveBackendProduct, type BackendProductPayload } from "@/lib/backend/product-sync";
+import { BackendProductSaveError, listBackendProducts, saveBackendProduct, type BackendProductPayload } from "@/lib/backend/product-sync";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -78,6 +78,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(saved);
   } catch (error) {
     console.error("saveBackendProduct(stock) failed:", error);
-    return NextResponse.json({ ok: false, error: "商品儲存失敗，請稍後再試。" }, { status: 500 });
+    // BackendProductSaveError 的訊息是特別組出來給使用者看的（例如講清楚
+    // 是規格還是圖片那一步失敗），原封不動回傳；其他未預期的錯誤維持
+    // 通用訊息，不洩漏 Supabase 內部錯誤細節。
+    const message = error instanceof BackendProductSaveError ? error.message : "商品儲存失敗，請稍後再試。";
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }

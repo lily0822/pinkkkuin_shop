@@ -6,7 +6,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { ProductCard } from "@/components/product-card";
 import { ProductArt } from "@/components/product-art";
 import { useCart } from "@/components/cart-provider";
-import { formatPrice, Product, ProductStatus, statusLabels } from "@/lib/products";
+import { formatPrice, pickDisplayVariant, Product, ProductStatus, statusLabels } from "@/lib/products";
 
 type SortMode = "newest" | "price_asc" | "price_desc" | "name_asc" | "name_desc";
 type PriceRange = "all" | "0-100" | "101-300" | "301-500" | "501-1000" | "1000";
@@ -735,6 +735,11 @@ export function ProductCatalog({
 }
 
 function QuickViewModal({ product, onClose, onAddToCart }: { product: Product; onClose: () => void; onAddToCart: () => void }) {
+  const hasMultipleVariants = (product.variants || []).length > 1;
+  const displayVariant = hasMultipleVariants ? pickDisplayVariant(product.variants) : product.variants?.[0] || null;
+  const displayPrice = displayVariant?.price ?? product.price;
+  const displayOriginalPrice = displayVariant ? displayVariant.originalPrice : product.original_price;
+  const hasSalePrice = typeof displayOriginalPrice === "number" && displayOriginalPrice > displayPrice;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <section className="grid w-full max-w-3xl gap-5 rounded-3xl border-4 border-penguin-pink bg-white p-4 shadow-2xl md:grid-cols-[0.9fr_1fr]" onClick={(event) => event.stopPropagation()}>
@@ -752,7 +757,12 @@ function QuickViewModal({ product, onClose, onAddToCart }: { product: Product; o
               <X size={18} />
             </button>
           </div>
-          <p className="mt-4 text-2xl font-black text-penguin-pink-dark">{formatPrice(product.price)}</p>
+          <div className="mt-4 flex flex-wrap items-baseline gap-2">
+            <p className="text-2xl font-black text-penguin-pink-dark">{formatPrice(displayPrice)}{hasMultipleVariants ? " 起" : ""}</p>
+            {hasSalePrice ? (
+              <p className="text-sm font-bold text-gray-400 line-through">{formatPrice(displayOriginalPrice as number)}</p>
+            ) : null}
+          </div>
           <p className="mt-3 flex-1 text-sm leading-7 text-gray-500">{product.description}</p>
           <div className="mt-5 grid gap-2 sm:grid-cols-2">
             <button

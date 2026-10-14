@@ -7,7 +7,7 @@ import {
   shouldRequireBackendAuth,
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
-import { listBackendProducts, saveBackendProduct, type BackendProductPayload } from "@/lib/backend/product-sync";
+import { BackendProductSaveError, listBackendProducts, saveBackendProduct, type BackendProductPayload } from "@/lib/backend/product-sync";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -78,6 +78,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(saved);
   } catch (error) {
     console.error("saveBackendProduct(preorder) failed:", error);
-    return NextResponse.json({ ok: false, error: "商品儲存失敗，請稍後再試。" }, { status: 500 });
+    const message = error instanceof BackendProductSaveError ? error.message : "商品儲存失敗，請稍後再試。";
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }
