@@ -22,6 +22,16 @@ function variantDisplayPrice(product: Product, variant: ProductVariant | null) {
   return Number(variant?.price ?? product.price ?? 0);
 }
 
+// 還沒選規格時，單一代表價格不準——改顯示「這個商品全部規格」的價格
+// 範圍，故意納入售完的規格一起算（讓客人看到完整區間，不是只看現在
+// 買得到的那幾個），不是用 pickDisplayVariant 那種「挑一個代表規格」
+// 的邏輯。
+function variantPriceRange(variants: ProductVariant[]) {
+  if (!variants.length) return null;
+  const prices = variants.map((variant) => Number(variant.price ?? 0));
+  return { min: Math.min(...prices), max: Math.max(...prices) };
+}
+
 function maxPurchasableQuantity(product: Product, variant: ProductVariant | null) {
   const value = variant ? variant.stockQuantity : product.stock_quantity;
   return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : null;
@@ -45,6 +55,11 @@ export function AddToCartButton({ product, onVariantChange }: AddToCartButtonPro
   // 的 product.original_price——同一個商品不同規格的特價可能不一樣。
   const displayOriginalPrice = selectedVariant ? selectedVariant.originalPrice : product.original_price;
   const hasSalePrice = typeof displayOriginalPrice === "number" && displayOriginalPrice > price;
+  // 還沒選規格、且各規格價格不一樣時顯示「NT$最低 ~ 最高」；剛好同價
+  // 就不顯示範圍（退回上面單一價格的顯示），劃線原價在顯示範圍時刻意
+  // 不顯示——不同規格的原價/特價可能不一樣，選定規格後才正常顯示。
+  const priceRange = needsVariant ? variantPriceRange(variants) : null;
+  const showPriceRange = !!priceRange && priceRange.min !== priceRange.max;
   const maxQuantity = maxPurchasableQuantity(product, selectedVariant || null);
   // 規格切換後 maxQuantity 可能變小，store 裡的 quantity 不會自己跟著
   // 變——改成在 render 時算出「真正能用的數量」，不要另外開一個 effect
@@ -84,10 +99,16 @@ export function AddToCartButton({ product, onVariantChange }: AddToCartButtonPro
         <div>
           <p className="text-xs font-black text-penguin-pink-dark">價格</p>
           <div className="mt-1 flex flex-wrap items-baseline gap-2">
-            <p className="text-3xl font-black text-[#ec4899]">{formatPrice(price)}</p>
-            {hasSalePrice ? (
-              <p className="text-base font-bold text-gray-400 line-through">{formatPrice(displayOriginalPrice as number)}</p>
-            ) : null}
+            {showPriceRange && priceRange ? (
+              <p className="text-3xl font-black text-[#ec4899]">{formatPrice(priceRange.min)} ~ {formatPrice(priceRange.max)}</p>
+            ) : (
+              <>
+                <p className="text-3xl font-black text-[#ec4899]">{formatPrice(price)}</p>
+                {hasSalePrice ? (
+                  <p className="text-base font-bold text-gray-400 line-through">{formatPrice(displayOriginalPrice as number)}</p>
+                ) : null}
+              </>
+            )}
           </div>
         </div>
         {selectedVariant?.stockQuantity != null ? (
