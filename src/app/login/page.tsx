@@ -1,6 +1,6 @@
 import { AuthForm } from "@/components/auth-form";
 import { FeatureDisabledNotice } from "@/components/feature-disabled-notice";
-import { getLineLoginMessage, getOAuthMessage } from "@/lib/auth/messages";
+import { getLineLoginMessage, getOAuthMessage, getPreorderMagicLinkMessage } from "@/lib/auth/messages";
 import { getDisabledMessage, getSiteFeatureFlag, isEffectivelyEnabled } from "@/lib/site-feature-flags";
 import { safeRelativePath } from "@/lib/supabase/server";
 
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ next?: string; reset?: string; oauth?: string; line?: string }>;
+  searchParams?: Promise<{ next?: string; reset?: string; oauth?: string; line?: string; preorder?: string }>;
 }) {
   const flag = await getSiteFeatureFlag("login");
 
@@ -22,7 +22,8 @@ export default async function LoginPage({
   }
 
   const params = await searchParams;
-  const banner = getOAuthMessage(params?.oauth) || getLineLoginMessage(params?.line);
+  const banner =
+    getOAuthMessage(params?.oauth) || getLineLoginMessage(params?.line) || getPreorderMagicLinkMessage(params?.preorder);
 
   return (
     <main className="bg-penguin-cream px-4 py-12 sm:px-6 lg:px-8">

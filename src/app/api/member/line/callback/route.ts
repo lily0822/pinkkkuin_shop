@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { exchangeLineCode, fetchLineProfile, LINE_LINK_STATE_COOKIE, verifyLineLoginState } from "@/lib/line/login";
+import { linkLineAccountToExistingUser } from "@/lib/line/member-binding";
 import { isMemberDisabled } from "@/lib/member/status";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { appendSupabaseCookies, createSupabaseRouteClient } from "@/lib/supabase/route";
@@ -48,40 +49,15 @@ export async function GET(request: NextRequest) {
     const profile = await fetchLineProfile(token.access_token);
 
     const service = createSupabaseServiceClient();
-    const [{ data: sameLine }, { data: sameUser }] = await Promise.all([
-      service
-        .from("member_line_accounts")
-        .select("user_id,line_user_id")
-        .eq("line_user_id", profile.userId)
-        .limit(1)
-        .maybeSingle(),
-      service
-        .from("member_line_accounts")
-        .select("user_id,line_user_id")
-        .eq("user_id", user.id)
-        .limit(1)
-        .maybeSingle(),
-    ]);
-
-    if (sameLine && sameLine.user_id !== user.id) {
-      return appendSupabaseCookies(clearStateCookie(memberRedirect(request, "line-already-linked")), cookieResponse);
-    }
-    if (sameUser && sameUser.line_user_id !== profile.userId) {
-      return appendSupabaseCookies(clearStateCookie(memberRedirect(request, "member-already-linked")), cookieResponse);
-    }
-    if (sameUser && sameUser.line_user_id === profile.userId) {
-      return appendSupabaseCookies(clearStateCookie(memberRedirect(request, "already-linked")), cookieResponse);
+    const result = await linkLineAccountToExistingUser(service, user.id, profile.userId);
+    if (!result.ok) {
+      return appendSupabaseCookies(clearStateCookie(memberRedirect(request, result.reason)), cookieResponse);
     }
 
-    const { error: insertError } = await service
-      .from("member_line_accounts")
-      .insert({ user_id: user.id, line_user_id: profile.userId });
-
-    if (insertError) {
-      return appendSupabaseCookies(clearStateCookie(memberRedirect(request, "link-failed")), cookieResponse);
-    }
-
-    return appendSupabaseCookies(clearStateCookie(memberRedirect(request, "linked")), cookieResponse);
+    return appendSupabaseCookies(
+      clearStateCookie(memberRedirect(request, result.alreadyLinked ? "already-linked" : "linked")),
+      cookieResponse,
+    );
   } catch {
     return appendSupabaseCookies(clearStateCookie(memberRedirect(request, "link-failed")), cookieResponse);
   }
