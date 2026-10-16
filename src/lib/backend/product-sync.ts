@@ -71,6 +71,10 @@ export type BackendProductPayload = {
   quantity?: number;
   quota?: number;
   deadline?: string;
+  // 預購商品專用：所屬系列（必填，後台表單層級驗證）+ 預計到貨日期。
+  // 現貨商品不會送這兩個欄位。
+  seriesId?: string;
+  estimatedArrivalDate?: string;
   active?: boolean;
   tagIds?: (string | number)[];
   variantsJson?: string;
@@ -298,6 +302,10 @@ export async function saveBackendProduct(
   product: BackendProductPayload,
 ): Promise<BackendProductSaveResult> {
   if (!product || !product.name) throw new BackendProductSaveError("商品名稱不可為空。");
+  // 系列是預購商品的必填欄位——資料庫層級故意沒有 not null constraint
+  // （現貨商品不用填），這裡在應用層擋，跟商品名稱的檢查放在一起。
+  const seriesId = productType === "preorder" ? String(product.seriesId || "").trim() : "";
+  if (productType === "preorder" && !seriesId) throw new BackendProductSaveError("請選擇所屬系列。");
 
   const legacyId = String(product.id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   const variantRows = getVariantsForSupabase(product, productType, legacyId);
@@ -322,6 +330,8 @@ export async function saveBackendProduct(
     stock_quantity: productType === "stock" ? summary.totalQuantity : 0,
     preorder_quota: productType === "preorder" ? summary.totalQuantity : null,
     deadline: productType === "preorder" && product.deadline ? product.deadline : null,
+    series_id: productType === "preorder" ? seriesId : null,
+    estimated_arrival_date: productType === "preorder" && product.estimatedArrivalDate ? product.estimatedArrivalDate : null,
     status: supabaseStatus(product.active, summary.totalQuantity),
     source: "backend_admin",
   };
@@ -332,12 +342,25 @@ export async function saveBackendProduct(
     .select("id")
     .limit(1);
   if (error && isMissingColumnError(error)) {
+    // products.series_id/estimated_arrival_date（202610180001）還沒套用
+    // 到這個環境——退回沒有這兩個欄位的 upsert，不要讓「商品存檔」這個
+    // 既有功能被這次新增的欄位拖垮。
+    const fallbackPayload: Partial<typeof productPayload> = { ...productPayload };
+    delete fallbackPayload.series_id;
+    delete fallbackPayload.estimated_arrival_date;
+    const retry = await supabase.from("products").upsert(fallbackPayload, { onConflict: "legacy_id" }).select("id").limit(1);
+    rows = retry.data;
+    error = retry.error;
+  }
+  if (error && isMissingColumnError(error)) {
     // products.original_price 這個欄位的 migration（202610140001）
     // 還沒套用到這個環境——退回沒有這個欄位的 upsert，不要讓「商品
     // 存檔」這個既有功能被這次新增的「原價」欄位拖垮。使用者這次填的
     // 原價會暫時存不進去，但其他欄位照常正常儲存。
     const fallbackPayload: Partial<typeof productPayload> = { ...productPayload };
     delete fallbackPayload.original_price;
+    delete fallbackPayload.series_id;
+    delete fallbackPayload.estimated_arrival_date;
     const retry = await supabase.from("products").upsert(fallbackPayload, { onConflict: "legacy_id" }).select("id").limit(1);
     rows = retry.data;
     error = retry.error;
@@ -500,6 +523,8 @@ export type BackendProductListItem = {
   quantity?: number;
   quota?: number;
   deadline: string;
+  seriesId?: string;
+  estimatedArrivalDate?: string;
   tagIds: string[];
   description: string;
   image: string;
@@ -523,6 +548,8 @@ type RawProductRow = {
   stock_quantity: number | null;
   preorder_quota: number | null;
   deadline: string | null;
+  series_id?: string | null;
+  estimated_arrival_date?: string | null;
   status: string | null;
   created_at: string | null;
   updated_at: string | null;
@@ -569,6 +596,8 @@ function mapProductRow(row: RawProductRow, productType: BackendProductType): Bac
     originalPrice: row.original_price != null ? Number(row.original_price) : undefined,
     ...(productType === "stock" ? { quantity } : { quota: quantity }),
     deadline: row.deadline || "",
+    seriesId: row.series_id || undefined,
+    estimatedArrivalDate: row.estimated_arrival_date || undefined,
     tagIds,
     description: row.description || "",
     image,
@@ -589,6 +618,31 @@ function mapProductRow(row: RawProductRow, productType: BackendProductType): Bac
 function isMissingColumnError(error: { code?: string } | null): boolean {
   return error?.code === "42703" || error?.code === "PGRST204";
 }
+
+// products.series_id/estimated_arrival_date（202610180001）是這輪才加的
+// 新欄位，所以排在最外層一層——比上面所有舊欄位都更可能在某個環境還沒
+// 套用 migration，拿不到就退回下一層（沒有這兩個欄位，但其他都在）。
+const PRODUCT_LIST_SELECT_WITH_SERIES = [
+  "id",
+  "legacy_id",
+  "name",
+  "description",
+  "image_url",
+  "cost_price",
+  "base_price",
+  "original_price",
+  "stock_quantity",
+  "preorder_quota",
+  "deadline",
+  "series_id",
+  "estimated_arrival_date",
+  "status",
+  "created_at",
+  "updated_at",
+  "product_variants(id,legacy_id,spec,price,cost_price,original_price,stock_quantity,product_url)",
+  "product_images(id,public_id,secure_url,sort_order,is_primary,variant_id)",
+  "product_categories(categories(id,legacy_id))",
+].join(",");
 
 const PRODUCT_LIST_SELECT_WITH_VARIANT_COST_AND_ORIGINAL = [
   "id",
@@ -661,6 +715,7 @@ export async function listBackendProducts(productType: BackendProductType): Prom
   const supabase = createSupabaseServiceClient();
 
   for (const select of [
+    PRODUCT_LIST_SELECT_WITH_SERIES,
     PRODUCT_LIST_SELECT_WITH_VARIANT_COST_AND_ORIGINAL,
     PRODUCT_LIST_SELECT_WITHOUT_VARIANT_COST_AND_ORIGINAL,
     PRODUCT_LIST_SELECT_LEGACY,

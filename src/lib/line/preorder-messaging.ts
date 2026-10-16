@@ -2,7 +2,6 @@ import "server-only";
 
 import { getLineUserProfile, sendLineReply, type LineReplyMessage } from "@/lib/line/client";
 import type { LineWebhookEvent } from "@/lib/line/livestream-orders";
-import { findCategoryIdByBatchName } from "@/lib/line/preorder-link-batches";
 import { findOrCreateMemberForLineUser } from "@/lib/line/member-binding";
 import { createPreorderMagicLink } from "@/lib/line/preorder-magic-link";
 import { getPreorderLinkSettings } from "@/lib/line/preorder-link-settings";
@@ -25,9 +24,14 @@ import { createSupabaseServiceClient } from "@/lib/supabase/service";
 // 「精確格式／完全比對」這兩種高特定性條件，不是子字串比對：
 // 1. 整則訊息完全等於後台設定的回頭客關鍵字（不是 includes）
 // 2. 訊息含有全形「｜」且能切成兩段，前半段（批次名稱）還要真的能在
-//    categories 表查到對應的 IP／商品類別標籤才算數
+//    product_series 表查到對應的系列才算數
 // 兩者都是刻意設計成「誤判機率極低」的條件，不會隨便被一般聊天內容
 // 意外觸發。
+//
+// 系列管理取代標籤批次機制：批次名稱直接是 product_series.name，不再
+// 透過 preorder-link-batches.ts 的 batchName -> categoryId KV 對照表
+// 間接查，也不再透過 product_categories 關聯表篩商品——products.series_id
+// 直接外鍵指到系列，一對一查詢。
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceClient>;
 
@@ -56,36 +60,25 @@ function parseBatchLinkMessage(text: string, prefix: string): { batchName: strin
   return { batchName, nickname };
 }
 
-async function fetchPreorderProducts(service: SupabaseServiceClient, categoryId: string | null): Promise<PreorderProductRow[]> {
-  const baseQuery = () =>
-    service
-      .from("products")
-      .select("id,legacy_id,name,image_url,deadline")
-      .eq("product_type", "preorder")
-      .eq("status", "active")
-      .order("created_at", { ascending: false })
-      .limit(MAX_PRODUCTS_IN_CARD);
+async function findSeriesIdByName(service: SupabaseServiceClient, name: string): Promise<string | null> {
+  const { data } = await service.from("product_series").select("id").eq("name", name).maybeSingle();
+  return data?.id || null;
+}
 
-  if (!categoryId) {
-    const { data } = await baseQuery();
-    return data || [];
-  }
-
-  // product_categories 的 category_id 篩選套用在「哪些商品屬於這個
-  // 標籤」這張關聯表上，不是直接對 products 做 embedded-filter（那樣
-  // 只會篩掉不符合的子陣列，不會篩掉整列商品）。
-  const { data: links } = await service.from("product_categories").select("product_id").eq("category_id", categoryId);
-  const productIds = (links || []).map((row) => row.product_id as string);
-  if (!productIds.length) return [];
-
-  const { data } = await service
+async function fetchPreorderProducts(service: SupabaseServiceClient, seriesId: string | null): Promise<PreorderProductRow[]> {
+  let query = service
     .from("products")
     .select("id,legacy_id,name,image_url,deadline")
     .eq("product_type", "preorder")
     .eq("status", "active")
-    .in("id", productIds)
     .order("created_at", { ascending: false })
     .limit(MAX_PRODUCTS_IN_CARD);
+
+  // products.series_id 是直接外鍵，不用再像舊版那樣先查
+  // product_categories 關聯表拿 product_id 清單——一對一，一次查詢就夠。
+  if (seriesId) query = query.eq("series_id", seriesId);
+
+  const { data } = await query;
   return data || [];
 }
 
@@ -162,7 +155,7 @@ async function handlePreorderMessage(
   service: SupabaseServiceClient,
   lineUserId: string,
   replyToken: string | undefined,
-  categoryId: string | null,
+  seriesId: string | null,
   nickname: string | undefined,
 ): Promise<void> {
   const { data: existing } = await service
@@ -197,7 +190,7 @@ async function handlePreorderMessage(
     return;
   }
 
-  const products = await fetchPreorderProducts(service, categoryId);
+  const products = await fetchPreorderProducts(service, seriesId);
   const origin = getSiteOrigin();
   const magicLink = (returnTo: string) =>
     `${origin}/api/line/preorder-magic-link?token=${encodeURIComponent(createPreorderMagicLink(lineUserId, returnTo))}`;
@@ -247,11 +240,12 @@ export async function handlePreorderLineEvent(event: LineWebhookEvent): Promise<
 
   const parsed = parseBatchLinkMessage(text, settings.oaMessagePrefix);
   if (parsed) {
-    // 查不到對應批次（連結太舊、或這個顯示名稱從來沒被後台工具產生過）
-    // 就當作沒有批次，退回「全部預購清單」，不是解析失敗——使用者的
-    // 訊息本身已經確定是這個格式了，不應該因為查不到批次就整個不回應。
-    const categoryId = await findCategoryIdByBatchName(parsed.batchName);
-    await handlePreorderMessage(service, lineUserId, event.replyToken, categoryId, parsed.nickname);
+    // 查不到對應系列（連結太舊、系列已被刪除、或這個名稱從來不是用
+    // 「產生預購連結」工具產生的）就當作沒有系列，退回「全部預購
+    // 清單」，不是解析失敗——使用者的訊息本身已經確定是這個格式了，
+    // 不應該因為查不到系列就整個不回應。
+    const seriesId = await findSeriesIdByName(service, parsed.batchName);
+    await handlePreorderMessage(service, lineUserId, event.replyToken, seriesId, parsed.nickname);
     return true;
   }
 
