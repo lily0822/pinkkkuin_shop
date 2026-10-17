@@ -17,6 +17,9 @@ export type PreorderSeries = {
   name: string;
   coverImageUrl: string;
   sortOrder: number;
+  // IP 標籤改掛在系列身上（series_categories 關聯表），不是從底下商品
+  // 的標籤反查——一個系列可以直接被標成多個 IP，跟商品本身有沒有填
+  // IP 標籤無關（預購商品編輯表單這輪也已經拿掉 IP 選擇欄位）。
   ipNames: string[];
   // 系列的倒數徽章取底下商品裡「最早」的截止時間（最急迫的那個），
   // 不是最晚——越早要結單的系列越該被優先注意到。
@@ -37,7 +40,6 @@ export type PreorderProduct = {
   deadline: string | null;
   estimatedArrivalDate: string | null;
   seriesId: string | null;
-  ipNames: string[];
   createdAt: string;
   // 多規格商品這一輪的「加入」按鈕行為跟既有 ProductCard 一致：導去
   // 商品詳情頁選規格，不在卡片上做規格選擇 UI（範例頁面也沒有）。
@@ -57,7 +59,6 @@ type SupabaseProductRow = {
   series_id?: string | null;
   created_at: string;
   product_images?: Array<{ secure_url: string; sort_order: number | null; is_primary: boolean | null }> | null;
-  product_categories?: Array<{ categories?: { name?: string | null; type?: string | null } | null }> | null;
   product_variants?: Array<{
     id: string;
     price: number | null;
@@ -71,6 +72,11 @@ type SupabaseSeriesRow = {
   name: string | null;
   cover_image_url: string | null;
   sort_order: number | null;
+};
+
+type SupabaseSeriesCategoryRow = {
+  series_id: string;
+  categories?: { name?: string | null; type?: string | null; enabled?: boolean | null } | null;
 };
 
 function supabaseHeaders() {
@@ -102,7 +108,6 @@ const PRODUCT_SELECT_WITH_SERIES = [
   "series_id",
   "created_at",
   "product_images(secure_url,sort_order,is_primary)",
-  "product_categories(categories(name,type))",
   "product_variants(id,price,stock_quantity,status)",
 ].join(",");
 
@@ -116,7 +121,6 @@ const PRODUCT_SELECT_LEGACY = [
   "deadline",
   "created_at",
   "product_images(secure_url,sort_order,is_primary)",
-  "product_categories(categories(name,type))",
   "product_variants(id,price,stock_quantity,status)",
 ].join(",");
 
@@ -125,17 +129,6 @@ function imageFromRow(row: SupabaseProductRow): string {
   if (!rows.length) return row.image_url || "";
   const sorted = rows.slice().sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0));
   return sorted.find((image) => image.is_primary)?.secure_url || sorted[0].secure_url;
-}
-
-function ipNamesFromRow(row: SupabaseProductRow): string[] {
-  return Array.from(
-    new Set(
-      (row.product_categories || [])
-        .map((link) => link.categories)
-        .filter((category) => category?.type === "ip" && category?.name)
-        .map((category) => String(category!.name)),
-    ),
-  );
 }
 
 function priceRangeFromRow(row: SupabaseProductRow): { min: number; max: number } {
@@ -169,7 +162,6 @@ function mapProductRow(row: SupabaseProductRow): PreorderProduct {
     deadline: row.deadline || null,
     estimatedArrivalDate: row.estimated_arrival_date || null,
     seriesId: row.series_id || null,
-    ipNames: ipNamesFromRow(row),
     createdAt: row.created_at,
     hasMultipleVariants: hasMultiple,
     singleVariantId: singleId,
@@ -193,6 +185,29 @@ async function fetchSeriesRows(): Promise<SupabaseSeriesRow[]> {
   return rows || [];
 }
 
+// series_categories（202610190001）還沒套用到這個環境時 supabaseFetch
+// 會因為 404 回傳 null——退回空陣列，系列就暫時沒有 IP 分組（不是整頁
+// 噴錯），跟其他新欄位/新表的既有 fallback 慣例一致。
+async function fetchSeriesCategoryRows(): Promise<SupabaseSeriesCategoryRow[]> {
+  const rows = await supabaseFetch<SupabaseSeriesCategoryRow[]>(
+    "series_categories?select=series_id,categories(name,type,enabled)",
+  );
+  return rows || [];
+}
+
+function seriesIpNamesMap(rows: SupabaseSeriesCategoryRow[]): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  rows
+    .filter((row) => row.categories?.type === "ip" && row.categories?.enabled !== false && row.categories?.name)
+    .forEach((row) => {
+      const current = map.get(row.series_id) || [];
+      const name = String(row.categories!.name);
+      if (!current.includes(name)) current.push(name);
+      map.set(row.series_id, current);
+    });
+  return map;
+}
+
 export type PreorderCatalogData = {
   products: PreorderProduct[];
   series: PreorderSeries[];
@@ -206,18 +221,22 @@ function earliestDeadline(deadlines: Array<string | null>): string | null {
 }
 
 export async function getPreorderCatalogData(): Promise<PreorderCatalogData> {
-  const [productRows, seriesRows] = await Promise.all([fetchPreorderProductRows(), fetchSeriesRows()]);
+  const [productRows, seriesRows, seriesCategoryRows] = await Promise.all([
+    fetchPreorderProductRows(),
+    fetchSeriesRows(),
+    fetchSeriesCategoryRows(),
+  ]);
   const products = productRows.map(mapProductRow);
+  const ipNamesBySeriesId = seriesIpNamesMap(seriesCategoryRows);
 
   const series: PreorderSeries[] = seriesRows.map((row) => {
     const seriesProducts = products.filter((product) => product.seriesId === row.id);
-    const ipNames = Array.from(new Set(seriesProducts.flatMap((product) => product.ipNames)));
     return {
       id: row.id,
       name: row.name || "",
       coverImageUrl: row.cover_image_url || "",
       sortOrder: Number(row.sort_order ?? 0),
-      ipNames,
+      ipNames: ipNamesBySeriesId.get(row.id) || [],
       deadline: earliestDeadline(seriesProducts.map((product) => product.deadline)),
     };
   });
@@ -228,7 +247,7 @@ export async function getPreorderCatalogData(): Promise<PreorderCatalogData> {
       if (!ipSortOrder.has(name)) ipSortOrder.set(name, seriesIndex);
     });
   });
-  const ips: PreorderIp[] = Array.from(new Set(products.flatMap((product) => product.ipNames)))
+  const ips: PreorderIp[] = Array.from(new Set(series.flatMap((item) => item.ipNames)))
     .map((name) => ({ name, sortOrder: ipSortOrder.get(name) ?? 9999 }))
     .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, "zh-Hant"));
 

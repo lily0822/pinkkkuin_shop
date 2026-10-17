@@ -245,12 +245,28 @@ export function PreorderCatalog({ products, series, ips }: PreorderCatalogData) 
 
   const effectiveIp = topIp !== ALL_IP ? topIp : quickFilterIp;
 
+  // IP 是系列身上的屬性（series_categories），不是商品自己的標籤——
+  // 「這個 IP 底下所有系列的商品」要先找出帶這個 IP 的系列 id 集合，
+  // 再用 product.seriesId 比對，不能直接查商品自己的 IP 名單（商品沒有
+  // 這個欄位了）。
+  const seriesIdsByIp = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    series.forEach((item) => {
+      item.ipNames.forEach((name) => {
+        if (!map.has(name)) map.set(name, new Set());
+        map.get(name)!.add(item.id);
+      });
+    });
+    return map;
+  }, [series]);
+
   const resultProducts = useMemo(() => {
     let scoped: PreorderProduct[];
     if (selectedSeriesId !== "all") {
       scoped = products.filter((product) => product.seriesId === selectedSeriesId);
     } else if (effectiveIp !== ALL_IP) {
-      scoped = products.filter((product) => product.ipNames.includes(effectiveIp));
+      const seriesIds = seriesIdsByIp.get(effectiveIp);
+      scoped = products.filter((product) => !!product.seriesId && !!seriesIds?.has(product.seriesId));
     } else {
       scoped = products;
     }
@@ -283,7 +299,7 @@ export function PreorderCatalog({ products, series, ips }: PreorderCatalogData) 
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
     return sorted;
-  }, [products, selectedSeriesId, effectiveIp, query, sortMode]);
+  }, [products, selectedSeriesId, effectiveIp, seriesIdsByIp, query, sortMode]);
 
   return (
     <div className="space-y-4">
