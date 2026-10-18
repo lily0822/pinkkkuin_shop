@@ -19,7 +19,7 @@ export function ProductCard({ product }: ProductCardProps) {
   const router = useRouter();
   const [quantity, setQuantity] = useState(1);
   const [message, setMessage] = useState("");
-  const isPreorder = product.status === "preorder" || product.category === "預購商品";
+  const isPreorder = product.productType === "preorder";
   const hasMultipleVariants = (product.variants || []).length > 1;
   const singleVariant = product.variants?.length === 1 ? product.variants[0] : null;
   const maxQuantity = variantStock(product, singleVariant);

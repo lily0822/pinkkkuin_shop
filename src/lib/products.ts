@@ -14,6 +14,13 @@ export type Product = {
   price: number;
   original_price?: number;
   status: ProductStatus;
+  // 商品本身在資料庫的 product_type，跟 status／category 分開存——
+  // status 會因為售完變成 "sold_out"、category 可能被商品類別標籤
+  // 蓋掉，兩者都不是「這個商品本來是不是預購商品」的可靠判斷依據
+  // （預購獨立流程 第三期的門禁判斷就是因為這個理由，改成一律讀這個
+  // 欄位，不要用 status === "preorder" || category === "預購商品"
+  // 這種容易漏判的 fallback 組合）。
+  productType: "stock" | "preorder";
   category: string;
   brand?: string;
   tags?: ProductTag[];
@@ -107,6 +114,7 @@ export const products: Product[] = [
     sku: "4582662920262",
     price: 390,
     status: "in_stock",
+    productType: "stock",
     category: "Chiikawa",
     brand: "Chiikawa",
     stock_quantity: 3,
@@ -128,6 +136,7 @@ export const products: Product[] = [
     sku: "4571609391982",
     price: 560,
     status: "preorder",
+    productType: "preorder",
     category: "Chiikawa",
     brand: "Chiikawa",
     stock_quantity: null,
@@ -150,6 +159,7 @@ export const products: Product[] = [
     sku: "SR-0526",
     price: 180,
     status: "in_stock",
+    productType: "stock",
     category: "Sanrio",
     brand: "Sanrio",
     stock_quantity: 8,
@@ -171,6 +181,7 @@ export const products: Product[] = [
     sku: "PKM-1002",
     price: 420,
     status: "live_order",
+    productType: "stock",
     category: "Pikmin",
     brand: "Pikmin",
     stock_quantity: null,
@@ -193,6 +204,7 @@ export const products: Product[] = [
     sku: "PM-7721",
     price: 150,
     status: "restocking",
+    productType: "stock",
     category: "Pokemon",
     brand: "Pokemon",
     stock_quantity: 0,
@@ -213,6 +225,7 @@ export const products: Product[] = [
     sku: "DS-9910",
     price: 680,
     status: "sold_out",
+    productType: "stock",
     category: "Disney",
     brand: "Disney",
     stock_quantity: 0,
@@ -233,6 +246,7 @@ export const products: Product[] = [
     sku: "SG-024",
     price: 220,
     status: "preorder",
+    productType: "preorder",
     category: "角落生物",
     brand: "角落生物",
     stock_quantity: null,
@@ -254,6 +268,7 @@ export const products: Product[] = [
     sku: "JP-ZK-88",
     price: 320,
     status: "in_stock",
+    productType: "stock",
     category: "日本雜貨",
     brand: "日本雜貨",
     stock_quantity: 5,

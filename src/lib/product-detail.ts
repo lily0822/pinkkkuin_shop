@@ -178,6 +178,7 @@ function mapSupabaseProduct(row: SupabaseProductRow, galleryImages: ProductGalle
     price,
     original_price: originalPrice,
     status,
+    productType: row.product_type,
     category: isPreorder ? "預購商品" : "現貨商品",
     stock_quantity: isPreorder ? row.preorder_quota : row.stock_quantity,
     images: galleryImages.map((image) => image.url),

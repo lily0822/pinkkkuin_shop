@@ -1,8 +1,10 @@
 import { LiveMarketInfo } from "@/components/live-market-info";
 import { FeatureDisabledNotice } from "@/components/feature-disabled-notice";
+import { PreorderAccessGate } from "@/components/preorder-access-gate";
 import { PreorderCatalog } from "@/components/preorder-catalog";
 import { ProductCatalog } from "@/components/product-catalog";
 import { SectionHeading } from "@/components/section-heading";
+import { getPreorderAccess } from "@/lib/member/preorder-access";
 import { ProductStatus, statusLabels } from "@/lib/products";
 import { getDisabledMessage, getSiteFeatureFlag, isEffectivelyEnabled, SiteFeatureFlag } from "@/lib/site-feature-flags";
 import { getPreorderCatalogData } from "@/lib/storefront-preorder";
@@ -45,6 +47,19 @@ export default async function CategoryPage({ params }: { params: Promise<{ slug:
   // 不一樣，硬塞進共用元件只會讓那個元件長滿一堆只有這個分類會用到的
   // 條件分支。
   if (decodedSlug === "preorder") {
+    // 第三期前台門禁：資格判斷要在拿到任何預購商品資料之前先做完——
+    // 沒有資格的話，連 getPreorderCatalogData() 都不呼叫（商品/系列
+    // 資料完全不會進到這支 server component 的記憶體裡，更不可能被
+    // 序列化成任何 client component 的 props），直接回門禁提示畫面。
+    const access = await getPreorderAccess();
+    if (!access.hasAccess) {
+      return (
+        <main className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+          <PreorderAccessGate access={access} returnTo="/category/preorder" />
+        </main>
+      );
+    }
+
     const catalog = await getPreorderCatalogData();
     return (
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">

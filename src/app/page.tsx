@@ -3,6 +3,7 @@ import { CalendarDays, Search, WandSparkles } from "lucide-react";
 import { HomeBannerCarousel } from "@/components/home-banner-carousel";
 import { ProductCard } from "@/components/product-card";
 import { getAppearanceSettings, type HomepageSection } from "@/lib/appearance-settings";
+import { getPreorderAccess } from "@/lib/member/preorder-access";
 import { getStorefrontProducts } from "@/lib/storefront-products";
 import type { Product } from "@/lib/products";
 
@@ -79,10 +80,12 @@ function renderConfiguredSection({ section, products }: SectionRendererProps) {
   if (section.id === "category_shortcuts") return null;
   if (section.id === "latest") return <ProductGridSection section={section} products={products} href="/products" />;
   if (section.id === "stock") {
-    return <ProductGridSection section={section} products={products.filter((product) => product.status === "in_stock" || product.status === "sold_out")} href="/category/in_stock" />;
+    // productType 要求是 "stock"——單看 status 的話，售完的預購商品
+    // status 一樣是 "sold_out"，會被誤算進現貨區塊。
+    return <ProductGridSection section={section} products={products.filter((product) => product.productType === "stock" && (product.status === "in_stock" || product.status === "sold_out"))} href="/category/in_stock" />;
   }
   if (section.id === "preorder") {
-    return <ProductGridSection section={section} products={products.filter((product) => product.status === "preorder" || product.category === "預購商品")} href="/category/preorder" />;
+    return <ProductGridSection section={section} products={products.filter((product) => product.productType === "preorder")} href="/category/preorder" />;
   }
   if (section.id === "guide") return <ShoppingGuideSection section={section} />;
 
@@ -90,10 +93,18 @@ function renderConfiguredSection({ section, products }: SectionRendererProps) {
 }
 
 export default async function HomePage() {
-  const [appearance, products] = await Promise.all([
+  const [appearance, allProducts, preorderAccess] = await Promise.all([
     getAppearanceSettings(),
     getStorefrontProducts(),
+    getPreorderAccess(),
   ]);
+
+  // 第三期前台門禁：沒有資格的訪客，預購商品從一開始就不會進到任何
+  // 區塊的資料來源裡——不只「預購新品」區塊本身，「最新上架」區塊
+  // 原本是不分現貨/預購、直接顯示最新一批商品，如果剛好有預購商品
+  // 排進最新上架，沒有這一步會照樣洩漏。在這裡統一過濾一次，之後所有
+  // 區塊共用同一份「看得到的商品」清單，不會有任何區塊漏掉這道門禁。
+  const products = preorderAccess.hasAccess ? allProducts : allProducts.filter((product) => product.productType !== "preorder");
 
   return (
     <main className="space-y-10 py-6">

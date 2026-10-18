@@ -3,7 +3,9 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, MessageCircle } from "lucide-react";
 import { CopyProductButton } from "@/components/copy-product-button";
 import { FeatureDisabledNotice } from "@/components/feature-disabled-notice";
+import { PreorderAccessGate } from "@/components/preorder-access-gate";
 import { ProductDetailInteractive } from "@/components/product-detail-interactive";
+import { getPreorderAccess } from "@/lib/member/preorder-access";
 import { statusLabels, statusStyles, type Product } from "@/lib/products";
 import { getProductDetailById } from "@/lib/product-detail";
 import { getAppearanceSettings } from "@/lib/appearance-settings";
@@ -19,8 +21,7 @@ async function getBlockingFeatureFlag(product: Product) {
   const productsFlag = await getSiteFeatureFlag("products");
   if (!isEffectivelyEnabled(productsFlag)) return productsFlag;
 
-  const productType = product.category === "預購商品" ? "preorder" : "stock";
-  const typeFlag = await getSiteFeatureFlag(productType);
+  const typeFlag = await getSiteFeatureFlag(product.productType);
   if (!isEffectivelyEnabled(typeFlag)) return typeFlag;
 
   return null;
@@ -43,6 +44,22 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
         <FeatureDisabledNotice title="此商品暫未開放瀏覽" message={getDisabledMessage(blockingFlag)} />
       </main>
     );
+  }
+
+  // 第三期前台門禁：這個商品是預購商品的話，資格判斷要在 product/
+  // galleryImages 傳進任何 client component 之前先做完——沒有資格就
+  // 直接回門禁提示，product.name_zh/images/description 等實際商品
+  // 資料完全不會被用在這次 response 裡的任何 JSX，更不會被傳進
+  // ProductDetailInteractive 這個 client component 的 props。
+  if (product.productType === "preorder") {
+    const access = await getPreorderAccess();
+    if (!access.hasAccess) {
+      return (
+        <main className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+          <PreorderAccessGate access={access} />
+        </main>
+      );
+    }
   }
 
   const { siteInfo } = await getAppearanceSettings();

@@ -86,7 +86,11 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
   function submitSearch(event: FormEvent) {
     event.preventDefault();
     const trimmed = query.trim();
-    router.push(trimmed ? `/products?q=${encodeURIComponent(trimmed)}` : "/products");
+    // 預購獨立流程 第三期：搜尋結果改落到獨立的 /search 頁面（沒有放進
+    // 導覽選單，只有打字搜尋才會到），不是共用的 /products 全商品頁——
+    // /search 會套用預購門禁，/products 目前還沒有（移除 /products 是
+    // 另一輪的範圍，這裡先不動它）。
+    router.push(trimmed ? `/search?q=${encodeURIComponent(trimmed)}` : "/search");
     setIsOpen(false);
   }
 

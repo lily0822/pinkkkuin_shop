@@ -63,7 +63,7 @@ export function variantStock(product: Product, variant?: AddToCartVariant) {
 }
 
 function productTypeKeyFromProduct(product: Product): CartProductTypeKey {
-  return product.status === "preorder" ? "preorder" : "stock";
+  return product.productType;
 }
 
 function normalizeProductTypeKey(value: unknown, label?: unknown): CartProductTypeKey {

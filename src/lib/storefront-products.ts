@@ -160,6 +160,7 @@ export function mapStorefrontProduct(row: SupabaseProductRow): Product {
     price,
     original_price: originalPrice,
     status,
+    productType: row.product_type,
     category: tags.find((tag) => tag.type === "category")?.name || categoryFromRow(row),
     brand: tags.find((tag) => tag.type === "ip")?.name,
     tags,
