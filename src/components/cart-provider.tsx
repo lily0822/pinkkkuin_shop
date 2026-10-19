@@ -294,12 +294,31 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     clearSelectedItems,
   }), [count, items, selectedItems, selectedLineCount, selectedQuantity, selectedTotal, total]);
 
-  // 分頁切換會跟著換抽屜邊框/標題列底色/主要按鈕顏色——購物車維持現有的
-  // penguin-pink 那套，預購清單比照標頭「日本選物」徽章用淺黃色
-  // （border-yellow-400 / bg-penguin-yellow）。
+  // 分頁切換會跟著換抽屜邊框/標題列底色/主要按鈕顏色（資料夾標籤版
+  // 設計，定案用配色B：柔和淡黃）——購物車沿用既有 penguin-pink-dark/
+  // penguin-pink-light 這組既有 token；預購清單是這組設計稿專用的柔和
+  // 淡黃色，不在既有 design token 裡（#fff9df/#f0dc8f/#e8cc5c 這三個
+  // 色碼只在這個抽屜用，不是重用 penguin-yellow），所以用 Tailwind
+  // 任意值寫死。ctaBorder 跟 border/tabActiveBorder 的色碼刻意不同
+  // （按鈕邊框用對比度更高的 #e8cc5c，標籤/抽屜外框用較淺的 #f0dc8f）——
+  // 這是設計稿裡的既定差異，不是疏漏。
   const drawerTheme = activeTab === "cart"
-    ? { border: "border-penguin-pink", headerBorder: "border-penguin-pink", headerBg: "bg-penguin-pink-light", headerText: "text-penguin-pink-dark" }
-    : { border: "border-yellow-400", headerBorder: "border-yellow-400", headerBg: "bg-penguin-yellow", headerText: "text-penguin-gray" };
+    ? {
+        border: "border-penguin-pink-dark",
+        headerBg: "bg-penguin-pink-light",
+        ctaBg: "bg-penguin-pink-light",
+        ctaBorder: "border-penguin-pink-dark",
+        tabActiveBg: "bg-[#fff8fb]",
+        tabActiveBorder: "border-penguin-pink-dark",
+      }
+    : {
+        border: "border-[#f0dc8f]",
+        headerBg: "bg-[#fff9df]",
+        ctaBg: "bg-[#fff9df]",
+        ctaBorder: "border-[#e8cc5c]",
+        tabActiveBg: "bg-[#fffdf4]",
+        tabActiveBorder: "border-[#f0dc8f]",
+      };
 
   const preorderTotal = preorderList.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
 
@@ -315,12 +334,46 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           className={`absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l-4 ${drawerTheme.border} bg-white shadow-2xl transition-transform duration-300 ${isOpen ? "translate-x-0" : "translate-x-full"}`}
           onClick={(event) => event.stopPropagation()}
         >
-          <div className="flex border-b border-gray-200">
+          {/* 桌機：資料夾標籤從抽屜左緣長出來，取代上面那條手機版的
+              橫向分頁列；選中的標籤填色跟抽屜內容區同色、邊框色跟抽屜
+              外框一致，造成線條直接接上去、沒有凸起接縫的視覺效果。 */}
+          <div className="absolute right-full top-3.5 z-10 hidden flex-col gap-2 md:flex">
+            <button
+              type="button"
+              onClick={() => setActiveTab("cart")}
+              style={{ writingMode: "vertical-rl", textOrientation: "upright", letterSpacing: "0.12em" }}
+              className={`flex items-center justify-center gap-1.5 rounded-l-[14px] border-4 border-r-0 py-[0.85rem] text-sm font-black text-[#111] ${
+                activeTab === "cart"
+                  ? `w-[46px] ${drawerTheme.tabActiveBg} ${drawerTheme.tabActiveBorder}`
+                  : `w-[42px] mr-1 opacity-90 bg-penguin-pink-light border-[#fbcfe0]`
+              }`}
+            >
+              購物車
+              <span className="rounded-full bg-white px-1.5 text-xs leading-5" style={{ writingMode: "horizontal-tb" }}>{count}</span>
+            </button>
             <button
               type="button"
               onClick={() => setActiveTab("preorder")}
-              className={`flex-1 py-3 text-center text-sm font-black transition ${
-                activeTab === "preorder" ? "border-b-[3px] border-yellow-400 bg-penguin-yellow text-penguin-gray" : "text-gray-400 hover:bg-gray-50"
+              style={{ writingMode: "vertical-rl", textOrientation: "upright", letterSpacing: "0.12em" }}
+              className={`flex items-center justify-center gap-1.5 rounded-l-[14px] border-4 border-r-0 py-[0.85rem] text-sm font-black text-[#111] ${
+                activeTab === "preorder"
+                  ? `w-[46px] ${drawerTheme.tabActiveBg} ${drawerTheme.tabActiveBorder}`
+                  : `w-[42px] mr-1 opacity-90 bg-[#fff9df] border-[#f6e9ab]`
+              }`}
+            >
+              預購清單
+              <span className="rounded-full bg-white px-1.5 text-xs leading-5" style={{ writingMode: "horizontal-tb" }}>{preorderList.count}</span>
+            </button>
+          </div>
+
+          {/* 手機：維持原本橫向切換分頁（上方整排兩顆），桌機改用左側
+              資料夾標籤，這排在桌機隱藏。 */}
+          <div className="flex border-b border-gray-200 md:hidden">
+            <button
+              type="button"
+              onClick={() => setActiveTab("preorder")}
+              className={`flex-1 py-3 text-center text-sm font-black text-[#111] transition ${
+                activeTab === "preorder" ? `border-b-[3px] ${drawerTheme.border} ${drawerTheme.headerBg}` : "bg-white"
               }`}
             >
               預購清單 ({preorderList.count})
@@ -328,22 +381,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={() => setActiveTab("cart")}
-              className={`flex-1 py-3 text-center text-sm font-black transition ${
-                activeTab === "cart" ? "border-b-[3px] border-penguin-pink-dark bg-penguin-pink-light text-penguin-pink-dark" : "text-gray-400 hover:bg-gray-50"
+              className={`flex-1 py-3 text-center text-sm font-black text-[#111] transition ${
+                activeTab === "cart" ? "border-b-[3px] border-penguin-pink-dark bg-penguin-pink-light" : "bg-white"
               }`}
             >
               購物車 ({count})
             </button>
           </div>
 
-          <div className={`flex items-center justify-between border-b p-4 ${drawerTheme.headerBorder} ${drawerTheme.headerBg}`}>
-            <h2 className={`flex items-center gap-2 text-lg font-black ${drawerTheme.headerText}`}>
+          <div className={`flex items-center justify-between border-b p-4 ${drawerTheme.border} ${drawerTheme.headerBg}`}>
+            <h2 className="flex items-center gap-2 text-lg font-black text-[#111]">
               {activeTab === "cart" ? <ShoppingBasket size={20} /> : <ClipboardList size={20} />}
               {activeTab === "cart" ? "購物車" : "預購清單"}
             </h2>
             <button
               type="button"
-              className="grid h-9 w-9 place-items-center rounded-full bg-white text-penguin-gray shadow-sm hover:text-red-500"
+              className="grid h-9 w-9 place-items-center rounded-full bg-white text-penguin-gray shadow-sm hover:text-red-500 md:hidden"
               onClick={() => setIsOpen(false)}
               aria-label={activeTab === "cart" ? "關閉購物車" : "關閉預購清單"}
             >
@@ -359,14 +412,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                 ) : preorderList.accessState === "unauthenticated" ? (
                   <div className="space-y-3 py-16 text-center text-gray-500">
                     <p className="text-sm font-bold">請先登入會員才能使用預購清單。</p>
-                    <Link href="/login" onClick={() => setIsOpen(false)} className="inline-flex rounded-full bg-yellow-400 px-5 py-2 text-sm font-black text-penguin-gray transition hover:bg-yellow-300">
+                    <Link href="/login" onClick={() => setIsOpen(false)} className={`inline-flex rounded-full border-2 px-5 py-2 text-sm font-black text-[#111] transition ${drawerTheme.ctaBg} ${drawerTheme.ctaBorder}`}>
                       前往登入
                     </Link>
                   </div>
                 ) : preorderList.accessState === "not_linked" ? (
                   <div className="space-y-3 py-16 text-center text-gray-500">
                     <p className="text-sm font-bold">請先完成 LINE 綁定才能使用預購清單。</p>
-                    <Link href="/member/account" onClick={() => setIsOpen(false)} className="inline-flex rounded-full bg-yellow-400 px-5 py-2 text-sm font-black text-penguin-gray transition hover:bg-yellow-300">
+                    <Link href="/member/account" onClick={() => setIsOpen(false)} className={`inline-flex rounded-full border-2 px-5 py-2 text-sm font-black text-[#111] transition ${drawerTheme.ctaBg} ${drawerTheme.ctaBorder}`}>
                       前往綁定
                     </Link>
                   </div>
@@ -389,7 +442,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                         </div>
                         <div className="flex h-[92px] min-w-0 flex-1 flex-col" style={{ height: 92 }}>
                           <div className="flex min-h-0 items-start justify-between gap-2">
-                            <p className="line-clamp-2 min-w-0 flex-1 text-sm font-black leading-4 text-penguin-gray">{item.productName}</p>
+                            <p className="line-clamp-2 min-w-0 flex-1 text-sm font-black leading-4 text-[#3a4150]">{item.productName}</p>
                             <button
                               type="button"
                               className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-white text-gray-400 hover:text-red-500"
@@ -400,7 +453,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                             </button>
                           </div>
                           <div className="mt-auto">
-                            <div className="flex h-4 min-w-0 shrink-0 items-center justify-between gap-1 text-xs font-black leading-4 text-penguin-gray">
+                            <div className="flex h-4 min-w-0 shrink-0 items-center justify-between gap-1 text-xs font-black leading-4 text-[#565e6d]">
                               <p className="min-w-0 truncate">
                                 {[item.seriesName ? `系列：${item.seriesName}` : null, item.variantSpec ? `規格：${item.variantSpec}` : null]
                                   .filter(Boolean)
@@ -408,19 +461,19 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                               </p>
                             </div>
                             <div className="flex h-7 shrink-0 items-center justify-between gap-2">
-                              <p className="min-w-0 text-xs font-black leading-5 text-penguin-gray">小計：{formatPrice(item.unitPrice * item.quantity)}</p>
+                              <p className="min-w-0 text-xs font-black leading-5 text-[#3a4150]">小計：{formatPrice(item.unitPrice * item.quantity)}</p>
                               <div className="inline-flex h-7 shrink-0 items-center overflow-hidden rounded-full border-2 border-penguin-pink bg-white">
                                 <button
-                                  className="grid h-full w-8 place-items-center font-black disabled:cursor-not-allowed disabled:text-gray-300"
+                                  className="grid h-full w-8 place-items-center font-black text-[#3a4150] disabled:cursor-not-allowed disabled:text-gray-300"
                                   disabled={item.quantity <= 1}
                                   onClick={() => preorderList.updateQuantity(item.id, item.quantity - 1)}
                                   type="button"
                                 >
                                   -
                                 </button>
-                                <span className="min-w-7 text-center text-sm font-black">{item.quantity}</span>
+                                <span className="min-w-7 text-center text-sm font-black text-[#3a4150]">{item.quantity}</span>
                                 <button
-                                  className="grid h-full w-8 place-items-center font-black"
+                                  className="grid h-full w-8 place-items-center font-black text-[#3a4150]"
                                   onClick={() => preorderList.updateQuantity(item.id, item.quantity + 1)}
                                   type="button"
                                 >
@@ -446,29 +499,29 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                 <div className="border-t bg-white p-4">
                   {preorderList.submitResult ? (
                     <div className="space-y-3 text-center">
-                      <p className="text-sm font-black text-penguin-gray">
+                      <p className="text-sm font-black text-[#111]">
                         預購登記成功！訂單編號 {preorderList.submitResult.orderNo}，總金額 {formatPrice(preorderList.submitResult.total)}
                       </p>
                       <Link
                         href="/member/orders"
                         onClick={() => setIsOpen(false)}
-                        className="block rounded-2xl bg-yellow-400 py-3 text-center text-sm font-black text-penguin-gray shadow-md transition hover:bg-yellow-300"
+                        className={`block rounded-2xl border-2 py-3 text-center text-sm font-black text-[#111] shadow-md transition ${drawerTheme.ctaBg} ${drawerTheme.ctaBorder}`}
                       >
                         查看我的預購
                       </Link>
                     </div>
                   ) : (
                     <>
-                      <div className="mb-3 flex items-center justify-between text-sm font-black">
+                      <div className="mb-3 flex items-center justify-between text-sm font-black text-[#111]">
                         <span>預購總額</span>
-                        <span className="text-lg text-penguin-gray">{formatPrice(preorderTotal)}</span>
+                        <span className="text-lg text-[#111]">{formatPrice(preorderTotal)}</span>
                       </div>
                       {preorderList.submitError ? <p className="mb-3 text-xs font-bold text-red-500">{preorderList.submitError}</p> : null}
                       <button
                         type="button"
                         onClick={preorderList.submit}
                         disabled={preorderList.submitting || !preorderList.items.length}
-                        className="block w-full rounded-2xl bg-yellow-400 py-3 text-center text-sm font-black text-penguin-gray shadow-md transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                        className={`block w-full rounded-2xl border-2 py-3 text-center text-sm font-black text-[#111] shadow-md transition ${drawerTheme.ctaBg} ${drawerTheme.ctaBorder} disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-200 disabled:text-gray-400`}
                       >
                         {preorderList.submitting ? "送出中..." : "送出預購清單"}
                       </button>
@@ -491,7 +544,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                   </div>
                   <div className="flex h-[92px] min-w-0 flex-1 flex-col" style={{ height: 92 }}>
                     <div className="flex min-h-0 items-start justify-between gap-2">
-                      <p className="line-clamp-2 min-w-0 flex-1 text-sm font-black leading-4 text-penguin-gray">
+                      <p className="line-clamp-2 min-w-0 flex-1 text-sm font-black leading-4 text-[#3a4150]">
                         <span className={`mr-1.5 inline-flex shrink-0 whitespace-nowrap align-middle rounded-full px-2 py-0.5 text-sm font-black leading-4 text-penguin-gray ${
                           item.productTypeKey === "stock"
                             ? "bg-emerald-100"
@@ -511,17 +564,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                       </button>
                     </div>
                     <div className="mt-auto">
-                      <div className="flex h-4 min-w-0 shrink-0 items-center justify-between gap-1 text-xs font-black leading-4 text-penguin-gray">
+                      <div className="flex h-4 min-w-0 shrink-0 items-center justify-between gap-1 text-xs font-black leading-4 text-[#565e6d]">
                         {item.variantSpec ? <p className="min-w-0 truncate">規格：{item.variantSpec}</p> : <span aria-hidden="true">&nbsp;</span>}
                         {limitNoticeId === item.id ? <p className="shrink-0 text-[10px] text-penguin-pink-dark" role="status">已達可購買數量上限</p> : null}
                       </div>
                       <div className="flex h-7 shrink-0 items-center justify-between gap-2">
-                        <p className="min-w-0 text-xs font-black leading-5 text-penguin-gray">小計：{formatPrice(item.unitPrice * item.quantity)}</p>
+                        <p className="min-w-0 text-xs font-black leading-5 text-[#3a4150]">小計：{formatPrice(item.unitPrice * item.quantity)}</p>
                         <div className="inline-flex h-7 shrink-0 items-center overflow-hidden rounded-full border-2 border-penguin-pink bg-white">
-                          <button className="grid h-full w-8 place-items-center font-black disabled:cursor-not-allowed disabled:text-gray-300" disabled={item.quantity <= 1} onClick={() => updateQuantity(item.id, item.quantity - 1)} type="button">-</button>
-                          <span className="min-w-7 text-center text-sm font-black">{item.quantity}</span>
+                          <button className="grid h-full w-8 place-items-center font-black text-[#3a4150] disabled:cursor-not-allowed disabled:text-gray-300" disabled={item.quantity <= 1} onClick={() => updateQuantity(item.id, item.quantity - 1)} type="button">-</button>
+                          <span className="min-w-7 text-center text-sm font-black text-[#3a4150]">{item.quantity}</span>
                           <button
-                            className="grid h-full w-8 place-items-center font-black"
+                            className="grid h-full w-8 place-items-center font-black text-[#3a4150]"
                             onClick={() => increaseDrawerQuantity(item)}
                             type="button"
                           >
@@ -543,9 +596,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="border-t bg-white p-4">
-            <div className="mb-3 flex items-center justify-between text-sm font-black">
+            <div className="mb-3 flex items-center justify-between text-sm font-black text-[#111]">
               <span>本次小計</span>
-              <span className="text-lg text-penguin-pink-dark">{formatPrice(selectedTotal)}</span>
+              <span className="text-lg text-[#111]">{formatPrice(selectedTotal)}</span>
             </div>
             <div className="mb-3 text-xs font-bold text-gray-500">
               已選 {selectedQuantity} 件商品
@@ -555,10 +608,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               <Link
                 href="/cart"
                 onClick={() => setIsOpen(false)}
-                className={`block rounded-2xl py-3 text-center text-sm font-black shadow-md transition ${
+                className={`block rounded-2xl border-2 py-3 text-center text-sm font-black text-[#111] shadow-md transition ${
                   selectedLineCount
-                    ? "bg-penguin-pink-dark text-white hover:bg-penguin-pink"
-                    : "pointer-events-none bg-gray-200 text-gray-400"
+                    ? `${drawerTheme.ctaBg} ${drawerTheme.ctaBorder} hover:bg-penguin-pink`
+                    : "pointer-events-none border-gray-200 bg-gray-200 text-gray-400"
                 }`}
               >
                 確認購物車
