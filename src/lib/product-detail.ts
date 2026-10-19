@@ -131,7 +131,17 @@ function normalizeGalleryImages(productName: string, imageUrl: string | null, ro
   ];
 }
 
-function normalizeVariants(rows: SupabaseVariantRow[] = []): ProductVariant[] {
+// 規格專屬圖片：直接從已經抓好的 galleryImages 裡找這個規格的圖（這份
+// 資料本來就有 variantId，不用再另外查一次 product_images），標記
+// isPrimary 的優先、否則 sortOrder 最小的那張。沒有專屬圖片就是
+// undefined，不 fallback 成商品主圖。
+function variantImageFromGallery(galleryImages: ProductGalleryImage[], variantId: string): string | undefined {
+  const matches = galleryImages.filter((image) => image.variantId === variantId);
+  if (!matches.length) return undefined;
+  return matches.find((image) => image.isPrimary)?.url || matches[0].url;
+}
+
+function normalizeVariants(rows: SupabaseVariantRow[] = [], galleryImages: ProductGalleryImage[] = []): ProductVariant[] {
   const normalizeStatus = (status: SupabaseVariantRow["status"]): ProductVariant["status"] => (
     status === "sold_out" || status === "draft" ? status : "active"
   );
@@ -145,6 +155,7 @@ function normalizeVariants(rows: SupabaseVariantRow[] = []): ProductVariant[] {
       originalPrice: row.original_price,
       stockQuantity: row.stock_quantity,
       productUrl: row.product_url || undefined,
+      imageUrl: variantImageFromGallery(galleryImages, row.id),
       status: normalizeStatus(row.status),
       sortOrder: Number(row.sort_order ?? index),
     }))
@@ -267,7 +278,7 @@ export async function getProductDetailById(id: string): Promise<ProductDetailDat
         galleryImages: staticGalleryImages(staticProduct),
       };
     }
-    const variants = normalizeVariants(supabaseProduct.product_variants || []);
+    const variants = normalizeVariants(supabaseProduct.product_variants || [], galleryImages);
     const product = mapSupabaseProduct(supabaseProduct, galleryImages, variants);
     return {
       product,

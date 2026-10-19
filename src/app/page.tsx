@@ -78,7 +78,7 @@ function renderConfiguredSection({ section, products }: SectionRendererProps) {
   if (!section.enabled) return null;
 
   if (section.id === "category_shortcuts") return null;
-  if (section.id === "latest") return <ProductGridSection section={section} products={products} href="/products" />;
+  if (section.id === "latest") return <ProductGridSection section={section} products={products} href="/category/in_stock" />;
   if (section.id === "stock") {
     // productType 要求是 "stock"——單看 status 的話，售完的預購商品
     // status 一樣是 "sold_out"，會被誤算進現貨區塊。

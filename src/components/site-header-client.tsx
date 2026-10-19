@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu, Search, ShoppingBasket, UserRound, Users, X } from "lucide-react";
+import { ClipboardList, Menu, Search, ShoppingBasket, UserRound, Users, X } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { useCart } from "@/components/cart-provider";
 import { type SiteAnnouncement, type SiteNavigationItem } from "@/lib/appearance-settings";
@@ -17,7 +17,7 @@ type SiteHeaderClientProps = {
 
 const FALLBACK_NAVIGATION_ITEMS: SiteNavigationItem[] = [
   { key: "home", label: "首頁", href: "/", enabled: true, locked: true, sortOrder: 0 },
-  { key: "products", label: "全部商品", href: "/products", enabled: true, sortOrder: 1 },
+  { key: "products", label: "全部商品", href: "/category/in_stock", enabled: true, sortOrder: 1 },
   { key: "preorder", label: "預購商品", href: "/category/preorder", enabled: true, sortOrder: 2 },
   { key: "stock", label: "現貨", href: "/category/in_stock", enabled: true, sortOrder: 3 },
   { key: "live_order", label: "連線 / 擺攤", href: "/category/live_order", enabled: true, sortOrder: 4 },
@@ -54,7 +54,6 @@ function isNavigationItemActive(item: SiteNavigationItem, pathname: string) {
   const currentPath = normalizePath(pathname);
 
   if (itemPath === "/") return currentPath === "/";
-  if (itemPath === "/products") return currentPath === "/products" || currentPath.startsWith("/products/");
   if (currentPath === itemPath) return true;
 
   return itemPath.startsWith("/category/") && currentPath.startsWith(`${itemPath}/`);
@@ -229,6 +228,19 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
                 </span>
               ) : null}
             </button>
+            {/* 預購清單：跟現貨購物車是完全獨立的概念（伺服器端持久保存，
+                不是 localStorage），所以沒有共用 CartProvider 的 count
+                徽章——這裡單純是導到 /preorder-list 的連結，不是跟購物車
+                一樣的 dropdown/drawer。 */}
+            <Link href="/preorder-list" aria-label="預購清單" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-penguin-peach bg-white text-penguin-gray md:hidden">
+              <ClipboardList size={15} strokeWidth={2} />
+            </Link>
+            <Link href="/preorder-list" className={`hidden md:flex ${headerActionButtonBase} border-penguin-peach bg-white text-penguin-gray hover:bg-penguin-pink-light`}>
+              <ClipboardList size={15} strokeWidth={2} />
+              <span className={headerActionTextClass} style={headerActionTextStyle}>
+                預購清單
+              </span>
+            </Link>
             <button
               type="button"
               className="grid h-10 w-10 place-items-center rounded-full border-2 border-penguin-pink bg-white text-penguin-gray lg:hidden"

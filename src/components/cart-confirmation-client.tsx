@@ -28,7 +28,7 @@ export function CartConfirmationClient() {
           </div>
           <h1 className="mt-5 text-2xl font-black text-penguin-gray">購物車是空的</h1>
           <p className="mt-2 text-sm font-bold text-gray-500">先挑選喜歡的商品，再回來確認購物車。</p>
-          <Link href="/products" className="mt-6 inline-flex h-11 items-center rounded-full bg-penguin-pink-dark px-6 text-sm font-black text-white shadow-md transition hover:bg-penguin-pink">
+          <Link href="/category/in_stock" className="mt-6 inline-flex h-11 items-center rounded-full bg-penguin-pink-dark px-6 text-sm font-black text-white shadow-md transition hover:bg-penguin-pink">
             前往商品列表
           </Link>
         </section>
@@ -144,7 +144,7 @@ export function CartConfirmationClient() {
             <Link href="/checkout" aria-disabled={!selectedLineCount} className={`mt-5 block rounded-full py-3 text-center text-sm font-black shadow-md transition ${selectedLineCount ? "bg-penguin-pink-dark text-white hover:bg-penguin-pink" : "pointer-events-none bg-gray-200 text-gray-400"}`}>
               前往結帳
             </Link>
-            <Link href="/products" className="mt-3 flex items-center justify-center gap-2 text-sm font-black text-gray-500 transition hover:text-penguin-pink-dark">
+            <Link href="/category/in_stock" className="mt-3 flex items-center justify-center gap-2 text-sm font-black text-gray-500 transition hover:text-penguin-pink-dark">
               <ArrowLeft size={15} />
               繼續購物
             </Link>

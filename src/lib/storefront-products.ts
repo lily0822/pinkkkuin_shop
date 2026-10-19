@@ -19,6 +19,7 @@ type SupabaseProductRow = {
     secure_url: string;
     sort_order: number | null;
     is_primary: boolean | null;
+    variant_id?: string | null;
   }> | null;
   product_categories?: Array<{
     categories?: {
@@ -112,6 +113,18 @@ function imagesFromRow(row: SupabaseProductRow): string[] {
     .map((image) => image.secure_url);
 }
 
+// 規格專屬圖片：同一個規格理論上可能有不只一張自己的圖（跟商品共用圖片
+// 用同一張 product_images 表，用 variant_id 分辨），用跟 imagesFromRow
+// 同一套排序規則挑代表圖——標記 is_primary 的優先，否則 sort_order
+// 最小的那張。沒有專屬圖片就是 undefined，不 fallback 成商品主圖（見
+// ProductVariant.imageUrl 的型別註解，fallback 邏輯交給呼叫端決定）。
+function variantImageFromRow(row: SupabaseProductRow, variantId: string): string | undefined {
+  const rows = (row.product_images || []).filter((image) => image.secure_url && image.variant_id === variantId);
+  if (!rows.length) return undefined;
+  const sorted = rows.slice().sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0));
+  return sorted.find((image) => image.is_primary)?.secure_url || sorted[0].secure_url;
+}
+
 function variantsFromRow(row: SupabaseProductRow): ProductVariant[] {
   const normalizeStatus = (status: "active" | "sold_out" | "draft" | null | undefined): ProductVariant["status"] => (
     status === "sold_out" || status === "draft" ? status : "active"
@@ -126,6 +139,7 @@ function variantsFromRow(row: SupabaseProductRow): ProductVariant[] {
       originalPrice: variant.original_price,
       stockQuantity: variant.stock_quantity,
       productUrl: variant.product_url || undefined,
+      imageUrl: variantImageFromRow(row, variant.id),
       status: normalizeStatus(variant.status),
       sortOrder: Number(variant.sort_order ?? index),
     }))
@@ -177,10 +191,33 @@ export function mapStorefrontProduct(row: SupabaseProductRow): Product {
 
 const PRODUCT_CATEGORIES_SELECT = "product_categories(categories(id,legacy_id,name,type,enabled,sort_order,color))";
 
-// 三層 select，從新到舊依序嘗試：新欄位的 migration 還沒套用到環境時，
+// 四層 select，從新到舊依序嘗試：新欄位的 migration 還沒套用到環境時，
 // 整包查詢會直接失敗（Postgres 42703），退到少一點新欄位的版本重試，確保
 // 「商品列表讀得到」這個既有功能不會被這輪、或上一輪新增的欄位拖垮——
 // 只有真的用到的新欄位才會暫時拿不到，不是整個列表讀取失敗。
+// product_images.variant_id（202610140001）跟 product_variants.
+// original_price（202610150001）是兩個不同時間點的 migration，理論上
+// 環境可能只套用了其中一個，所以這次補的 variant_id 另外多開一層，不是
+// 直接塞進原本那兩層。
+const SELECT_WITH_VARIANT_ORIGINAL_PRICE_AND_IMAGE_VARIANT = [
+  "id",
+  "legacy_id",
+  "product_type",
+  "name",
+  "description",
+  "image_url",
+  "base_price",
+  "original_price",
+  "stock_quantity",
+  "preorder_quota",
+  "deadline",
+  "status",
+  "created_at",
+  "updated_at",
+  PRODUCT_CATEGORIES_SELECT,
+  "product_variants(id,legacy_id,spec,price,original_price,stock_quantity,product_url,status,sort_order)",
+  "product_images(secure_url,sort_order,is_primary,variant_id)",
+].join(",");
 const SELECT_WITH_VARIANT_ORIGINAL_PRICE = [
   "id",
   "legacy_id",
@@ -238,7 +275,12 @@ const LEGACY_SELECT = [
 
 export async function getStorefrontProducts() {
   let rows: SupabaseProductRow[] | null = null;
-  for (const select of [SELECT_WITH_VARIANT_ORIGINAL_PRICE, SELECT_WITHOUT_VARIANT_ORIGINAL_PRICE, LEGACY_SELECT]) {
+  for (const select of [
+    SELECT_WITH_VARIANT_ORIGINAL_PRICE_AND_IMAGE_VARIANT,
+    SELECT_WITH_VARIANT_ORIGINAL_PRICE,
+    SELECT_WITHOUT_VARIANT_ORIGINAL_PRICE,
+    LEGACY_SELECT,
+  ]) {
     rows = await supabaseFetch<SupabaseProductRow[]>(
       `products?select=${encodeURIComponent(select)}&status=in.(active,sold_out)&order=created_at.desc`,
     );

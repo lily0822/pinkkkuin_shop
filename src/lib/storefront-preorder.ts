@@ -57,6 +57,10 @@ export type PreorderProduct = {
   // 單規格（或沒有規格資料）時，加入清單要帶的 variant uuid；
   // 多規格時是 null（由詳情頁決定選哪個規格）。
   singleVariantId: string | null;
+  // 上面那個規格自己的專屬圖片，沒有就是 null（不 fallback 成 image，
+  // fallback 邏輯交給呼叫端決定——跟 ProductVariant.imageUrl 同一個
+  // 設計原則）。
+  singleVariantImageUrl: string | null;
 };
 
 type SupabaseProductRow = {
@@ -68,7 +72,7 @@ type SupabaseProductRow = {
   estimated_arrival_date?: string | null;
   series_id?: string | null;
   created_at: string;
-  product_images?: Array<{ secure_url: string; sort_order: number | null; is_primary: boolean | null }> | null;
+  product_images?: Array<{ secure_url: string; sort_order: number | null; is_primary: boolean | null; variant_id?: string | null }> | null;
   product_variants?: Array<{
     id: string;
     price: number | null;
@@ -108,6 +112,23 @@ async function supabaseFetch<T>(path: string): Promise<T | null> {
   }
   return (await response.json()) as T;
 }
+
+// product_images.variant_id（202610140001）是比 series_id/
+// estimated_arrival_date（202610180001）更早的 migration，理論上環境
+// 不會只有其中一個卻缺另一個，但還是照專案既有慣例獨立開一層，不要
+// 直接假設兩個 migration 一定同時套用。
+const PRODUCT_SELECT_WITH_SERIES_AND_IMAGE_VARIANT = [
+  "id",
+  "legacy_id",
+  "name",
+  "image_url",
+  "deadline",
+  "estimated_arrival_date",
+  "series_id",
+  "created_at",
+  "product_images(secure_url,sort_order,is_primary,variant_id)",
+  "product_variants(id,price,original_price,stock_quantity,status)",
+].join(",");
 
 const PRODUCT_SELECT_WITH_SERIES = [
   "id",
@@ -151,10 +172,22 @@ function priceRangeFromRow(row: SupabaseProductRow): { min: number; max: number 
   return { min: Math.min(...prices), max: Math.max(...prices) };
 }
 
+// 規格專屬圖片：跟 storefront-products.ts 的 variantImageFromRow 同一套
+// 邏輯（標記 is_primary 優先，否則 sort_order 最小），沒有專屬圖片就是
+// undefined，不 fallback 成商品主圖。
+function variantImageFromRow(row: SupabaseProductRow, variantId: string): string | undefined {
+  const rows = (row.product_images || []).filter((image) => image.secure_url && image.variant_id === variantId);
+  if (!rows.length) return undefined;
+  const sorted = rows.slice().sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0));
+  return sorted.find((image) => image.is_primary)?.secure_url || sorted[0].secure_url;
+}
+
 // 代表價格/原價：直接重用 pickDisplayVariant（跟現貨商品卡同一個
 // 「優先選上架中且有庫存的最便宜款」演算法），不要自己另外寫一套
 // 挑選邏輯——這正是這次要求「比照現貨」的重點，兩邊規格挑選的結果
-// 要能一致。
+// 要能一致。這裡組出來的 variant 物件也補上 imageUrl，跟其他兩處資料層
+// （storefront-products.ts/product-detail.ts）保持同一個 ProductVariant
+// 型別欄位一致，即使 pickDisplayVariant 本身不會用到這個欄位。
 function displayPriceFromRow(row: SupabaseProductRow): { price: number; originalPrice?: number } {
   const variants = (row.product_variants || [])
     .filter((variant) => variant.status !== "draft")
@@ -164,6 +197,7 @@ function displayPriceFromRow(row: SupabaseProductRow): { price: number; original
       price: variant.price,
       originalPrice: variant.original_price,
       stockQuantity: variant.stock_quantity,
+      imageUrl: variantImageFromRow(row, variant.id),
       status: (variant.status || "active") as "active" | "sold_out" | "draft",
       sortOrder: 0,
     }));
@@ -202,11 +236,12 @@ function mapProductRow(row: SupabaseProductRow): PreorderProduct {
     createdAt: row.created_at,
     hasMultipleVariants: hasMultiple,
     singleVariantId: singleId,
+    singleVariantImageUrl: singleId ? variantImageFromRow(row, singleId) || null : null,
   };
 }
 
 async function fetchPreorderProductRows(): Promise<SupabaseProductRow[]> {
-  for (const select of [PRODUCT_SELECT_WITH_SERIES, PRODUCT_SELECT_LEGACY]) {
+  for (const select of [PRODUCT_SELECT_WITH_SERIES_AND_IMAGE_VARIANT, PRODUCT_SELECT_WITH_SERIES, PRODUCT_SELECT_LEGACY]) {
     const rows = await supabaseFetch<SupabaseProductRow[]>(
       `products?select=${encodeURIComponent(select)}&product_type=eq.preorder&status=eq.active&order=created_at.desc`,
     );

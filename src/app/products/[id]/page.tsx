@@ -83,7 +83,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   return (
     <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
       <Link
-        href="/products"
+        href="/category/in_stock"
         className="ml-24 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-black text-penguin-pink-dark shadow-sm sm:ml-0"
       >
         <ArrowLeft size={16} />

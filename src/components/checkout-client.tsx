@@ -215,7 +215,7 @@ export function CheckoutClient() {
           </div>
           <h1 className="mt-5 text-2xl font-black text-penguin-gray">{items.length ? "尚未選擇結帳商品" : "購物車是空的"}</h1>
           <p className="mt-2 text-sm font-bold text-gray-500">{items.length ? "請回到購物車勾選這次要結帳的商品。" : "請先挑選商品，再回來填寫結帳資料。"}</p>
-          <Link href={items.length ? "/cart" : "/products"} className="mt-6 inline-flex h-11 items-center rounded-full bg-penguin-pink-dark px-6 text-sm font-black text-white shadow-md">
+          <Link href={items.length ? "/cart" : "/category/in_stock"} className="mt-6 inline-flex h-11 items-center rounded-full bg-penguin-pink-dark px-6 text-sm font-black text-white shadow-md">
             {items.length ? "返回購物車" : "前往商品列表"}
           </Link>
         </section>

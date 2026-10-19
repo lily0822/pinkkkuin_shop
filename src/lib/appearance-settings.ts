@@ -83,7 +83,7 @@ const DEFAULT_HOMEPAGE_SECTIONS: HomepageSection[] = [
 
 export const DEFAULT_SITE_NAVIGATION: SiteNavigationItem[] = [
   { key: "home", label: "首頁", href: "/", enabled: true, locked: true, sortOrder: 0 },
-  { key: "products", label: "全部商品", href: "/products", enabled: true, sortOrder: 1 },
+  { key: "products", label: "全部商品", href: "/category/in_stock", enabled: true, sortOrder: 1 },
   { key: "preorder", label: "預購商品", href: "/category/preorder", enabled: true, sortOrder: 2 },
   { key: "stock", label: "現貨", href: "/category/in_stock", enabled: true, sortOrder: 3 },
   { key: "live_order", label: "連線 / 擺攤", href: "/category/live_order", enabled: true, sortOrder: 4 },

@@ -195,7 +195,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           productType: productTypeLabel(productTypeKey, statusLabels[product.status]),
           productTypeKey,
           selected: true,
-          image: product.images[0],
+          // 這個規格有自己的專屬圖片就用那張，沒有才退回商品主圖——不管
+          // 選的是哪個規格，購物車項目的縮圖都要跟著變，不是固定第一張。
+          image: variant?.imageUrl || product.images[0],
           quantity: addQuantity,
           maxQuantity,
         },

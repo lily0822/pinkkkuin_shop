@@ -1,6 +1,6 @@
 export const navItems = [
   { href: "/", label: "首頁" },
-  { href: "/products", label: "全部商品" },
+  { href: "/category/in_stock", label: "全部商品" },
   { href: "/category/preorder", label: "預購商品" },
   { href: "/category/in_stock", label: "現貨" },
   { href: "/category/live_order", label: "連線 / 擺攤" },

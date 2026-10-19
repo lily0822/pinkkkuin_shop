@@ -1,0 +1,11 @@
+-- 第四期：預購清單頁面需要一支讀取 API，裡面要 join products/product_
+-- variants/product_series 才能顯示商品名稱/規格/系列/圖片——這些表
+-- authenticated 角色沒有 schema grant（跟 add_to_preorder_list 那次
+-- 發現的限制一樣），一定要用 service client 查。但 202610170001 建立
+-- preorder_list_items 時只 grant 給 authenticated，沒有 grant 給
+-- service_role（這份專案已經確認過 service_role 對新表完全不會有預設
+-- 權限，product_series/series_categories 那兩次都有明確補上，這張表
+-- 當時漏掉了）——導致 service client 查 preorder_list_items 本身就會
+-- 先被擋在 403，join 不到後面的商品資料。這裡補上，對齊同類表（
+-- product_series/series_categories）的 service_role 權限範圍。
+grant select, insert, update, delete on preorder_list_items to service_role;

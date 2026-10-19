@@ -144,7 +144,7 @@ export default async function OrderSuccessPage({
         <p className="mt-5 text-sm font-bold leading-6 text-gray-500">
           我們已收到你的訂單。正式付款與出貨流程會依商店公告與後續通知處理。
         </p>
-        <Link href="/products" className="mt-6 inline-flex h-11 items-center rounded-full bg-penguin-pink-dark px-6 text-sm font-black text-white shadow-md">
+        <Link href="/category/in_stock" className="mt-6 inline-flex h-11 items-center rounded-full bg-penguin-pink-dark px-6 text-sm font-black text-white shadow-md">
           繼續逛商品
         </Link>
       </section>

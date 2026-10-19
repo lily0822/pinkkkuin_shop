@@ -49,6 +49,11 @@ export type ProductVariant = {
   originalPrice?: number | null;
   stockQuantity?: number | null;
   productUrl?: string;
+  // 這個規格專屬的圖片（product_images.variant_id 對得上才有值）；沒有
+  // 專屬圖片就是 undefined，不在這個型別/資料層自己 fallback 成商品
+  // 主圖——呼叫端（購物車、預購清單等）可能有自己的主圖來源，退回邏輯
+  // 交給呼叫端決定。
+  imageUrl?: string;
   status: "active" | "sold_out" | "draft";
   sortOrder: number;
 };
