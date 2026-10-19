@@ -188,8 +188,10 @@ function ProductTile({ product }: { product: PreorderProduct }) {
         <Link href={`/products/${product.id}`}>
           <h3 className="line-clamp-2 min-h-8 text-xs font-bold leading-4 text-penguin-gray sm:text-sm">{product.name}</h3>
         </Link>
-        <PriceLabel product={product} />
-        <div className="mt-auto flex items-center gap-1.5">
+        <div className="mt-auto flex min-w-0 flex-wrap items-center justify-between gap-1 sm:flex-nowrap sm:justify-start sm:gap-1.5">
+          <div className="min-w-0 basis-full sm:flex-1 sm:basis-auto">
+            <PriceLabel product={product} />
+          </div>
           <div className="flex h-7 shrink-0 items-center rounded-lg border border-penguin-peach sm:h-8">
             <button
               type="button"
