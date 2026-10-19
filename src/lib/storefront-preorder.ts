@@ -1,5 +1,7 @@
 import "server-only";
 
+import { pickDisplayVariant } from "@/lib/products";
+
 // /category/preorder 系列管理改版專用的資料讀取——跟 storefront-
 // products.ts 共用同一套「raw REST + service role key + 欄位 42703 時
 // 退一層」慣例，但這次回傳的形狀完全是給新版預購頁面用的，不是共用的
@@ -37,6 +39,14 @@ export type PreorderProduct = {
   image: string;
   priceMin: number;
   priceMax: number;
+  // 商品卡實際顯示的代表價格/原價——比照現貨商品卡（product-card.tsx）
+  // 的 pickDisplayVariant 邏輯挑出來的那個規格，不是 priceMin（兩者
+  // 可能不一樣：priceMin 單純取最低價，就算那個規格已經沒貨；
+  // pickDisplayVariant 優先選「上架中且有庫存」的最便宜款）。priceMin/
+  // priceMax 繼續保留給排序（「價格低到高/高到低」)用，跟卡片顯示的
+  // 代表價格是兩件事。
+  displayPrice: number;
+  displayOriginalPrice?: number;
   deadline: string | null;
   estimatedArrivalDate: string | null;
   seriesId: string | null;
@@ -62,6 +72,7 @@ type SupabaseProductRow = {
   product_variants?: Array<{
     id: string;
     price: number | null;
+    original_price?: number | null;
     stock_quantity: number | null;
     status: "active" | "sold_out" | "draft" | null;
   }> | null;
@@ -108,7 +119,7 @@ const PRODUCT_SELECT_WITH_SERIES = [
   "series_id",
   "created_at",
   "product_images(secure_url,sort_order,is_primary)",
-  "product_variants(id,price,stock_quantity,status)",
+  "product_variants(id,price,original_price,stock_quantity,status)",
 ].join(",");
 
 // products.series_id/estimated_arrival_date（202610180001）還沒套用到
@@ -121,7 +132,7 @@ const PRODUCT_SELECT_LEGACY = [
   "deadline",
   "created_at",
   "product_images(secure_url,sort_order,is_primary)",
-  "product_variants(id,price,stock_quantity,status)",
+  "product_variants(id,price,original_price,stock_quantity,status)",
 ].join(",");
 
 function imageFromRow(row: SupabaseProductRow): string {
@@ -140,6 +151,29 @@ function priceRangeFromRow(row: SupabaseProductRow): { min: number; max: number 
   return { min: Math.min(...prices), max: Math.max(...prices) };
 }
 
+// 代表價格/原價：直接重用 pickDisplayVariant（跟現貨商品卡同一個
+// 「優先選上架中且有庫存的最便宜款」演算法），不要自己另外寫一套
+// 挑選邏輯——這正是這次要求「比照現貨」的重點，兩邊規格挑選的結果
+// 要能一致。
+function displayPriceFromRow(row: SupabaseProductRow): { price: number; originalPrice?: number } {
+  const variants = (row.product_variants || [])
+    .filter((variant) => variant.status !== "draft")
+    .map((variant) => ({
+      id: variant.id,
+      spec: "",
+      price: variant.price,
+      originalPrice: variant.original_price,
+      stockQuantity: variant.stock_quantity,
+      status: (variant.status || "active") as "active" | "sold_out" | "draft",
+      sortOrder: 0,
+    }));
+  const displayVariant = pickDisplayVariant(variants);
+  return {
+    price: Number(displayVariant?.price ?? 0),
+    originalPrice: displayVariant?.originalPrice != null ? Number(displayVariant.originalPrice) : undefined,
+  };
+}
+
 // 加入清單用的規格：單規格（或沒有規格資料）直接挑那一個；多規格一律
 // 回傳 null，交給商品詳情頁處理——跟 pickDisplayVariant 的「現在有庫存
 // 的最便宜那個」邏輯不是同一回事，這裡只在乎「唯一的那一個是誰」。
@@ -152,6 +186,7 @@ function singleVariantIdFromRow(row: SupabaseProductRow): { hasMultiple: boolean
 function mapProductRow(row: SupabaseProductRow): PreorderProduct {
   const { min, max } = priceRangeFromRow(row);
   const { hasMultiple, singleId } = singleVariantIdFromRow(row);
+  const { price: displayPrice, originalPrice: displayOriginalPrice } = displayPriceFromRow(row);
   return {
     id: row.legacy_id || row.id,
     supabaseId: row.id,
@@ -159,6 +194,8 @@ function mapProductRow(row: SupabaseProductRow): PreorderProduct {
     image: imageFromRow(row),
     priceMin: min,
     priceMax: max,
+    displayPrice,
+    displayOriginalPrice,
     deadline: row.deadline || null,
     estimatedArrivalDate: row.estimated_arrival_date || null,
     seriesId: row.series_id || null,

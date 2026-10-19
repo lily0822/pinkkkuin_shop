@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Search } from "lucide-react";
+import { Check, Search, ShoppingCart } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatPrice } from "@/lib/products";
@@ -59,10 +59,30 @@ function CountdownBadge({ deadline }: { deadline: string | null }) {
   );
 }
 
-function priceLabel(product: PreorderProduct): string {
-  if (!product.priceMin && !product.priceMax) return formatPrice(0);
-  if (product.priceMin === product.priceMax) return formatPrice(product.priceMin);
-  return `${formatPrice(product.priceMin)} ~ ${formatPrice(product.priceMax)}`;
+// 比照現貨商品卡（product-card.tsx）的 priceLabel 邏輯：單一代表價格 +
+// 「起」字（多規格時），有特價才顯示劃線原價——不是 min~max 範圍格式。
+function PriceLabel({ product }: { product: PreorderProduct }) {
+  const hasSalePrice = typeof product.displayOriginalPrice === "number" && product.displayOriginalPrice > product.displayPrice;
+  const suffix = product.hasMultipleVariants ? " 起" : "";
+  if (hasSalePrice) {
+    return (
+      <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0">
+        <p className="break-words text-xs font-black leading-tight text-penguin-pink-dark sm:text-sm">
+          {formatPrice(product.displayPrice)}
+          {suffix}
+        </p>
+        <p className="text-[10px] font-bold leading-tight text-gray-400 line-through sm:text-xs">
+          {formatPrice(product.displayOriginalPrice as number)}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <p className="break-words text-xs font-black leading-tight text-penguin-pink-dark sm:text-sm">
+      {formatPrice(product.displayPrice)}
+      {suffix}
+    </p>
+  );
 }
 
 function PillButton({
@@ -168,7 +188,7 @@ function ProductTile({ product }: { product: PreorderProduct }) {
         <Link href={`/products/${product.id}`}>
           <h3 className="line-clamp-2 min-h-8 text-xs font-bold leading-4 text-penguin-gray sm:text-sm">{product.name}</h3>
         </Link>
-        <p className="text-xs font-black leading-tight text-penguin-pink-dark sm:text-sm">{priceLabel(product)}</p>
+        <PriceLabel product={product} />
         <div className="mt-auto flex items-center gap-1.5">
           <div className="flex h-7 shrink-0 items-center rounded-lg border border-penguin-peach sm:h-8">
             <button
@@ -192,11 +212,13 @@ function ProductTile({ product }: { product: PreorderProduct }) {
           </div>
           <button
             type="button"
-            onClick={handleAdd}
+            aria-label={`${status === "added" ? `已加入 ×${quantity}` : "加入預購清單"}：${product.name}`}
+            title={status === "added" ? `已加入 ×${quantity}` : "加入預購清單"}
             disabled={status === "added"}
-            className="flex h-7 flex-1 items-center justify-center gap-1 rounded-lg bg-[#ec4899] text-xs font-black text-white transition hover:bg-penguin-pink-dark disabled:opacity-80 sm:h-8"
+            onClick={handleAdd}
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-penguin-pink text-penguin-gray transition hover:bg-penguin-pink-light disabled:bg-stone-100 disabled:text-stone-400 sm:h-8 sm:w-8"
           >
-            {status === "added" ? `✓ 已加入 ×${quantity}` : "🛒 加入"}
+            {status === "added" ? <Check size={17} /> : <ShoppingCart size={17} />}
           </button>
         </div>
         {status === "error" ? <p role="status" className="text-xs text-penguin-pink-dark">{message}</p> : null}
