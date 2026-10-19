@@ -52,6 +52,19 @@ export async function GET(request: NextRequest) {
   if (userError || !user) return unauthorized();
   if (await isMemberDisabled(supabase, user.id)) return authJsonError("會員帳號目前已停用。", 403);
 
+  // 比照 /api/member/livestream-orders 的慣例：沒綁定 LINE 不是噴錯誤，
+  // 回 200 + linked:false + 空清單，讓抽屜/標頭可以顯示「請先綁定」的
+  // 提示文字，不是當成讀取失敗處理。
+  const { data: binding } = await supabase
+    .from("member_line_accounts")
+    .select("line_user_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!binding?.line_user_id) {
+    return NextResponse.json({ ok: true, linked: false, items: [] });
+  }
+
   const service = createSupabaseServiceClient();
   const { data: rows, error } = await service
     .from("preorder_list_items")
@@ -94,7 +107,7 @@ export async function GET(request: NextRequest) {
       };
     });
 
-  return NextResponse.json({ ok: true, items });
+  return NextResponse.json({ ok: true, linked: true, items });
 }
 
 // 加入預購清單：寫入 preorder_list_items 的同商品/同規格累加語意是靠

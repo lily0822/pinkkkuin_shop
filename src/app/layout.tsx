@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Noto_Sans_TC } from "next/font/google";
 import "./globals.css";
 import { CartProvider } from "@/components/cart-provider";
+import { PreorderListProvider } from "@/components/preorder-list-provider";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { StagingBadge } from "@/components/staging-badge";
@@ -51,18 +52,20 @@ export default function RootLayout({
   return (
     <html lang="zh-Hant" className={notoSansTc.variable}>
       <body className="font-sans antialiased">
-        <CartProvider>
-          <StagingBadge />
-          <SiteHeader />
-          {children}
-          <SiteFooter />
-          <a
-            href="https://line.me/R/ti/p/@pinkkkuin"
-            className="fixed bottom-4 left-4 z-40 rounded-full border-2 border-white bg-[#06C755] px-4 py-2.5 text-xs font-black text-white shadow-lg transition hover:scale-105 sm:text-sm"
-          >
-            LINE 小企鵝
-          </a>
-        </CartProvider>
+        <PreorderListProvider>
+          <CartProvider>
+            <StagingBadge />
+            <SiteHeader />
+            {children}
+            <SiteFooter />
+            <a
+              href="https://line.me/R/ti/p/@pinkkkuin"
+              className="fixed bottom-4 left-4 z-40 rounded-full border-2 border-white bg-[#06C755] px-4 py-2.5 text-xs font-black text-white shadow-lg transition hover:scale-105 sm:text-sm"
+            >
+              LINE 小企鵝
+            </a>
+          </CartProvider>
+        </PreorderListProvider>
       </body>
     </html>
   );

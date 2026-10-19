@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ClipboardList, Menu, Search, ShoppingBasket, UserRound, X } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 import { useCart } from "@/components/cart-provider";
+import { usePreorderList } from "@/components/preorder-list-provider";
 import { type SiteAnnouncement, type SiteNavigationItem } from "@/lib/appearance-settings";
 import { cloudinaryTransform, type BrandSettings } from "@/lib/brand-settings";
 
@@ -17,13 +18,12 @@ type SiteHeaderClientProps = {
 
 const FALLBACK_NAVIGATION_ITEMS: SiteNavigationItem[] = [
   { key: "home", label: "首頁", href: "/", enabled: true, locked: true, sortOrder: 0 },
-  { key: "products", label: "全部商品", href: "/category/in_stock", enabled: true, sortOrder: 1 },
-  { key: "preorder", label: "預購商品", href: "/category/preorder", enabled: true, sortOrder: 2 },
-  { key: "stock", label: "現貨", href: "/category/in_stock", enabled: true, sortOrder: 3 },
-  { key: "live_order", label: "連線 / 擺攤", href: "/category/live_order", enabled: true, sortOrder: 4 },
-  { key: "guide", label: "購物須知", href: "/guide", enabled: true, sortOrder: 5 },
-  { key: "faq", label: "FAQ", href: "/faq", enabled: true, sortOrder: 6 },
-  { key: "contact", label: "聯絡小企鵝", href: "/contact", enabled: true, sortOrder: 7 },
+  { key: "preorder", label: "預購商品", href: "/category/preorder", enabled: true, sortOrder: 1 },
+  { key: "stock", label: "現貨", href: "/category/in_stock", enabled: true, sortOrder: 2 },
+  { key: "live_order", label: "連線 / 擺攤", href: "/category/live_order", enabled: true, sortOrder: 3 },
+  { key: "guide", label: "購物須知", href: "/guide", enabled: true, sortOrder: 4 },
+  { key: "faq", label: "FAQ", href: "/faq", enabled: true, sortOrder: 5 },
+  { key: "contact", label: "聯絡小企鵝", href: "/contact", enabled: true, sortOrder: 6 },
 ];
 
 function AnnouncementItem({ announcement }: { announcement: SiteAnnouncement }) {
@@ -62,33 +62,13 @@ function isNavigationItemActive(item: SiteNavigationItem, pathname: string) {
 export function SiteHeaderClient({ brand, announcements = [], navigationItems = FALLBACK_NAVIGATION_ITEMS, isMemberLoggedIn = false }: SiteHeaderClientProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [preorderListCount, setPreorderListCount] = useState(0);
   const router = useRouter();
   const pathname = usePathname();
   const cart = useCart();
-
-  // 預購清單數量徽章：清單存在資料庫（不是 CartProvider 那種本地 state），
-  // 沒有現成的即時同步機制可以用——沿用既有的 GET /api/member/preorder-
-  // list（已經會回傳 items 陣列，不用另外做一支 count API），每次導覽
-  // （pathname 變化）重新抓一次，用這個簡單的方式換取「大致上夠新」的
-  // 數字，不為了一個徽章另外搭一套跨頁面即時同步的 client state。
-  useEffect(() => {
-    if (!isMemberLoggedIn) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPreorderListCount(0);
-      return;
-    }
-    let cancelled = false;
-    fetch("/api/member/preorder-list")
-      .then((response) => (response.ok ? response.json() : null))
-      .then((result) => {
-        if (!cancelled && result?.ok) setPreorderListCount((result.items || []).length);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [isMemberLoggedIn, pathname]);
+  // 預購清單數量徽章：改用跟抽屜共用的 PreorderListProvider（掛在
+  // layout 最上層、整個 session 只有一份 state），加減/刪除/送出都會
+  // 直接反映在這裡，不用再自己發請求或依賴頁面切換重新抓一次。
+  const preorderList = usePreorderList();
   const logoUrl = brand.logoUrl ? cloudinaryTransform(brand.logoUrl, "f_auto,q_auto,w_240,c_limit") : "";
   const logoScale = Math.min(3, Math.max(1, Number(brand.logoScale) || 1));
   const logoPositionX = Math.min(100, Math.max(-100, Number(brand.logoPositionX) || 0));
@@ -229,26 +209,27 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
             {/* 原本這裡是連去 /community-orders 的「社群訂單」按鈕，拿掉
                 頭部入口換成「預購清單」——/community-orders 頁面本身沒有
                 刪除，確認過這是唯一連去那個頁面的入口，拿掉後頁面仍可透過
-                直接網址訪問。 */}
-            <Link href="/preorder-list" aria-label="預購清單" className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-penguin-peach bg-white text-penguin-gray md:hidden`}>
+                直接網址訪問。這顆按鈕現在開共用抽屜（預購清單分頁），不再
+                導去 /preorder-list 頁面——那個頁面已經整個移除。 */}
+            <button type="button" onClick={cart.openPreorderList} aria-label="預購清單" className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-yellow-400 bg-penguin-yellow text-penguin-gray md:hidden">
               <ClipboardList size={15} strokeWidth={2} />
-              {preorderListCount > 0 ? (
+              {preorderList.count > 0 ? (
                 <span className="absolute -right-2 -top-2 grid h-5 min-w-5 place-items-center rounded-full bg-red-500 px-1 text-[10px] text-white">
-                  {preorderListCount}
+                  {preorderList.count}
                 </span>
               ) : null}
-            </Link>
-            <Link href="/preorder-list" className={`hidden md:flex ${headerActionButtonBase} border-penguin-peach bg-white text-penguin-gray hover:bg-penguin-pink-light`}>
+            </button>
+            <button type="button" onClick={cart.openPreorderList} className={`hidden md:flex ${headerActionButtonBase} border-yellow-400 bg-penguin-yellow text-penguin-gray hover:bg-yellow-200`}>
               <ClipboardList size={15} strokeWidth={2} />
               <span className={headerActionTextClass} style={headerActionTextStyle}>
                 預購清單
               </span>
-              {preorderListCount > 0 ? (
+              {preorderList.count > 0 ? (
                 <span className="absolute -right-2 -top-2 grid h-5 min-w-5 place-items-center rounded-full bg-red-500 px-1 text-[10px] text-white">
-                  {preorderListCount}
+                  {preorderList.count}
                 </span>
               ) : null}
-            </Link>
+            </button>
             <button type="button" onClick={cart.openCart} aria-label="購物車" className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 md:hidden ${cartButtonVariant}`}>
               <ShoppingBasket size={15} strokeWidth={2} />
               {cart.count > 0 ? (

@@ -5,6 +5,7 @@ import { Check, Search, ShoppingCart } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatPrice } from "@/lib/products";
+import { usePreorderList } from "@/components/preorder-list-provider";
 import type { PreorderCatalogData, PreorderProduct, PreorderSeries } from "@/lib/storefront-preorder";
 
 type SortMode =
@@ -142,6 +143,7 @@ function SeriesTile({
 
 function ProductTile({ product }: { product: PreorderProduct }) {
   const router = useRouter();
+  const preorderList = usePreorderList();
   const [quantity, setQuantity] = useState(1);
   const [status, setStatus] = useState<"idle" | "added" | "error">("idle");
   const [message, setMessage] = useState("");
@@ -167,6 +169,8 @@ function ProductTile({ product }: { product: PreorderProduct }) {
       }
       if (!response.ok || !result?.ok) throw new Error(result?.error || "加入失敗");
       setStatus("added");
+      // 加入成功後讓標頭徽章/抽屜立刻反映最新數量，不用換頁。
+      preorderList.refresh();
       setTimeout(() => setStatus("idle"), 1200);
     } catch {
       setStatus("error");

@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { ShoppingBasket, Trash2, X } from "lucide-react";
+import { ClipboardList, ShoppingBasket, Trash2, X } from "lucide-react";
 import { formatPrice, Product, ProductVariant, statusLabels } from "@/lib/products";
+import { usePreorderList } from "@/components/preorder-list-provider";
 
 export type AddToCartVariant = ProductVariant | null;
 export type CartProductTypeKey = "stock" | "preorder" | "unknown";
@@ -41,10 +42,13 @@ type CartContextValue = {
   setAllItemsSelected: (selected: boolean) => void;
   setItemsSelectedByType: (type: CartProductTypeKey, selected: boolean) => void;
   openCart: () => void;
+  openPreorderList: () => void;
   closeCart: () => void;
   clearCart: () => void;
   clearSelectedItems: () => void;
 };
+
+type DrawerTab = "cart" | "preorder";
 
 const CartContext = createContext<CartContextValue | null>(null);
 const CART_STORAGE_KEY = "pinkkkuin_cart_items";
@@ -114,8 +118,10 @@ function normalizeSavedItems(value: unknown): CartItem[] {
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [isOpen, setIsOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<DrawerTab>("cart");
   const [limitNoticeId, setLimitNoticeId] = useState<string | null>(null);
   const limitNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const preorderList = usePreorderList();
 
   useEffect(() => {
     try {
@@ -203,6 +209,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         },
       ];
     });
+    setActiveTab("cart");
     setIsOpen(true);
     return true;
   }
@@ -274,11 +281,27 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     toggleItemSelected,
     setAllItemsSelected,
     setItemsSelectedByType,
-    openCart: () => setIsOpen(true),
+    openCart: () => {
+      setActiveTab("cart");
+      setIsOpen(true);
+    },
+    openPreorderList: () => {
+      setActiveTab("preorder");
+      setIsOpen(true);
+    },
     closeCart: () => setIsOpen(false),
     clearCart,
     clearSelectedItems,
   }), [count, items, selectedItems, selectedLineCount, selectedQuantity, selectedTotal, total]);
+
+  // 分頁切換會跟著換抽屜邊框/標題列底色/主要按鈕顏色——購物車維持現有的
+  // penguin-pink 那套，預購清單比照標頭「日本選物」徽章用淺黃色
+  // （border-yellow-400 / bg-penguin-yellow）。
+  const drawerTheme = activeTab === "cart"
+    ? { border: "border-penguin-pink", headerBorder: "border-penguin-pink", headerBg: "bg-penguin-pink-light", headerText: "text-penguin-pink-dark" }
+    : { border: "border-yellow-400", headerBorder: "border-yellow-400", headerBg: "bg-penguin-yellow", headerText: "text-penguin-gray" };
+
+  const preorderTotal = preorderList.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
 
   return (
     <CartContext.Provider value={value}>
@@ -289,24 +312,173 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         aria-hidden={!isOpen}
       >
         <aside
-          className={`absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l-4 border-penguin-pink bg-white shadow-2xl transition-transform duration-300 ${isOpen ? "translate-x-0" : "translate-x-full"}`}
+          className={`absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l-4 ${drawerTheme.border} bg-white shadow-2xl transition-transform duration-300 ${isOpen ? "translate-x-0" : "translate-x-full"}`}
           onClick={(event) => event.stopPropagation()}
         >
-          <div className="flex items-center justify-between border-b border-penguin-pink bg-penguin-pink-light p-4">
-            <h2 className="flex items-center gap-2 text-lg font-black text-penguin-pink-dark">
-              <ShoppingBasket size={20} />
+          <div className="flex border-b border-gray-200">
+            <button
+              type="button"
+              onClick={() => setActiveTab("preorder")}
+              className={`flex-1 py-3 text-center text-sm font-black transition ${
+                activeTab === "preorder" ? "border-b-[3px] border-yellow-400 bg-penguin-yellow text-penguin-gray" : "text-gray-400 hover:bg-gray-50"
+              }`}
+            >
+              預購清單 ({preorderList.count})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("cart")}
+              className={`flex-1 py-3 text-center text-sm font-black transition ${
+                activeTab === "cart" ? "border-b-[3px] border-penguin-pink-dark bg-penguin-pink-light text-penguin-pink-dark" : "text-gray-400 hover:bg-gray-50"
+              }`}
+            >
               購物車 ({count})
+            </button>
+          </div>
+
+          <div className={`flex items-center justify-between border-b p-4 ${drawerTheme.headerBorder} ${drawerTheme.headerBg}`}>
+            <h2 className={`flex items-center gap-2 text-lg font-black ${drawerTheme.headerText}`}>
+              {activeTab === "cart" ? <ShoppingBasket size={20} /> : <ClipboardList size={20} />}
+              {activeTab === "cart" ? "購物車" : "預購清單"}
             </h2>
             <button
               type="button"
               className="grid h-9 w-9 place-items-center rounded-full bg-white text-penguin-gray shadow-sm hover:text-red-500"
               onClick={() => setIsOpen(false)}
-              aria-label="關閉購物車"
+              aria-label={activeTab === "cart" ? "關閉購物車" : "關閉預購清單"}
             >
               <X size={19} />
             </button>
           </div>
 
+          {activeTab === "preorder" ? (
+            <>
+              <div className="flex-1 space-y-4 overflow-y-auto p-4">
+                {preorderList.accessState === "loading" ? (
+                  <p className="py-20 text-center text-sm font-bold text-gray-400">載入中...</p>
+                ) : preorderList.accessState === "unauthenticated" ? (
+                  <div className="space-y-3 py-16 text-center text-gray-500">
+                    <p className="text-sm font-bold">請先登入會員才能使用預購清單。</p>
+                    <Link href="/login" onClick={() => setIsOpen(false)} className="inline-flex rounded-full bg-yellow-400 px-5 py-2 text-sm font-black text-penguin-gray transition hover:bg-yellow-300">
+                      前往登入
+                    </Link>
+                  </div>
+                ) : preorderList.accessState === "not_linked" ? (
+                  <div className="space-y-3 py-16 text-center text-gray-500">
+                    <p className="text-sm font-bold">請先完成 LINE 綁定才能使用預購清單。</p>
+                    <Link href="/member/account" onClick={() => setIsOpen(false)} className="inline-flex rounded-full bg-yellow-400 px-5 py-2 text-sm font-black text-penguin-gray transition hover:bg-yellow-300">
+                      前往綁定
+                    </Link>
+                  </div>
+                ) : preorderList.accessState === "error" ? (
+                  <div className="space-y-3 py-16 text-center text-gray-500">
+                    <p className="text-sm font-bold">預購清單讀取失敗，請稍後再試。</p>
+                    <button type="button" onClick={preorderList.refresh} className="rounded-full border-2 border-gray-300 px-5 py-2 text-sm font-black text-gray-600">
+                      重新讀取
+                    </button>
+                  </div>
+                ) : preorderList.items.length ? (
+                  preorderList.items.map((item) => (
+                    <div key={item.id} className="rounded-2xl border-2 border-penguin-peach bg-penguin-peach-light p-3 transition">
+                      <div className="flex gap-3">
+                        <div className="grid h-[92px] w-[92px] shrink-0 place-items-center overflow-hidden rounded-2xl bg-white text-2xl" style={{ width: 92, height: 92 }}>
+                          {item.image ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={item.image} alt={item.productName} className="h-full w-full object-cover" />
+                          ) : "P"}
+                        </div>
+                        <div className="flex h-[92px] min-w-0 flex-1 flex-col" style={{ height: 92 }}>
+                          <div className="flex min-h-0 items-start justify-between gap-2">
+                            <p className="line-clamp-2 min-w-0 flex-1 text-sm font-black leading-4 text-penguin-gray">{item.productName}</p>
+                            <button
+                              type="button"
+                              className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-white text-gray-400 hover:text-red-500"
+                              onClick={() => preorderList.removeItem(item.id)}
+                              aria-label={`移除 ${item.productName}`}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                          <div className="mt-auto">
+                            <div className="flex h-4 min-w-0 shrink-0 items-center justify-between gap-1 text-xs font-black leading-4 text-penguin-gray">
+                              <p className="min-w-0 truncate">
+                                {[item.seriesName ? `系列：${item.seriesName}` : null, item.variantSpec ? `規格：${item.variantSpec}` : null]
+                                  .filter(Boolean)
+                                  .join(" ・ ") || " "}
+                              </p>
+                            </div>
+                            <div className="flex h-7 shrink-0 items-center justify-between gap-2">
+                              <p className="min-w-0 text-xs font-black leading-5 text-penguin-gray">小計：{formatPrice(item.unitPrice * item.quantity)}</p>
+                              <div className="inline-flex h-7 shrink-0 items-center overflow-hidden rounded-full border-2 border-penguin-pink bg-white">
+                                <button
+                                  className="grid h-full w-8 place-items-center font-black disabled:cursor-not-allowed disabled:text-gray-300"
+                                  disabled={item.quantity <= 1}
+                                  onClick={() => preorderList.updateQuantity(item.id, item.quantity - 1)}
+                                  type="button"
+                                >
+                                  -
+                                </button>
+                                <span className="min-w-7 text-center text-sm font-black">{item.quantity}</span>
+                                <button
+                                  className="grid h-full w-8 place-items-center font-black"
+                                  onClick={() => preorderList.updateQuantity(item.id, item.quantity + 1)}
+                                  type="button"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="space-y-2 py-20 text-center text-gray-400">
+                    <span className="text-5xl">P</span>
+                    <p className="font-bold">預購清單目前是空的</p>
+                    <p className="text-xs">先去挑選想預購的商品吧。</p>
+                  </div>
+                )}
+              </div>
+
+              {preorderList.accessState === "ok" ? (
+                <div className="border-t bg-white p-4">
+                  {preorderList.submitResult ? (
+                    <div className="space-y-3 text-center">
+                      <p className="text-sm font-black text-penguin-gray">
+                        預購登記成功！訂單編號 {preorderList.submitResult.orderNo}，總金額 {formatPrice(preorderList.submitResult.total)}
+                      </p>
+                      <Link
+                        href="/member/orders"
+                        onClick={() => setIsOpen(false)}
+                        className="block rounded-2xl bg-yellow-400 py-3 text-center text-sm font-black text-penguin-gray shadow-md transition hover:bg-yellow-300"
+                      >
+                        查看我的預購
+                      </Link>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="mb-3 flex items-center justify-between text-sm font-black">
+                        <span>預購總額</span>
+                        <span className="text-lg text-penguin-gray">{formatPrice(preorderTotal)}</span>
+                      </div>
+                      {preorderList.submitError ? <p className="mb-3 text-xs font-bold text-red-500">{preorderList.submitError}</p> : null}
+                      <button
+                        type="button"
+                        onClick={preorderList.submit}
+                        disabled={preorderList.submitting || !preorderList.items.length}
+                        className="block w-full rounded-2xl bg-yellow-400 py-3 text-center text-sm font-black text-penguin-gray shadow-md transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                      >
+                        {preorderList.submitting ? "送出中..." : "送出預購清單"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              ) : null}
+            </>
+          ) : (
+          <>
           <div className="flex-1 space-y-4 overflow-y-auto p-4">
             {items.length ? items.map((item) => (
               <div key={item.id} className="rounded-2xl border-2 border-penguin-peach bg-penguin-peach-light p-3 transition">
@@ -399,6 +571,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               </a>
             </div>
           </div>
+          </>
+          )}
         </aside>
       </div>
     </CartContext.Provider>
