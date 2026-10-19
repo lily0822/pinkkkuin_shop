@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ClipboardList, Menu, Search, ShoppingBasket, UserRound, Users, X } from "lucide-react";
-import { FormEvent, useState } from "react";
+import { ClipboardList, Menu, Search, ShoppingBasket, UserRound, X } from "lucide-react";
+import { FormEvent, useEffect, useState } from "react";
 import { useCart } from "@/components/cart-provider";
 import { type SiteAnnouncement, type SiteNavigationItem } from "@/lib/appearance-settings";
 import { cloudinaryTransform, type BrandSettings } from "@/lib/brand-settings";
@@ -62,9 +62,33 @@ function isNavigationItemActive(item: SiteNavigationItem, pathname: string) {
 export function SiteHeaderClient({ brand, announcements = [], navigationItems = FALLBACK_NAVIGATION_ITEMS, isMemberLoggedIn = false }: SiteHeaderClientProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [preorderListCount, setPreorderListCount] = useState(0);
   const router = useRouter();
   const pathname = usePathname();
   const cart = useCart();
+
+  // 預購清單數量徽章：清單存在資料庫（不是 CartProvider 那種本地 state），
+  // 沒有現成的即時同步機制可以用——沿用既有的 GET /api/member/preorder-
+  // list（已經會回傳 items 陣列，不用另外做一支 count API），每次導覽
+  // （pathname 變化）重新抓一次，用這個簡單的方式換取「大致上夠新」的
+  // 數字，不為了一個徽章另外搭一套跨頁面即時同步的 client state。
+  useEffect(() => {
+    if (!isMemberLoggedIn) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPreorderListCount(0);
+      return;
+    }
+    let cancelled = false;
+    fetch("/api/member/preorder-list")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((result) => {
+        if (!cancelled && result?.ok) setPreorderListCount((result.items || []).length);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isMemberLoggedIn, pathname]);
   const logoUrl = brand.logoUrl ? cloudinaryTransform(brand.logoUrl, "f_auto,q_auto,w_240,c_limit") : "";
   const logoScale = Math.min(3, Math.max(1, Number(brand.logoScale) || 1));
   const logoPositionX = Math.min(100, Math.max(-100, Number(brand.logoPositionX) || 0));
@@ -74,7 +98,6 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
   const headerActionTextStyle = {
     fontFamily: "var(--font-noto-tc), 'Microsoft JhengHei', ui-sans-serif, system-ui, sans-serif",
   };
-  const helpButtonVariant = "border-yellow-400 bg-penguin-yellow text-penguin-gray hover:bg-yellow-200";
   const cartButtonVariant = "border-penguin-pink-dark bg-penguin-pink text-penguin-gray hover:-translate-y-0.5 hover:bg-penguin-pink-light";
   const visibleAnnouncements = announcements.filter((item) => item.enabled && item.text);
   const showAnnouncement = visibleAnnouncements.length > 0;
@@ -203,11 +226,28 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
                 </Link>
               </>
             )}
-            <Link href="/community-orders" className={`hidden md:flex ${headerActionButtonBase} ${helpButtonVariant}`}>
-              <Users size={15} strokeWidth={2} />
+            {/* 原本這裡是連去 /community-orders 的「社群訂單」按鈕，拿掉
+                頭部入口換成「預購清單」——/community-orders 頁面本身沒有
+                刪除，確認過這是唯一連去那個頁面的入口，拿掉後頁面仍可透過
+                直接網址訪問。 */}
+            <Link href="/preorder-list" aria-label="預購清單" className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-penguin-peach bg-white text-penguin-gray md:hidden`}>
+              <ClipboardList size={15} strokeWidth={2} />
+              {preorderListCount > 0 ? (
+                <span className="absolute -right-2 -top-2 grid h-5 min-w-5 place-items-center rounded-full bg-red-500 px-1 text-[10px] text-white">
+                  {preorderListCount}
+                </span>
+              ) : null}
+            </Link>
+            <Link href="/preorder-list" className={`hidden md:flex ${headerActionButtonBase} border-penguin-peach bg-white text-penguin-gray hover:bg-penguin-pink-light`}>
+              <ClipboardList size={15} strokeWidth={2} />
               <span className={headerActionTextClass} style={headerActionTextStyle}>
-                社群訂單
+                預購清單
               </span>
+              {preorderListCount > 0 ? (
+                <span className="absolute -right-2 -top-2 grid h-5 min-w-5 place-items-center rounded-full bg-red-500 px-1 text-[10px] text-white">
+                  {preorderListCount}
+                </span>
+              ) : null}
             </Link>
             <button type="button" onClick={cart.openCart} aria-label="購物車" className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 md:hidden ${cartButtonVariant}`}>
               <ShoppingBasket size={15} strokeWidth={2} />
@@ -228,19 +268,6 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
                 </span>
               ) : null}
             </button>
-            {/* 預購清單：跟現貨購物車是完全獨立的概念（伺服器端持久保存，
-                不是 localStorage），所以沒有共用 CartProvider 的 count
-                徽章——這裡單純是導到 /preorder-list 的連結，不是跟購物車
-                一樣的 dropdown/drawer。 */}
-            <Link href="/preorder-list" aria-label="預購清單" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-penguin-peach bg-white text-penguin-gray md:hidden">
-              <ClipboardList size={15} strokeWidth={2} />
-            </Link>
-            <Link href="/preorder-list" className={`hidden md:flex ${headerActionButtonBase} border-penguin-peach bg-white text-penguin-gray hover:bg-penguin-pink-light`}>
-              <ClipboardList size={15} strokeWidth={2} />
-              <span className={headerActionTextClass} style={headerActionTextStyle}>
-                預購清單
-              </span>
-            </Link>
             <button
               type="button"
               className="grid h-10 w-10 place-items-center rounded-full border-2 border-penguin-pink bg-white text-penguin-gray lg:hidden"
