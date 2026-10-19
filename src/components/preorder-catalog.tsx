@@ -26,7 +26,7 @@ const SORT_OPTIONS: { value: SortMode; label: string }[] = [
   { value: "arrival_desc", label: "到貨日期由久到近" },
 ];
 
-const SERIES_PAGE_SIZE = 4;
+const SERIES_PAGE_SIZE = 5;
 const ALL_IP = "全部";
 
 type Countdown = { text: string; variant: "normal" | "urgent" | "closed" };
@@ -370,7 +370,7 @@ export function PreorderCatalog({ products, series, ips }: PreorderCatalogData) 
                 ‹
               </button>
             ) : null}
-            <div className="grid grid-cols-4 gap-2 overflow-hidden sm:gap-3">
+            <div className="grid grid-cols-5 gap-2 overflow-hidden sm:gap-3">
               {pageSeries.map((item) => (
                 <SeriesTile key={item.id} series={item} selected={selectedSeriesId === item.id} onSelect={() => selectSeriesTile(item.id)} />
               ))}
@@ -451,7 +451,7 @@ export function PreorderCatalog({ products, series, ips }: PreorderCatalogData) 
       </p>
 
       {resultProducts.length ? (
-        <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-5">
           {resultProducts.map((product) => (
             <ProductTile key={product.id} product={product} />
           ))}
