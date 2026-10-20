@@ -184,6 +184,7 @@ function mapSupabaseProduct(row: SupabaseProductRow, galleryImages: ProductGalle
 
   return {
     id: row.legacy_id || row.id,
+    supabaseId: row.id,
     name_zh: row.name,
     sku: row.legacy_id || row.id,
     price,

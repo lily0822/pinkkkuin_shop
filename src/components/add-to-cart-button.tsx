@@ -1,8 +1,9 @@
 "use client";
 
-import { ShoppingBasket } from "lucide-react";
+import { ClipboardList, ShoppingBasket } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useCart } from "@/components/cart-provider";
+import { useAddToPreorderList } from "@/components/use-add-to-preorder-list";
 import { formatPrice, Product, ProductVariant } from "@/lib/products";
 
 type AddToCartButtonProps = {
@@ -39,6 +40,8 @@ function maxPurchasableQuantity(product: Product, variant: ProductVariant | null
 
 export function AddToCartButton({ product, onVariantChange }: AddToCartButtonProps) {
   const { addProduct, openCart } = useCart();
+  const { addToPreorderList, submitting } = useAddToPreorderList();
+  const isPreorder = product.productType === "preorder";
   const variants = useMemo(() => (product.variants || []).slice().sort((a, b) => a.sortOrder - b.sortOrder), [product.variants]);
   const purchasableVariants = variants.filter(isVariantAvailable);
   const hasMultipleVariants = variants.length > 1;
@@ -78,7 +81,7 @@ export function AddToCartButton({ product, onVariantChange }: AddToCartButtonPro
     setMessage("");
   }
 
-  function handleAdd() {
+  async function handleAdd() {
     if (disabledProduct) return;
     if (needsVariant) {
       setMessage("請先選擇規格");
@@ -86,6 +89,15 @@ export function AddToCartButton({ product, onVariantChange }: AddToCartButtonPro
     }
     if (selectedUnavailable) {
       setMessage("這個規格已售完");
+      return;
+    }
+    if (isPreorder) {
+      const result = await addToPreorderList({
+        productId: product.supabaseId,
+        variantId: selectedVariant?.id || null,
+        quantity: effectiveQuantity,
+      });
+      setMessage(result.ok ? "" : result.message);
       return;
     }
     const added = addProduct(product, selectedVariant || null, effectiveQuantity);
@@ -180,12 +192,22 @@ export function AddToCartButton({ product, onVariantChange }: AddToCartButtonPro
 
       <button
         type="button"
-        disabled={disabledProduct || selectedUnavailable || needsVariant || (!purchasableVariants.length && variants.length > 0)}
+        disabled={disabledProduct || selectedUnavailable || needsVariant || submitting || (!purchasableVariants.length && variants.length > 0)}
         onClick={handleAdd}
-        className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-penguin-pink-dark px-5 text-sm font-black text-white shadow-md transition hover:bg-penguin-pink disabled:cursor-not-allowed disabled:bg-gray-300"
+        className={
+          isPreorder
+            ? "inline-flex h-12 w-full items-center justify-center gap-2 rounded-full border-2 border-[#e8cc5c] bg-[#fff9df] px-5 text-sm font-black text-penguin-gray shadow-md transition hover:bg-[#fef3c0] disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+            : "inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-penguin-pink-dark px-5 text-sm font-black text-white shadow-md transition hover:bg-penguin-pink disabled:cursor-not-allowed disabled:bg-gray-300"
+        }
       >
-        <ShoppingBasket size={17} />
-        {disabledProduct || selectedUnavailable || (!purchasableVariants.length && variants.length > 0) ? "暫時無法購買" : needsVariant ? "請先選擇規格" : "加入購物車"}
+        {isPreorder ? <ClipboardList size={17} /> : <ShoppingBasket size={17} />}
+        {disabledProduct || selectedUnavailable || (!purchasableVariants.length && variants.length > 0)
+          ? "暫時無法購買"
+          : needsVariant
+            ? "請先選擇規格"
+            : isPreorder
+              ? "加入預購清單"
+              : "加入購物車"}
       </button>
 
       {message ? <p className="text-center text-xs font-black text-penguin-pink-dark">{message}</p> : null}

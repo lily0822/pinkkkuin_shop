@@ -169,6 +169,7 @@ export function mapStorefrontProduct(row: SupabaseProductRow): Product {
 
   return {
     id: row.legacy_id || row.id,
+    supabaseId: row.id,
     name_zh: row.name,
     sku: row.legacy_id || row.id,
     price,

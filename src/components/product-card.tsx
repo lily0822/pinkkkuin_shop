@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { ShoppingCart } from "lucide-react";
+import { ClipboardList, ShoppingCart } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCart, variantStock } from "@/components/cart-provider";
+import { useAddToPreorderList } from "@/components/use-add-to-preorder-list";
 import { ProductArt } from "@/components/product-art";
 import { formatPrice, pickDisplayVariant, Product } from "@/lib/products";
 
@@ -17,6 +18,7 @@ type ProductCardProps = {
 export function ProductCard({ product }: ProductCardProps) {
   const cart = useCart();
   const router = useRouter();
+  const { addToPreorderList, submitting } = useAddToPreorderList();
   const [quantity, setQuantity] = useState(1);
   const [message, setMessage] = useState("");
   const isPreorder = product.productType === "preorder";
@@ -27,7 +29,7 @@ export function ProductCard({ product }: ProductCardProps) {
     && (!singleVariant || singleVariant.status === "active")
     && (hasMultipleVariants || maxQuantity === null || maxQuantity > 0);
   const selectedQuantity = maxQuantity === null ? quantity : Math.max(1, Math.min(quantity, maxQuantity));
-  const cartLabel = hasMultipleVariants ? "選擇規格" : "加入購物車";
+  const cartLabel = hasMultipleVariants ? "選擇規格" : isPreorder ? "加入預購清單" : "加入購物車";
   // 多規格商品卡片顯示「NT$最低價 起」，用目前有庫存、上架中的規格裡最
   // 便宜的那個代表；單規格（或沒有規格資料）就直接用 product.price
   // （已經是即時算好的代表值，見 storefront-products.ts）。
@@ -36,10 +38,19 @@ export function ProductCard({ product }: ProductCardProps) {
   const displayOriginalPrice = displayVariant ? displayVariant.originalPrice : product.original_price;
   const hasSalePrice = typeof displayOriginalPrice === "number" && displayOriginalPrice > displayPrice;
 
-  function handleCartClick() {
-    if (!canOrder) return;
+  async function handleCartClick() {
+    if (!canOrder || submitting) return;
     if (hasMultipleVariants) {
       router.push(`/products/${product.id}`);
+      return;
+    }
+    if (isPreorder) {
+      const result = await addToPreorderList({
+        productId: product.supabaseId,
+        variantId: singleVariant?.id || null,
+        quantity: selectedQuantity,
+      });
+      setMessage(result.ok ? "" : result.message);
       return;
     }
     const added = cart.addProduct(product, singleVariant, selectedQuantity);
@@ -78,8 +89,19 @@ export function ProductCard({ product }: ProductCardProps) {
             <output className="min-w-4 text-center text-xs tabular-nums sm:min-w-5">{selectedQuantity}</output>
             <button type="button" aria-label="增加數量" disabled={!canOrder || hasMultipleVariants || (maxQuantity !== null && selectedQuantity >= maxQuantity)} onClick={() => setQuantity(selectedQuantity + 1)} className="h-full w-6 rounded-r-lg disabled:text-gray-300 sm:w-7">+</button>
           </div>
-          <button type="button" aria-label={`${cartLabel}：${product.name_zh}`} title={cartLabel} disabled={!canOrder} onClick={handleCartClick} className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-penguin-pink text-penguin-gray transition hover:bg-penguin-pink-light disabled:bg-stone-100 disabled:text-stone-400 sm:h-8 sm:w-8">
-            <ShoppingCart size={17} />
+          <button
+            type="button"
+            aria-label={`${cartLabel}：${product.name_zh}`}
+            title={cartLabel}
+            disabled={!canOrder || submitting}
+            onClick={handleCartClick}
+            className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg transition disabled:bg-stone-100 disabled:text-stone-400 sm:h-8 sm:w-8 ${
+              isPreorder
+                ? "border-2 border-[#e8cc5c] bg-[#fff9df] text-penguin-gray hover:bg-[#fef3c0]"
+                : "bg-penguin-pink text-penguin-gray hover:bg-penguin-pink-light"
+            }`}
+          >
+            {isPreorder ? <ClipboardList size={17} /> : <ShoppingCart size={17} />}
           </button>
         </div>
         {message ? <p role="status" className="text-xs text-penguin-pink-dark">{message}</p> : null}

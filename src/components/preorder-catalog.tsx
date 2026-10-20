@@ -5,7 +5,7 @@ import { Check, Search, ShoppingCart } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatPrice } from "@/lib/products";
-import { usePreorderList } from "@/components/preorder-list-provider";
+import { useAddToPreorderList } from "@/components/use-add-to-preorder-list";
 import type { PreorderCatalogData, PreorderProduct, PreorderSeries } from "@/lib/storefront-preorder";
 
 type SortMode =
@@ -143,7 +143,7 @@ function SeriesTile({
 
 function ProductTile({ product }: { product: PreorderProduct }) {
   const router = useRouter();
-  const preorderList = usePreorderList();
+  const { addToPreorderList } = useAddToPreorderList();
   const [quantity, setQuantity] = useState(1);
   const [status, setStatus] = useState<"idle" | "added" | "error">("idle");
   const [message, setMessage] = useState("");
@@ -155,27 +155,14 @@ function ProductTile({ product }: { product: PreorderProduct }) {
     }
     setStatus("idle");
     setMessage("");
-    try {
-      const response = await fetch("/api/member/preorder-list", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId: product.supabaseId, variantId: product.singleVariantId, quantity }),
-      });
-      const result = await response.json().catch(() => null);
-      if (response.status === 401) {
-        setStatus("error");
-        setMessage("請先登入會員才能加入預購清單。");
-        return;
-      }
-      if (!response.ok || !result?.ok) throw new Error(result?.error || "加入失敗");
-      setStatus("added");
-      // 加入成功後讓標頭徽章/抽屜立刻反映最新數量，不用換頁。
-      preorderList.refresh();
-      setTimeout(() => setStatus("idle"), 1200);
-    } catch {
+    const result = await addToPreorderList({ productId: product.supabaseId, variantId: product.singleVariantId, quantity });
+    if (!result.ok) {
       setStatus("error");
-      setMessage("加入失敗，請稍後再試。");
+      setMessage(result.message);
+      return;
     }
+    setStatus("added");
+    setTimeout(() => setStatus("idle"), 1200);
   }
 
   return (

@@ -8,6 +8,9 @@ export type ProductStatus =
 
 export type Product = {
   id: string;
+  // 真正的資料庫 UUID——id 常常是 legacy_id（非 UUID），而加入預購清單的
+  // RPC（add_to_preorder_list）嚴格要求 uuid 參數，兩者不能混用。
+  supabaseId: string;
   name_zh: string;
   name_jp?: string;
   sku?: string;
@@ -114,6 +117,7 @@ export const categories = [
 export const products: Product[] = [
   {
     id: "1",
+    supabaseId: "1",
     name_zh: "Chiikawa 小八貓吊飾",
     name_jp: "ちいかわ ハチワレ マスコット",
     sku: "4582662920262",
@@ -136,6 +140,7 @@ export const products: Product[] = [
   },
   {
     id: "2",
+    supabaseId: "2",
     name_zh: "Chiikawa 兔兔趴姿娃娃",
     name_jp: "ちいかわ うさぎ ぬいぐるみ",
     sku: "4571609391982",
@@ -159,6 +164,7 @@ export const products: Product[] = [
   },
   {
     id: "3",
+    supabaseId: "3",
     name_zh: "Sanrio 透明收納包",
     name_jp: "サンリオ クリアポーチ",
     sku: "SR-0526",
@@ -181,6 +187,7 @@ export const products: Product[] = [
   },
   {
     id: "4",
+    supabaseId: "4",
     name_zh: "Pikmin 小物零錢包",
     name_jp: "ピクミン ミニポーチ",
     sku: "PKM-1002",
@@ -204,6 +211,7 @@ export const products: Product[] = [
   },
   {
     id: "5",
+    supabaseId: "5",
     name_zh: "Pokemon A4 文件夾",
     name_jp: "ポケモン A4 クリアファイル",
     sku: "PM-7721",
@@ -225,6 +233,7 @@ export const products: Product[] = [
   },
   {
     id: "6",
+    supabaseId: "6",
     name_zh: "Disney 米奇娃娃",
     name_jp: "ディズニー ミッキー ぬいぐるみ",
     sku: "DS-9910",
@@ -246,6 +255,7 @@ export const products: Product[] = [
   },
   {
     id: "7",
+    supabaseId: "7",
     name_zh: "角落生物造型鑰匙圈",
     name_jp: "すみっコぐらし キーホルダー",
     sku: "SG-024",
@@ -268,6 +278,7 @@ export const products: Product[] = [
   },
   {
     id: "8",
+    supabaseId: "8",
     name_zh: "日本雜貨花朵陶瓷杯",
     name_jp: "花柄 セラミックカップ",
     sku: "JP-ZK-88",

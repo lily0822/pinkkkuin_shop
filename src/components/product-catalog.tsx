@@ -6,6 +6,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { ProductCard } from "@/components/product-card";
 import { ProductArt } from "@/components/product-art";
 import { useCart } from "@/components/cart-provider";
+import { useAddToPreorderList } from "@/components/use-add-to-preorder-list";
 import { formatPrice, pickDisplayVariant, Product, ProductStatus, statusLabels } from "@/lib/products";
 
 type SortMode = "newest" | "price_asc" | "price_desc" | "name_asc" | "name_desc";
@@ -337,7 +338,26 @@ export function ProductCatalog({
   const [sortMode, setSortMode] = useState<SortMode>("newest");
   const [showFilters, setShowFilters] = useState(false);
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
+  const [quickViewMessage, setQuickViewMessage] = useState("");
   const cart = useCart();
+  const { addToPreorderList } = useAddToPreorderList();
+
+  async function handleQuickViewAddToCart(product: Product) {
+    if ((product.variants || []).length > 1) {
+      window.location.href = `/products/${product.id}`;
+      return;
+    }
+    if (product.productType === "preorder") {
+      const result = await addToPreorderList({
+        productId: product.supabaseId,
+        variantId: product.variants?.[0]?.id || null,
+        quantity: 1,
+      });
+      setQuickViewMessage(result.ok ? "" : result.message);
+      return;
+    }
+    cart.addProduct(product, product.variants?.[0] || null);
+  }
 
   const scopedProducts = useMemo(() => {
     return products.filter((product) => product.status !== "hidden");
@@ -589,14 +609,12 @@ export function ProductCatalog({
         {quickViewProduct ? (
           <QuickViewModal
             product={quickViewProduct}
-            onClose={() => setQuickViewProduct(null)}
-            onAddToCart={() => {
-              if ((quickViewProduct.variants || []).length > 1) {
-                window.location.href = `/products/${quickViewProduct.id}`;
-                return;
-              }
-              cart.addProduct(quickViewProduct, quickViewProduct.variants?.[0] || null);
+            message={quickViewMessage}
+            onClose={() => {
+              setQuickViewProduct(null);
+              setQuickViewMessage("");
             }}
+            onAddToCart={() => handleQuickViewAddToCart(quickViewProduct)}
           />
         ) : null}
       </>
@@ -720,26 +738,36 @@ export function ProductCatalog({
       {quickViewProduct ? (
         <QuickViewModal
           product={quickViewProduct}
-          onClose={() => setQuickViewProduct(null)}
-          onAddToCart={() => {
-            if ((quickViewProduct.variants || []).length > 1) {
-              window.location.href = `/products/${quickViewProduct.id}`;
-              return;
-            }
-            cart.addProduct(quickViewProduct, quickViewProduct.variants?.[0] || null);
+          message={quickViewMessage}
+          onClose={() => {
+            setQuickViewProduct(null);
+            setQuickViewMessage("");
           }}
+          onAddToCart={() => handleQuickViewAddToCart(quickViewProduct)}
         />
       ) : null}
     </>
   );
 }
 
-function QuickViewModal({ product, onClose, onAddToCart }: { product: Product; onClose: () => void; onAddToCart: () => void }) {
+function QuickViewModal({
+  product,
+  message,
+  onClose,
+  onAddToCart,
+}: {
+  product: Product;
+  message?: string;
+  onClose: () => void;
+  onAddToCart: () => void;
+}) {
+  const isPreorder = product.productType === "preorder";
   const hasMultipleVariants = (product.variants || []).length > 1;
   const displayVariant = hasMultipleVariants ? pickDisplayVariant(product.variants) : product.variants?.[0] || null;
   const displayPrice = displayVariant?.price ?? product.price;
   const displayOriginalPrice = displayVariant ? displayVariant.originalPrice : product.original_price;
   const hasSalePrice = typeof displayOriginalPrice === "number" && displayOriginalPrice > displayPrice;
+  const cartLabel = hasMultipleVariants ? "選擇規格" : isPreorder ? "加入預購清單" : "加入購物車";
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <section className="grid w-full max-w-3xl gap-5 rounded-3xl border-4 border-penguin-pink bg-white p-4 shadow-2xl md:grid-cols-[0.9fr_1fr]" onClick={(event) => event.stopPropagation()}>
@@ -767,10 +795,14 @@ function QuickViewModal({ product, onClose, onAddToCart }: { product: Product; o
           <div className="mt-5 grid gap-2 sm:grid-cols-2">
             <button
               type="button"
-              className="rounded-2xl bg-penguin-pink-dark px-4 py-3 text-sm font-black text-white"
+              className={
+                isPreorder
+                  ? "rounded-2xl border-2 border-[#e8cc5c] bg-[#fff9df] px-4 py-3 text-sm font-black text-penguin-gray"
+                  : "rounded-2xl bg-penguin-pink-dark px-4 py-3 text-sm font-black text-white"
+              }
               onClick={onAddToCart}
             >
-              加入購物車
+              {cartLabel}
             </button>
             <Link
               href={`/products/${product.id}`}
@@ -779,6 +811,7 @@ function QuickViewModal({ product, onClose, onAddToCart }: { product: Product; o
               查看商品詳細
             </Link>
           </div>
+          {message ? <p className="mt-2 text-center text-xs font-black text-penguin-pink-dark">{message}</p> : null}
         </div>
       </section>
     </div>

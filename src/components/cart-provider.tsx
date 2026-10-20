@@ -83,9 +83,13 @@ function productTypeLabel(type: CartProductTypeKey, fallback: string) {
   return fallback || "商品";
 }
 
-function normalizeSavedItems(value: unknown): CartItem[] {
-  if (!Array.isArray(value)) return [];
-  return value
+// 回傳同時帶著「有沒有濾掉舊的預購項目」，讓呼叫端（mount 時的載入
+// effect）決定要不要顯示一次性的搬移提示——購物車本來就可能存著改版前
+// 加進去的預購項目，正規化階段直接濾掉，不要讓它們留在購物車裡。
+function normalizeSavedItems(value: unknown): { items: CartItem[]; hadPreorder: boolean } {
+  if (!Array.isArray(value)) return { items: [], hadPreorder: false };
+  let hadPreorder = false;
+  const items = value
     .map((item): CartItem | null => {
       if (!item || typeof item !== "object") return null;
       const source = item as Partial<CartItem>;
@@ -97,6 +101,10 @@ function normalizeSavedItems(value: unknown): CartItem[] {
       const quantity = Math.max(1, Math.floor(Number(source.quantity || 1)));
       const maxQuantity = typeof source.maxQuantity === "number" && Number.isFinite(source.maxQuantity) ? source.maxQuantity : null;
       const productTypeKey = normalizeProductTypeKey(source.productTypeKey, source.productType || source.type);
+      if (productTypeKey === "preorder") {
+        hadPreorder = true;
+        return null;
+      }
       return {
         id: lineItemId(productId, variantId),
         productId,
@@ -113,7 +121,10 @@ function normalizeSavedItems(value: unknown): CartItem[] {
       };
     })
     .filter((item): item is CartItem => Boolean(item));
+  return { items, hadPreorder };
 }
+
+const PREORDER_MIGRATION_NOTICE_KEY = "pinkkkuin_cart_preorder_migration_notice_shown";
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
@@ -121,16 +132,42 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [activeTab, setActiveTab] = useState<DrawerTab>("cart");
   const [limitNoticeId, setLimitNoticeId] = useState<string | null>(null);
   const limitNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [preorderMigrationNotice, setPreorderMigrationNotice] = useState(false);
   const preorderList = usePreorderList();
 
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(CART_STORAGE_KEY);
-      if (saved) setItems(normalizeSavedItems(JSON.parse(saved)));
+      if (!saved) return;
+      const { items: loadedItems, hadPreorder } = normalizeSavedItems(JSON.parse(saved));
+      // 從 localStorage 讀回的購物車內容本來就要在掛載時同步進 React
+      // state（跟既有 product-gallery.tsx 的 set-state-in-effect 理由一樣：
+      // 外部系統狀態同步，不是能在 render 階段算出來的值），不是能改寫成
+      // render-time 計算的情況。
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setItems(loadedItems);
+      if (hadPreorder) {
+        let alreadyShown = false;
+        try {
+          alreadyShown = window.localStorage.getItem(PREORDER_MIGRATION_NOTICE_KEY) === "1";
+        } catch {}
+        if (!alreadyShown) {
+          setPreorderMigrationNotice(true);
+          try {
+            window.localStorage.setItem(PREORDER_MIGRATION_NOTICE_KEY, "1");
+          } catch {}
+        }
+      }
     } catch {
       setItems([]);
     }
   }, []);
+
+  useEffect(() => {
+    if (!preorderMigrationNotice) return;
+    const timeout = setTimeout(() => setPreorderMigrationNotice(false), 4000);
+    return () => clearTimeout(timeout);
+  }, [preorderMigrationNotice]);
 
   useEffect(() => {
     try {
@@ -167,6 +204,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const selectedTotal = selectedItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
 
   function addProduct(product: Product, variant: AddToCartVariant = null, quantity = 1) {
+    // 保險：預購商品一律不該進購物車（這輪改版把所有「加入」入口都改走
+    // 預購清單），這裡擋一次是防呆，避免之後又有入口漏改而漏判。
+    if (product.productType === "preorder") return false;
     const maxQuantity = variantStock(product, variant);
     if (maxQuantity !== null && maxQuantity <= 0) return false;
     const itemId = lineItemId(product.id, variant?.id || null);
@@ -325,6 +365,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   return (
     <CartContext.Provider value={value}>
       {children}
+      {preorderMigrationNotice ? (
+        <div
+          role="status"
+          className="fixed left-1/2 top-4 z-[60] -translate-x-1/2 whitespace-nowrap rounded-full border-2 border-[#e8cc5c] bg-[#fff9df] px-4 py-2 text-sm font-black text-penguin-gray shadow-lg"
+        >
+          預購商品已移到預購清單，請重新加入
+        </div>
+      ) : null}
       <div
         className={`fixed inset-0 z-50 bg-penguin-gray/25 transition-opacity ${isOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
         onClick={() => setIsOpen(false)}
