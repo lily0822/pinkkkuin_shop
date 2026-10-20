@@ -342,27 +342,35 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               type="button"
               onClick={() => setActiveTab("cart")}
               style={{ writingMode: "vertical-rl", textOrientation: "upright", letterSpacing: "0.12em" }}
-              className={`flex items-center justify-center gap-1.5 rounded-l-[14px] border-4 border-r-0 py-[0.85rem] text-sm font-black text-[#111] ${
+              className={`relative flex h-[150px] items-center justify-center rounded-l-[14px] border-4 border-r-0 text-sm font-black text-[#3a4150] ${
                 activeTab === "cart"
                   ? `w-[46px] ${drawerTheme.tabActiveBg} ${drawerTheme.tabActiveBorder}`
                   : `w-[42px] mr-1 opacity-90 bg-penguin-pink-light border-[#fbcfe0]`
               }`}
             >
               購物車
-              <span className="rounded-full bg-white px-1.5 text-xs leading-5" style={{ writingMode: "horizontal-tb" }}>{count}</span>
+              {count > 0 ? (
+                <span className="absolute -left-2 -top-2 grid h-5 min-w-5 place-items-center rounded-full bg-red-500 px-1 text-[10px] text-white" style={{ writingMode: "horizontal-tb" }}>
+                  {count}
+                </span>
+              ) : null}
             </button>
             <button
               type="button"
               onClick={() => setActiveTab("preorder")}
               style={{ writingMode: "vertical-rl", textOrientation: "upright", letterSpacing: "0.12em" }}
-              className={`flex items-center justify-center gap-1.5 rounded-l-[14px] border-4 border-r-0 py-[0.85rem] text-sm font-black text-[#111] ${
+              className={`relative flex h-[150px] items-center justify-center rounded-l-[14px] border-4 border-r-0 text-sm font-black text-[#3a4150] ${
                 activeTab === "preorder"
                   ? `w-[46px] ${drawerTheme.tabActiveBg} ${drawerTheme.tabActiveBorder}`
                   : `w-[42px] mr-1 opacity-90 bg-[#fff9df] border-[#f6e9ab]`
               }`}
             >
               預購清單
-              <span className="rounded-full bg-white px-1.5 text-xs leading-5" style={{ writingMode: "horizontal-tb" }}>{preorderList.count}</span>
+              {preorderList.count > 0 ? (
+                <span className="absolute -left-2 -top-2 grid h-5 min-w-5 place-items-center rounded-full bg-red-500 px-1 text-[10px] text-white" style={{ writingMode: "horizontal-tb" }}>
+                  {preorderList.count}
+                </span>
+              ) : null}
             </button>
           </div>
 
@@ -406,7 +414,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
           {activeTab === "preorder" ? (
             <>
-              <div className="flex-1 space-y-4 overflow-y-auto p-4">
+              <div className="flex-1 overflow-y-auto p-4">
                 {preorderList.accessState === "loading" ? (
                   <p className="py-20 text-center text-sm font-bold text-gray-400">載入中...</p>
                 ) : preorderList.accessState === "unauthenticated" ? (
@@ -431,9 +439,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                     </button>
                   </div>
                 ) : preorderList.items.length ? (
-                  preorderList.items.map((item) => (
-                    <div key={item.id} className="rounded-2xl border-2 border-penguin-peach bg-penguin-peach-light p-3 transition">
-                      <div className="flex gap-3">
+                  preorderList.items.map((item, index) => (
+                    <div key={item.id} className={`flex gap-3 py-3 ${index < preorderList.items.length - 1 ? "border-b border-[#f6e9ab]" : ""}`}>
                         <div className="grid h-[92px] w-[92px] shrink-0 place-items-center overflow-hidden rounded-2xl bg-white text-2xl" style={{ width: 92, height: 92 }}>
                           {item.image ? (
                             // eslint-disable-next-line @next/next/no-img-element
@@ -483,7 +490,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                             </div>
                           </div>
                         </div>
-                      </div>
                     </div>
                   ))
                 ) : (
@@ -516,6 +522,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                         <span>預購總額</span>
                         <span className="text-lg text-[#111]">{formatPrice(preorderTotal)}</span>
                       </div>
+                      <div className="mb-3 text-xs font-bold text-gray-500">
+                        總共 {preorderList.count} 件商品
+                      </div>
                       {preorderList.submitError ? <p className="mb-3 text-xs font-bold text-red-500">{preorderList.submitError}</p> : null}
                       <button
                         type="button"
@@ -532,10 +541,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             </>
           ) : (
           <>
-          <div className="flex-1 space-y-4 overflow-y-auto p-4">
-            {items.length ? items.map((item) => (
-              <div key={item.id} className="rounded-2xl border-2 border-penguin-peach bg-penguin-peach-light p-3 transition">
-                <div className="flex gap-3">
+          <div className="flex-1 overflow-y-auto p-4">
+            {items.length ? items.map((item, index) => (
+              <div key={item.id} className={`flex gap-3 py-3 ${index < items.length - 1 ? "border-b border-[#fbcfe0]" : ""}`}>
                   <div className="grid h-[92px] w-[92px] shrink-0 place-items-center overflow-hidden rounded-2xl bg-white text-2xl" style={{ width: 92, height: 92 }}>
                     {item.image ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -584,7 +592,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                       </div>
                     </div>
                   </div>
-                </div>
               </div>
             )) : (
               <div className="space-y-2 py-20 text-center text-gray-400">
@@ -598,18 +605,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           <div className="border-t bg-white p-4">
             <div className="mb-3 flex items-center justify-between text-sm font-black text-[#111]">
               <span>本次小計</span>
-              <span className="text-lg text-[#111]">{formatPrice(selectedTotal)}</span>
+              <span className="text-lg text-[#111]">{formatPrice(total)}</span>
             </div>
             <div className="mb-3 text-xs font-bold text-gray-500">
-              已選 {selectedQuantity} 件商品
-              {!selectedLineCount ? <span className="ml-2 text-red-500">請至少選擇一件要結帳的商品</span> : null}
+              總共 {count} 件商品
             </div>
             <div className="grid gap-2">
               <Link
                 href="/cart"
                 onClick={() => setIsOpen(false)}
                 className={`block rounded-2xl border-2 py-3 text-center text-sm font-black text-[#111] shadow-md transition ${
-                  selectedLineCount
+                  items.length
                     ? `${drawerTheme.ctaBg} ${drawerTheme.ctaBorder} hover:bg-penguin-pink`
                     : "pointer-events-none border-gray-200 bg-gray-200 text-gray-400"
                 }`}

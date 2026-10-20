@@ -89,29 +89,60 @@ export function PreorderListProvider({ children }: { children: React.ReactNode }
     setRefreshToken((value) => value + 1);
   }
 
+  // 失敗時只還原「這一筆」被動到的變動，不要整份覆蓋成呼叫當下捕捉到
+  // 的舊陣列快照——如果使用者連續快速操作兩筆不同項目，第一筆的
+  // closure 快照在第二筆的改動發生之後就已經過期，拿它 revert 等於
+  // 把第二筆也一起復原掉。改成都用 functional setItems，只處理 id
+  // 對得上的那一筆，其餘項目不管當下長什麼樣都不動。
   function updateQuantity(id: string, quantity: number) {
     if (quantity < 1) return;
-    const previous = items;
-    setItems((current) => current.map((item) => (item.id === id ? { ...item, quantity } : item)));
+    let previousQuantity: number | undefined;
+    setItems((current) => current.map((item) => {
+      if (item.id !== id) return item;
+      previousQuantity = item.quantity;
+      return { ...item, quantity };
+    }));
+
+    function revert() {
+      if (previousQuantity === undefined) return;
+      setItems((current) => current.map((item) => (item.id === id ? { ...item, quantity: previousQuantity! } : item)));
+    }
+
     fetch(`/api/member/preorder-list/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ quantity }),
     })
       .then((response) => {
-        if (!response.ok) setItems(previous);
+        if (!response.ok) revert();
       })
-      .catch(() => setItems(previous));
+      .catch(revert);
   }
 
   function removeItem(id: string) {
-    const previous = items;
-    setItems((current) => current.filter((item) => item.id !== id));
+    let removedItem: PreorderListItem | undefined;
+    let removedIndex = -1;
+    setItems((current) => {
+      removedIndex = current.findIndex((item) => item.id === id);
+      removedItem = current[removedIndex];
+      return current.filter((item) => item.id !== id);
+    });
+
+    function restore() {
+      if (!removedItem) return;
+      setItems((current) => {
+        if (current.some((item) => item.id === id)) return current;
+        const next = current.slice();
+        next.splice(Math.min(removedIndex, next.length), 0, removedItem!);
+        return next;
+      });
+    }
+
     fetch(`/api/member/preorder-list/${id}`, { method: "DELETE" })
       .then((response) => {
-        if (!response.ok) setItems(previous);
+        if (!response.ok) restore();
       })
-      .catch(() => setItems(previous));
+      .catch(restore);
   }
 
   async function submit() {
