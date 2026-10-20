@@ -199,7 +199,7 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
                     登入
                   </span>
                 </Link>
-                <Link href="/signup" className={`hidden md:flex ${headerActionButtonBase} border-penguin-pink-dark bg-penguin-pink-light text-penguin-pink-dark hover:bg-penguin-pink`}>
+                <Link href="/signup" className={`hidden md:flex ${headerActionButtonBase} border-penguin-pink-dark bg-penguin-pink-light text-penguin-gray hover:bg-penguin-pink`}>
                   <span className={headerActionTextClass} style={headerActionTextStyle}>
                     註冊
                   </span>
