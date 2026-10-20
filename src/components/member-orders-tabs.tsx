@@ -52,11 +52,24 @@ export function MemberOrdersTabs({ initialOrders }: { initialOrders: MemberOrder
 
       <div className="mt-4">
         {tab === "stock" ? (
-          <MemberOrderList orders={stockOrders} theme={{ badgeBg: tabThemes.stock.badgeBg }} emptyText="目前還沒有現貨訂單。" />
+          // key 是關鍵：兩個分頁在這個三元運算式裡渲染的是同一個元件
+          // （MemberOrderList），位置也相同，沒有 key 的話 React 會直接
+          // 重用上一個分頁的實例，該元件內部 useState(initialOrders) 只
+          // 在第一次掛載時複製一次 orders，之後切分頁只是換 props、不會
+          // 觸發重新初始化，畫面就會卡在舊分頁的訂單。給不同的 key 強制
+          // React 在切分頁時整個卸載舊實例、重新掛載新實例，orders/
+          // openIds/loadingId/error 這些內部 state 全部跟著重置，不會
+          // 殘留到另一個分頁。
+          <MemberOrderList key="stock" orders={stockOrders} theme={{ badgeBg: tabThemes.stock.badgeBg }} emptyText="目前還沒有現貨訂單。" />
         ) : tab === "preorder" ? (
-          <MemberOrderList orders={preorderOrders} theme={{ badgeBg: tabThemes.preorder.badgeBg }} emptyText="目前還沒有預購訂單。" />
+          <MemberOrderList key="preorder" orders={preorderOrders} theme={{ badgeBg: tabThemes.preorder.badgeBg }} emptyText="目前還沒有預購訂單。" />
         ) : (
-          <MemberLivestreamOrders theme={{ badgeBg: tabThemes.live.badgeBg }} />
+          // 連線下單用的是完全不同的元件類型（不是 MemberOrderList），
+          // 跟現貨/預購分頁切換時本來就會因為元件類型不同被 React 整個
+          // 卸載重新掛載，不會有上面那個「同元件被重用」的問題——這裡
+          // 補上 key 是為了保持三個分頁寫法一致、防禦未來如果改成共用
+          // 元件時重蹈覆轍，不是因為現在真的有這個 bug。
+          <MemberLivestreamOrders key="live" theme={{ badgeBg: tabThemes.live.badgeBg }} />
         )}
       </div>
     </section>
