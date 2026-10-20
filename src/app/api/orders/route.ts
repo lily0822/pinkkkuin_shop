@@ -140,7 +140,13 @@ function normalizeOrders(result: unknown) {
 }
 
 function isUuid(value: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(value);
+  // 原本缺一個 dash（第四段跟第五段黏成 1+12=13 字元），任何真實 UUID
+  // 都比對不過——這支函式判斷結果會讓 fetchProductTypes() 把所有真實
+  // UUID 商品 id 都錯誤歸類成「legacy id」去查 legacy_id 欄位，沒有
+  // legacy_id 的商品（沒設過 legacy_id 的）會查不到、觸發「商品資料
+  // 驗證失敗」擋掉面交結帳，是跟會員訂單明細同一個根因的另一個真實
+  // 受影響處，一起修正。
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function postgrestInList(values: string[]) {

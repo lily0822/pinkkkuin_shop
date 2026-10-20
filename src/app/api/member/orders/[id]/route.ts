@@ -9,7 +9,11 @@ type RouteContext = {
 };
 
 function isUuid(value: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(value);
+  // 原本缺一個 dash（第四段跟第五段黏在一起變成 1+12=13 字元），導致
+  // 任何真實 UUID 都比對不過，orderId 永遠落到 order_no 分支去查、
+  // 當然查不到——這是「展開明細顯示找不到訂單」這個 bug 的真正根因，
+  // 不是權限/RLS 問題（已經用真實會員 session 直接打這支 API 重現過）。
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function mapOrderDetail(row: Record<string, unknown>) {

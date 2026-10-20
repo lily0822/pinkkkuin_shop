@@ -33,13 +33,11 @@ function money(value: number | null) {
   return `NT$${Math.round(value).toLocaleString("zh-TW")}`;
 }
 
-function badgeClass(status: string) {
-  if (status === "bought" || status === "paid") return "bg-emerald-50 text-emerald-700";
-  if (status === "confirming") return "bg-sky-50 text-sky-700";
-  return "bg-penguin-peach-light text-penguin-peach-dark";
-}
+export type LivestreamOrdersTheme = {
+  badgeBg: string;
+};
 
-export function MemberLivestreamOrders() {
+export function MemberLivestreamOrders({ theme }: { theme: LivestreamOrdersTheme }) {
   const [loading, setLoading] = useState(true);
   const [linked, setLinked] = useState(true);
   const [orders, setOrders] = useState<LivestreamOrder[]>([]);
@@ -143,7 +141,7 @@ export function MemberLivestreamOrders() {
                     {cancellingId === order.id ? "取消中..." : "取消這項"}
                   </button>
                 ) : (
-                  <span className={`flex-shrink-0 rounded-full px-3 py-1.5 text-xs font-black ${badgeClass(order.purchaseStatus)}`}>
+                  <span className={`flex-shrink-0 rounded-full px-3 py-1.5 text-xs font-black text-[#111] ${theme.badgeBg}`}>
                     {purchaseStatusLabel[order.purchaseStatus] || order.purchaseStatus}
                   </span>
                 )}

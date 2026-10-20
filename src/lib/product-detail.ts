@@ -203,7 +203,12 @@ function mapSupabaseProduct(row: SupabaseProductRow, galleryImages: ProductGalle
 }
 
 function isUuid(value: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(value);
+  // 原本缺一個 dash（第四段跟第五段黏成 1+12=13 字元），任何真實 UUID
+  // 都比對不過——這支函式判斷結果會讓 getSupabaseProductById() 對沒有
+  // legacy_id 的商品整個跳過 id=eq.<uuid> 查詢、只查 legacy_id（查不到
+  // 會回 null），商品詳情頁會變成找不到商品。跟會員訂單明細同一個根因
+  // 的另一個真實受影響處，一起修正。
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 // 三層 select，從新到舊：新欄位的 migration 還沒套用到環境時，整包查詢

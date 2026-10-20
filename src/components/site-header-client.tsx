@@ -211,7 +211,7 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
                 刪除，確認過這是唯一連去那個頁面的入口，拿掉後頁面仍可透過
                 直接網址訪問。這顆按鈕現在開共用抽屜（預購清單分頁），不再
                 導去 /preorder-list 頁面——那個頁面已經整個移除。 */}
-            <button type="button" onClick={cart.openPreorderList} aria-label="預購清單" className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-yellow-400 bg-penguin-yellow text-penguin-gray md:hidden">
+            <button type="button" onClick={cart.openPreorderList} aria-label="預購清單" className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-[#f0dc8f] bg-[#fff9df] text-[#111] md:hidden">
               <ClipboardList size={15} strokeWidth={2} />
               {preorderList.count > 0 ? (
                 <span className="absolute -right-2 -top-2 grid h-5 min-w-5 place-items-center rounded-full bg-red-500 px-1 text-[10px] text-white">
@@ -219,7 +219,7 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
                 </span>
               ) : null}
             </button>
-            <button type="button" onClick={cart.openPreorderList} className={`hidden md:flex ${headerActionButtonBase} border-yellow-400 bg-penguin-yellow text-penguin-gray hover:bg-yellow-200`}>
+            <button type="button" onClick={cart.openPreorderList} className={`hidden md:flex ${headerActionButtonBase} border-[#f0dc8f] bg-[#fff9df] text-[#111] hover:bg-[#fff2c4]`}>
               <ClipboardList size={15} strokeWidth={2} />
               <span className={headerActionTextClass} style={headerActionTextStyle}>
                 預購清單

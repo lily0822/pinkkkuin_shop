@@ -371,21 +371,21 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           <div className="flex border-b border-gray-200 md:hidden">
             <button
               type="button"
-              onClick={() => setActiveTab("preorder")}
-              className={`flex-1 py-3 text-center text-sm font-black text-[#111] transition ${
-                activeTab === "preorder" ? `border-b-[3px] ${drawerTheme.border} ${drawerTheme.headerBg}` : "bg-white"
-              }`}
-            >
-              預購清單 ({preorderList.count})
-            </button>
-            <button
-              type="button"
               onClick={() => setActiveTab("cart")}
               className={`flex-1 py-3 text-center text-sm font-black text-[#111] transition ${
                 activeTab === "cart" ? "border-b-[3px] border-penguin-pink-dark bg-penguin-pink-light" : "bg-white"
               }`}
             >
               購物車 ({count})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("preorder")}
+              className={`flex-1 py-3 text-center text-sm font-black text-[#111] transition ${
+                activeTab === "preorder" ? `border-b-[3px] ${drawerTheme.border} ${drawerTheme.headerBg}` : "bg-white"
+              }`}
+            >
+              預購清單 ({preorderList.count})
             </button>
           </div>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { ChevronDown, PackageSearch } from "lucide-react";
 
 export type MemberOrderItem = {
@@ -28,11 +28,18 @@ export type MemberOrder = {
   items?: MemberOrderItem[];
 };
 
-type MemberOrderListProps = {
-  initialOrders: MemberOrder[];
+// 這個分頁的底色——狀態膠囊跟類型徽章統一用這個底色＋黑字，不是原本
+// 依狀態語意上色（成功綠/處理中藍/取消紅）那套，三個分頁（現貨/預購/
+// 連線下單）靠底色本身分辨，不是靠徽章顏色。
+export type OrderListTheme = {
+  badgeBg: string;
 };
 
-type TypeFilter = "all" | "stock" | "preorder";
+type MemberOrderListProps = {
+  orders: MemberOrder[];
+  theme: OrderListTheme;
+  emptyText: string;
+};
 
 const orderTypeLabel: Record<string, string> = {
   stock: "現貨",
@@ -80,43 +87,19 @@ function dateText(value: string) {
   }).format(date);
 }
 
-function badgeClass(kind: "type" | "status" | "payment" | "shipping", value: string) {
-  if (kind === "type") {
-    return value === "preorder"
-      ? "bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-100"
-      : "bg-emerald-50 text-emerald-700 ring-emerald-100";
-  }
-  if (value === "cancelled" || value === "failed") return "bg-rose-50 text-rose-700 ring-rose-100";
-  if (value === "paid" || value === "completed" || value === "shipped") return "bg-emerald-50 text-emerald-700 ring-emerald-100";
-  if (value === "processing" || value === "preparing") return "bg-sky-50 text-sky-700 ring-sky-100";
-  return "bg-penguin-pink-light text-penguin-pink-dark ring-penguin-peach";
-}
-
-function StatusBadge({ kind, value, label }: { kind: "type" | "status" | "payment" | "shipping"; value: string; label: string }) {
+function StatusBadge({ theme, label }: { theme: OrderListTheme; label: string }) {
   return (
-    <span className={`inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-black ring-1 ${badgeClass(kind, value)}`}>
+    <span className={`inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-black text-[#111] ${theme.badgeBg}`}>
       {label || "-"}
     </span>
   );
 }
 
-const typeFilters: { value: TypeFilter; label: string }[] = [
-  { value: "all", label: "全部" },
-  { value: "stock", label: "現貨" },
-  { value: "preorder", label: "預購" },
-];
-
-export function MemberOrderList({ initialOrders }: MemberOrderListProps) {
+export function MemberOrderList({ orders: initialOrders, theme, emptyText }: MemberOrderListProps) {
   const [orders, setOrders] = useState<MemberOrder[]>(initialOrders);
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const [loadingId, setLoadingId] = useState("");
   const [error, setError] = useState("");
-  const [filter, setFilter] = useState<TypeFilter>("all");
-
-  const filteredOrders = useMemo(
-    () => (filter === "all" ? orders : orders.filter((order) => order.productType === filter)),
-    [orders, filter],
-  );
 
   async function toggleOrder(order: MemberOrder) {
     setError("");
@@ -149,28 +132,11 @@ export function MemberOrderList({ initialOrders }: MemberOrderListProps) {
 
   return (
     <div>
-      <div className="flex flex-wrap gap-2">
-        {typeFilters.map((item) => (
-          <button
-            key={item.value}
-            type="button"
-            onClick={() => setFilter(item.value)}
-            className={`rounded-full border-2 px-4 py-1.5 text-sm font-black transition ${
-              filter === item.value
-                ? "border-penguin-pink-dark bg-penguin-pink-dark text-white"
-                : "border-penguin-peach bg-white text-penguin-gray"
-            }`}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
+      {error ? <p className="mb-4 rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-600">{error}</p> : null}
 
-      {error ? <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-600">{error}</p> : null}
-
-      <div className="mt-4">
-        {filteredOrders.length ? (
-          filteredOrders.map((order) => {
+      <div>
+        {orders.length ? (
+          orders.map((order) => {
             const isOpen = openIds.has(order.id);
             const items = order.items || [];
             return (
@@ -183,14 +149,14 @@ export function MemberOrderList({ initialOrders }: MemberOrderListProps) {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-black text-penguin-gray">{order.orderNo}</p>
-                      <StatusBadge kind="type" value={order.productType} label={orderTypeLabel[order.productType] || order.productType} />
+                      <StatusBadge theme={theme} label={orderTypeLabel[order.productType] || order.productType} />
                     </div>
                     <p className="mt-1 text-xs font-bold text-gray-500">{dateText(order.createdAt)}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 text-xs font-black text-penguin-gray">
-                    <StatusBadge kind="status" value={order.status} label={orderStatusLabel[order.status] || order.status} />
-                    <StatusBadge kind="payment" value={order.paymentStatus} label={paymentStatusLabel[order.paymentStatus] || order.paymentStatus} />
-                    <StatusBadge kind="shipping" value={order.shippingStatus} label={shippingStatusLabel[order.shippingStatus] || order.shippingStatus} />
+                    <StatusBadge theme={theme} label={orderStatusLabel[order.status] || order.status} />
+                    <StatusBadge theme={theme} label={paymentStatusLabel[order.paymentStatus] || order.paymentStatus} />
+                    <StatusBadge theme={theme} label={shippingStatusLabel[order.shippingStatus] || order.shippingStatus} />
                     <span className="text-sm font-black text-penguin-pink-dark">{money(order.total)}</span>
                     {loadingId === order.id ? (
                       <span className="text-xs text-gray-400">讀取中</span>
@@ -243,7 +209,7 @@ export function MemberOrderList({ initialOrders }: MemberOrderListProps) {
         ) : (
           <div className="rounded-2xl bg-penguin-pink-light/50 px-4 py-8 text-center">
             <PackageSearch className="mx-auto text-penguin-pink-dark" size={30} />
-            <p className="mt-3 text-sm font-bold text-gray-500">目前還沒有符合條件的訂單。</p>
+            <p className="mt-3 text-sm font-bold text-gray-500">{emptyText}</p>
           </div>
         )}
       </div>
