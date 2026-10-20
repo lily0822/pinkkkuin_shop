@@ -731,8 +731,8 @@ First step of a multi-phase plan to make the backend feel more like a standalone
 
 **基準（改動前，iad1）**：首頁 avg 1283ms/med 1311ms；`/category/in_stock` avg 1507ms/med 1484ms；`/category/preorder` avg 1161ms/med 1246ms；`/guide` avg 872ms/med 754ms；未登入 API avg 545ms/med 525ms。
 
-### 一、函式區域測試（結果待使用者決定，沒有套用）
-`vercel.json` 設 `regions`，用 `vercel deploy`（不是 `--prod`，單純 preview，沒有 alias 到 staging 網址）分別測 `hnd1`/`sin1`/`icn1`，測完都把 `vercel.json`還原成不存在（這輪結束時 repo 裡沒有這個檔案，region 決定權在使用者）：
+### 一、函式區域（已決定並套用：hnd1）
+`vercel.json` 設 `regions`，用 `vercel deploy`（不是 `--prod`，單純 preview，沒有 alias 到 staging 網址）分別測 `hnd1`/`sin1`/`icn1`：
 
 | 區域 | 首頁 avg/med | in_stock avg/med | preorder avg/med | guide avg/med | API avg/med |
 |---|---|---|---|---|---|
@@ -741,7 +741,7 @@ First step of a multi-phase plan to make the backend feel more like a standalone
 | sin1（新加坡，Staging 資料庫所在地） | 576/304ms | 355/291ms | 217/205ms | 261/226ms | 241/150ms |
 | icn1（首爾，參考） | 710/436ms | 480/499ms | 541/529ms | 276/250ms | 239/185ms |
 
-**建議：`hnd1`**。三個區域都遠勝現狀的 iad1（通常快 2-4 倍），`sin1` 單看 Staging 自己的資料庫位置會更快一點，但 `vercel.json` 的 `regions` 是整個專案共用（Staging/Production 同一份設定）——Production 資料庫在東京，`hnd1` 是兩個環境都能接受、對 Production 更有利的折衷；Staging 用 `hnd1` 連新加坡的資料庫，數字依然遠遠優於現在的 iad1（psq: 633ms vs 現在的 1283ms），不會因為選了東京而讓 Staging 變慢到不能接受。這三個 preview 都還留著（沒有特別清除，Vercel preview 不會持續佔資源/不會被外部存取到正式網址），網址記錄在這輪對話記錄裡。**這一項沒有套用到任何 `vercel.json`，由使用者決定要不要套用，套用的話請直接在 Vercel 專案設定或 commit 一份 `vercel.json`。**
+**使用者確認套用 `hnd1`**。三個區域都遠勝現狀的 iad1（通常快 2-4 倍），`sin1` 單看 Staging 自己的資料庫位置會更快一點，但 `vercel.json` 的 `regions` 是整個專案共用（Staging/Production 同一份設定）——Production 資料庫在東京，`hnd1` 是兩個環境都能接受、對 Production 更有利的折衷；Staging 用 `hnd1` 連新加坡的資料庫，數字依然遠遠優於現在的 iad1（633ms vs 現在的 1283ms），不會因為選了東京而讓 Staging 變慢到不能接受。這三個 preview 都還留著（沒有特別清除，Vercel preview 不會持續佔資源/不會被外部存取到正式網址）。**函式區域固定為 `hnd1`，理由：Production 資料庫在東京；Staging 資料庫在新加坡，用 `hnd1` 仍明顯優於原本的 `iad1`。** 根目錄 `vercel.json`（`{"regions":["hnd1"]}`）已經 commit 並部署到 Staging——部署後的 `X-Vercel-Id` 驗證結果、套用後的 TTFB 前後對照，見下方 Verification log 這一輪的條目。沒有碰 Production——Production 要不要跟著套用同一份 `vercel.json` 是之後單獨的部署決定，這輪完全沒有執行任何 Production 部署。
 
 ### 二、同一個請求內的重複查詢去重（已套用並驗證）
 `src/lib/supabase/server.ts` 新增 `getCachedAuthUser()`（包住 `supabase.auth.getUser()`，連 `createSupabaseServerClient()` 本身也用 React `cache()` 包起來），取代原本 `layout.tsx`/`site-header.tsx`/會員 layout/會員三個頁面（`orders`/`profile`/`account`）/`getPreorderAccess()` 各自獨立呼叫 `supabase.auth.getUser()` 的寫法。`getBrandSettings()` 也補上跟既有 `getAppearanceSettings()` 一樣的 React `cache()`。**用真實 production build 加 log 探針實測**：一個會員頁面的請求（原本理論上會重複呼叫 3 次 `auth.getUser()`：header + 會員 layout + 頁面本身）現在確認只剩 1 次；`appearance`/`brand` settings 同一個請求（首頁：layout metadata + header + footer + 頁面本身）原本理論上呼叫 `appearance` 4 次、`brand` 1 次，現在都確認只剩 1 次。
