@@ -43,20 +43,40 @@ type FetchOutcome =
   | { state: "ok"; items: PreorderListItem[] }
   | { state: "error"; items: PreorderListItem[] };
 
+// 伺服器端（layout.tsx 用 getPreorderAccess()）已經知道這個訪客有沒有
+// 登入/有沒有綁定 LINE，當作初始 props 傳下來——沒資格的訪客（未登入
+// 或沒綁 LINE）不需要真的打一次 GET /api/member/preorder-list 才知道
+// 結果是 401/linked:false，省掉這次請求（「不必要的請求」那一輪）。
+// 有資格的訪客行為完全不變，一樣掛載時 fetch 一次拿真實清單。
+export type InitialPreorderAccess = {
+  isLoggedIn: boolean;
+  hasAccess: boolean;
+};
+
+function initialAccessState(initialAccess: InitialPreorderAccess): PreorderAccessState {
+  if (initialAccess.hasAccess) return "loading";
+  return initialAccess.isLoggedIn ? "not_linked" : "unauthenticated";
+}
+
 // 這個 provider 掛在 layout 最上層、整個 session 只會建立一次（不是每個
 // 頁面各自掛一份），所以清單資料是真正共用的 React state——在抽屜裡
 // 加減數量/刪除/送出，或是在預購商品頁按「加入」後呼叫 refresh()，
 // 標頭徽章跟抽屜看到的是同一份 state，會立刻一起更新，不需要額外的
 // polling 或依賴頁面切換（pathname）才重新抓一次。
-export function PreorderListProvider({ children }: { children: React.ReactNode }) {
+export function PreorderListProvider({ children, initialAccess }: { children: React.ReactNode; initialAccess: InitialPreorderAccess }) {
   const [items, setItems] = useState<PreorderListItem[]>([]);
-  const [accessState, setAccessState] = useState<PreorderAccessState>("loading");
+  const [accessState, setAccessState] = useState<PreorderAccessState>(() => initialAccessState(initialAccess));
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [submitResult, setSubmitResult] = useState<SubmitResult>(null);
   const [refreshToken, setRefreshToken] = useState(0);
 
   useEffect(() => {
+    // 伺服器端已經確認過這個訪客沒有資格（沒登入或沒綁 LINE），不用
+    // 白跑一趟請求去問一個已經知道答案的問題——accessState 已經在
+    // useState 初始值設好對應的提示狀態了。
+    if (!initialAccess.hasAccess) return;
+
     let cancelled = false;
 
     fetch("/api/member/preorder-list")
@@ -79,7 +99,7 @@ export function PreorderListProvider({ children }: { children: React.ReactNode }
     return () => {
       cancelled = true;
     };
-  }, [refreshToken]);
+  }, [refreshToken, initialAccess.hasAccess]);
 
   function refresh() {
     // 清掉舊的送出結果——否則外部（例如預購商品頁按「加入」）觸發的

@@ -1,6 +1,7 @@
 import "server-only";
 
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { cache } from "react";
+import { getCachedAuthUser } from "@/lib/supabase/server";
 import { isMemberDisabled } from "@/lib/member/status";
 
 export type PreorderAccess = {
@@ -20,9 +21,11 @@ export type PreorderAccess = {
 // 放進任何會傳給 client component 的 props——伺服器端算完就丟掉的
 // 資料不會被序列化進 RSC payload，但只要傳進一個 client component 的
 // props，就已經送到瀏覽器了，之後再怎麼用前端判斷隱藏都沒用。
-export async function getPreorderAccess(): Promise<PreorderAccess> {
-  const supabase = await createSupabaseServerClient();
-  const { data: userData, error: userError } = await supabase.auth.getUser();
+// cache() 包起來——這支函式現在同時被 layout.tsx（給 PreorderListProvider
+// 當初始資格 props，見「不必要的請求」那一輪）跟首頁/分類頁/商品詳情頁
+// 各自呼叫，同一個請求內不應該真的查兩次 member_line_accounts。
+export const getPreorderAccess = cache(async function getPreorderAccess(): Promise<PreorderAccess> {
+  const { supabase, data: userData, error: userError } = await getCachedAuthUser();
   const user = userData?.user;
   if (userError || !user) return { hasAccess: false, isLoggedIn: false };
 
@@ -30,4 +33,4 @@ export async function getPreorderAccess(): Promise<PreorderAccess> {
 
   const { data } = await supabase.from("member_line_accounts").select("user_id").eq("user_id", user.id).maybeSingle();
   return { hasAccess: Boolean(data?.user_id), isLoggedIn: true };
-}
+});

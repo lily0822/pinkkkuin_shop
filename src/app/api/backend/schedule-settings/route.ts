@@ -1,3 +1,4 @@
+import { revalidateTag } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
 import {
   backendAuthJsonError,
@@ -8,6 +9,15 @@ import {
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
 import { listBackendScheduleSettings, saveBackendScheduleSetting } from "@/lib/backend/schedule-settings-sync";
+
+// 這支路由是品牌/網站外觀設定共用的通用 type-as-key 儲存點（見下方
+// POST），前台的 getAppearanceSettings()/getBrandSettings() 現在各自
+// 疊了一層 45 秒的 unstable_cache——存檔成功後要手動 revalidateTag，
+// 不然店主要等快取自然過期（最多 45 秒）才會看到前台更新。這兩組
+// type 清單刻意跟 appearance-settings.ts/brand-settings.ts 實際查詢
+// 的 type 清單保持一致。
+const APPEARANCE_SETTINGS_TYPES = new Set(["site-announcements", "site-banners", "homepage-sections", "site-navigation", "site-info"]);
+const BRAND_SETTINGS_TYPES = new Set(["brand", "brand-logo", "brand-logo-library"]);
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -83,6 +93,11 @@ export async function POST(request: NextRequest) {
 
   try {
     const saved = await saveBackendScheduleSetting(payload.type, payload.image ?? "");
+    // 第二個參數 "max"：立刻完全失效（不是部分/排程式的 profile），這個
+    // Next.js 版本沒帶第二參數只會印 deprecation warning 不會真的失效，
+    // 詳見 next/dist/server/web/spec-extension/revalidate.js。
+    if (APPEARANCE_SETTINGS_TYPES.has(payload.type)) revalidateTag("appearance-settings", "max");
+    if (BRAND_SETTINGS_TYPES.has(payload.type)) revalidateTag("brand-settings", "max");
     return NextResponse.json({ ok: true, setting: saved });
   } catch (error) {
     console.error("saveBackendScheduleSetting failed:", error);

@@ -1,3 +1,6 @@
+import { unstable_cache } from "next/cache";
+import { cache } from "react";
+
 export type BrandSettings = {
   storeName: string;
   storeNameEn: string;
@@ -122,7 +125,12 @@ export function cloudinaryTransform(url: string, transformation: string) {
   return url.replace("/image/upload/", `/image/upload/${transformation}/`);
 }
 
-export async function getBrandSettings(): Promise<BrandSettings> {
+// 兩層快取：unstable_cache 跨請求（45 秒，或後台存檔時 revalidateTag
+// ("brand-settings") 手動失效，見 /api/backend/schedule-settings 的
+// POST），外層 React cache() 同一個請求內去重、順便防 cache stampede
+// （理由跟 appearance-settings.ts 的 getAppearanceSettings 一樣）。
+const fetchBrandSettingsCached = unstable_cache(
+  async function getBrandSettings(): Promise<BrandSettings> {
   const headers = supabaseHeaders();
   const baseUrl = process.env.SUPABASE_URL?.trim().replace(/\/+$/, "");
   if (!headers || !baseUrl) return fallbackBrandSettings();
@@ -130,10 +138,7 @@ export async function getBrandSettings(): Promise<BrandSettings> {
   try {
     const response = await fetch(
       `${baseUrl}/rest/v1/schedule_settings?select=type,image,updated_at&type=in.(brand,brand-logo,brand-logo-library)&order=updated_at.desc`,
-      {
-        headers,
-        cache: "no-store",
-      },
+      { headers },
     );
 
     if (!response.ok) {
@@ -146,4 +151,9 @@ export async function getBrandSettings(): Promise<BrandSettings> {
     console.warn("Supabase brand settings fetch failed", error);
     return fallbackBrandSettings();
   }
-}
+  },
+  ["brand-settings-v1"],
+  { revalidate: 45, tags: ["brand-settings"] },
+);
+
+export const getBrandSettings = cache(fetchBrandSettingsCached);

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { MemberOrdersTabs } from "@/components/member-orders-tabs";
 import type { MemberOrder } from "@/components/member-order-list";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getCachedAuthUser } from "@/lib/supabase/server";
 
 function mapMemberOrder(row: Record<string, unknown>): MemberOrder {
   return {
@@ -17,8 +17,7 @@ function mapMemberOrder(row: Record<string, unknown>): MemberOrder {
 }
 
 export default async function MemberOrdersPage() {
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.auth.getUser();
+  const { supabase, data, error } = await getCachedAuthUser();
   if (error || !data.user) {
     redirect(`/login?next=${encodeURIComponent("/member/orders")}`);
   }

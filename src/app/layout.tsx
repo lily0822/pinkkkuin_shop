@@ -7,6 +7,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { StagingBadge } from "@/components/staging-badge";
 import { getAppearanceSettings } from "@/lib/appearance-settings";
+import { getPreorderAccess } from "@/lib/member/preorder-access";
 
 export const dynamic = "force-dynamic";
 
@@ -44,15 +45,21 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // PreorderListProvider 要靠這個決定要不要在客戶端打請求（見「不必要的
+  // 請求」那一輪）——用的是 cache() 包過的 getPreorderAccess()，跟
+  // site-header.tsx/首頁/分類頁/商品詳情頁各自呼叫的是同一份快取結果，
+  // 不會變成這個請求多一次重複的驗證/查詢。
+  const preorderAccess = await getPreorderAccess();
+
   return (
     <html lang="zh-Hant" className={notoSansTc.variable}>
       <body className="font-sans antialiased">
-        <PreorderListProvider>
+        <PreorderListProvider initialAccess={preorderAccess}>
           <CartProvider>
             <StagingBadge />
             <SiteHeader />

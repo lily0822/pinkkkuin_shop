@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { MemberSecurityPanel } from "@/components/member-security-panel";
 import { getGoogleBindingMessage, getLineBindingMessage } from "@/lib/member/messages";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getCachedAuthUser } from "@/lib/supabase/server";
 
 export default async function MemberAccountPage({
   searchParams,
@@ -9,8 +9,7 @@ export default async function MemberAccountPage({
   searchParams?: Promise<{ line?: string; google?: string }>;
 }) {
   const params = await searchParams;
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.auth.getUser();
+  const { supabase, data, error } = await getCachedAuthUser();
   if (error || !data.user) {
     redirect(`/login?next=${encodeURIComponent("/member/account")}`);
   }

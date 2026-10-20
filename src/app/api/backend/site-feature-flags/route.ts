@@ -1,3 +1,4 @@
+import { revalidateTag } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
 import {
   backendAuthJsonError,
@@ -68,6 +69,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const saved = await saveSiteFeatureFlags(incoming);
+    revalidateTag("site-feature-flags", "max");
     return NextResponse.json({ ok: true, flags: saved });
   } catch {
     return NextResponse.json({ ok: false, error: "網站功能開關儲存失敗，請稍後再試。" }, { status: 500 });

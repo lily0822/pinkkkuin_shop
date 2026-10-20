@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { cache } from "react";
 
 export type SiteAnnouncement = {
@@ -286,7 +287,15 @@ export function isAnnouncementVisible(announcement: SiteAnnouncement) {
   return announcement.enabled && Boolean(announcement.text) && isWithinSchedule(announcement.startAt, announcement.endAt);
 }
 
-export const getAppearanceSettings = cache(async function getAppearanceSettings(): Promise<AppearanceSettings> {
+// 兩層快取疊在一起：unstable_cache 是跨請求的（45 秒，或後台存檔時
+// revalidateTag("appearance-settings") 手動失效——見 /api/backend/
+// schedule-settings 的 POST），React cache() 是同一個請求內的去重
+// （上面「同一個請求內的重複查詢去重」那一輪就做的）。兩層都留著：
+// 如果拿掉外層 cache()，同一個請求裡好幾個地方「同時」呼叫（例如
+// Promise.all）在 unstable_cache 剛好過期的那個請求會一起打進資料庫
+// 各查一次（cache stampede），不是真的沒快取、只是那一次請求會重複。
+const fetchAppearanceSettingsCached = unstable_cache(
+  async function getAppearanceSettings(): Promise<AppearanceSettings> {
   const headers = supabaseHeaders();
   const baseUrl = process.env.SUPABASE_URL?.trim().replace(/\/+$/, "");
   if (!headers || !baseUrl) {
@@ -325,4 +334,9 @@ export const getAppearanceSettings = cache(async function getAppearanceSettings(
       siteInfo: DEFAULT_SITE_INFO,
     };
   }
-});
+  },
+  ["appearance-settings-v1"],
+  { revalidate: 45, tags: ["appearance-settings"] },
+);
+
+export const getAppearanceSettings = cache(fetchAppearanceSettingsCached);

@@ -1,11 +1,10 @@
 import { redirect } from "next/navigation";
 import { MemberSidebar } from "@/components/member-sidebar";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getCachedAuthUser } from "@/lib/supabase/server";
 import type { ReactNode } from "react";
 
 export default async function MemberLayout({ children }: { children: ReactNode }) {
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.auth.getUser();
+  const { supabase, data, error } = await getCachedAuthUser();
 
   if (error || !data.user) {
     redirect(`/login?next=${encodeURIComponent("/member/orders")}`);

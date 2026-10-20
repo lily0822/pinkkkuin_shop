@@ -1,5 +1,7 @@
 import "server-only";
 
+import { unstable_cache } from "next/cache";
+import { cache } from "react";
 import { isWithinSchedule } from "@/lib/appearance-settings";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 
@@ -71,16 +73,26 @@ function sanitizeSettings(input: Partial<Record<SiteFeatureFlag, unknown>>): Sit
   return result;
 }
 
-export async function getSiteFeatureFlags(): Promise<SiteFeatureFlagSettings> {
-  try {
-    const supabase = createSupabaseServiceClient();
-    const { data, error } = await supabase.from("schedule_settings").select("image").eq("type", SETTINGS_TYPE).maybeSingle();
-    if (error || !data?.image) return defaultSettings();
-    return sanitizeSettings(JSON.parse(data.image) as Partial<Record<SiteFeatureFlag, unknown>>);
-  } catch {
-    return defaultSettings();
-  }
-}
+// 兩層快取：unstable_cache 跨請求（45 秒，或後台存檔時 revalidateTag
+// ("site-feature-flags") 手動失效，見 /api/backend/site-feature-flags
+// 的 POST），外層 React cache() 同一個請求內去重、順便防 cache
+// stampede（理由跟 appearance-settings.ts/brand-settings.ts 一樣）。
+const fetchSiteFeatureFlagsCached = unstable_cache(
+  async function getSiteFeatureFlags(): Promise<SiteFeatureFlagSettings> {
+    try {
+      const supabase = createSupabaseServiceClient();
+      const { data, error } = await supabase.from("schedule_settings").select("image").eq("type", SETTINGS_TYPE).maybeSingle();
+      if (error || !data?.image) return defaultSettings();
+      return sanitizeSettings(JSON.parse(data.image) as Partial<Record<SiteFeatureFlag, unknown>>);
+    } catch {
+      return defaultSettings();
+    }
+  },
+  ["site-feature-flags-v1"],
+  { revalidate: 45, tags: ["site-feature-flags"] },
+);
+
+export const getSiteFeatureFlags = cache(fetchSiteFeatureFlagsCached);
 
 export async function getSiteFeatureFlag(flag: SiteFeatureFlag): Promise<SiteFeatureFlagState> {
   const settings = await getSiteFeatureFlags();

@@ -1,10 +1,9 @@
 import { redirect } from "next/navigation";
 import { MemberProfileManager } from "@/components/member-profile-manager";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getCachedAuthUser } from "@/lib/supabase/server";
 
 export default async function MemberProfilePage() {
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.auth.getUser();
+  const { supabase, data, error } = await getCachedAuthUser();
   if (error || !data.user) {
     redirect(`/login?next=${encodeURIComponent("/member/profile")}`);
   }
