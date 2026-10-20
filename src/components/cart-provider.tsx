@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { ClipboardList, ShoppingBasket, Trash2, X } from "lucide-react";
+import { ChevronRight, ClipboardList, ShoppingBasket, Trash2, X } from "lucide-react";
 import { formatPrice, Product, ProductVariant, statusLabels } from "@/lib/products";
 import { usePreorderList } from "@/components/preorder-list-provider";
 
@@ -43,6 +43,8 @@ type CartContextValue = {
   setItemsSelectedByType: (type: CartProductTypeKey, selected: boolean) => void;
   openCart: () => void;
   openPreorderList: () => void;
+  toggleCart: () => void;
+  togglePreorderList: () => void;
   closeCart: () => void;
   clearCart: () => void;
   clearSelectedItems: () => void;
@@ -125,6 +127,8 @@ function normalizeSavedItems(value: unknown): { items: CartItem[]; hadPreorder: 
 }
 
 const PREORDER_MIGRATION_NOTICE_KEY = "pinkkkuin_cart_preorder_migration_notice_shown";
+const CART_PANEL_STATE_KEY = "pinkkkuin_cart_panel_state";
+const DESKTOP_MEDIA_QUERY = "(min-width: 768px)";
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
@@ -169,6 +173,34 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(timeout);
   }, [preorderMigrationNotice]);
 
+  // 電腦版面板的展開/收合＋目前分頁記住上次狀態，重新整理後維持；手機版
+  // 完全不讀這份記錄——手機版每次都是收合、靠按鈕主動打開的滿版抽屜，
+  // 如果這裡也還原 isOpen，使用者重新整理手機頁面時會無預警跳出滿版
+  // 抽屜擋住畫面，跟「手機版完全不變」的要求衝突。SSR 階段/第一次渲染
+  // 都先維持預設值（收合、購物車分頁），掛載後才讀 localStorage 覆蓋，
+  // 避免 hydration mismatch。
+  useEffect(() => {
+    try {
+      if (!window.matchMedia(DESKTOP_MEDIA_QUERY).matches) return;
+      const saved = window.localStorage.getItem(CART_PANEL_STATE_KEY);
+      if (!saved) return;
+      const parsed = JSON.parse(saved) as { open?: unknown; tab?: unknown };
+      if (parsed.tab === "cart" || parsed.tab === "preorder") {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setActiveTab(parsed.tab);
+      }
+      if (typeof parsed.open === "boolean") {
+        setIsOpen(parsed.open);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CART_PANEL_STATE_KEY, JSON.stringify({ open: isOpen, tab: activeTab }));
+    } catch {}
+  }, [isOpen, activeTab]);
+
   useEffect(() => {
     try {
       window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(items));
@@ -179,15 +211,27 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     if (!isOpen) return;
 
     const previousOverflow = document.body.style.overflow;
+    const mediaQuery = window.matchMedia(DESKTOP_MEDIA_QUERY);
+
+    // 電腦版面板是浮在頁面上面的懸浮面板，不蓋住、不鎖住背景捲動；只有
+    // 手機版的滿版抽屜才需要鎖住背景捲動。用 matchMedia 動態反應寬度
+    // 變化（例如視窗從手機寬度被拉寬到電腦寬度時要立刻解除鎖定），不是
+    // 只看掛載當下量到的寬度。
+    function syncBodyScrollLock() {
+      document.body.style.overflow = mediaQuery.matches ? previousOverflow : "hidden";
+    }
+
+    syncBodyScrollLock();
+    mediaQuery.addEventListener("change", syncBodyScrollLock);
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setIsOpen(false);
     };
-
-    document.body.style.overflow = "hidden";
     window.addEventListener("keydown", handleKeyDown);
 
     return () => {
       document.body.style.overflow = previousOverflow;
+      mediaQuery.removeEventListener("change", syncBodyScrollLock);
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [isOpen]);
@@ -281,6 +325,19 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setItems((current) => current.filter((item) => item.id !== id));
   }
 
+  // 電腦版資料夾標籤／標頭按鈕共用的「切換」語意：收合時展開並切到該
+  // 分頁；已經展開且就停在這個分頁時收合；展開但停在另一個分頁時單純
+  // 切換過去（不收合）。手機版的橫向分頁列跟標頭按鈕刻意不走這支函式
+  // ——手機版維持原本「只會展開、不會因為點同一個分頁而收合」的行為。
+  function toggleTab(tab: DrawerTab) {
+    if (isOpen && activeTab === tab) {
+      setIsOpen(false);
+      return;
+    }
+    setActiveTab(tab);
+    setIsOpen(true);
+  }
+
   function clearCart() {
     setItems([]);
     setIsOpen(false);
@@ -329,10 +386,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       setActiveTab("preorder");
       setIsOpen(true);
     },
+    toggleCart: () => toggleTab("cart"),
+    togglePreorderList: () => toggleTab("preorder"),
     closeCart: () => setIsOpen(false),
     clearCart,
     clearSelectedItems,
-  }), [count, items, selectedItems, selectedLineCount, selectedQuantity, selectedTotal, total]);
+  }), [count, items, selectedItems, selectedLineCount, selectedQuantity, selectedTotal, total, isOpen, activeTab]);
 
   // 分頁切換會跟著換抽屜邊框/標題列底色/主要按鈕顏色（資料夾標籤版
   // 設計，定案用配色B：柔和淡黃）——購物車沿用既有 penguin-pink-dark/
@@ -373,13 +432,30 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           預購商品已移到預購清單，請重新加入
         </div>
       ) : null}
+      {/* 電腦版（md 以上）這層外框不再畫暗色遮罩、也不攔截點擊
+          （md:pointer-events-none），後面的頁面照常可以點擊/捲動——面板
+          本身改成浮在頁面上面的懸浮面板，不是會擋住整個畫面的抽屜。
+          手機版（md 以下）維持原本的暗色遮罩＋點外面關閉。這層本身不能
+          再用 opacity 控制顯示/隱藏（opacity 會連帶讓子元素的資料夾
+          標籤在收合時也完全隱藏，跟「電腦版收合時標籤仍固定顯示在畫面
+          右緣」的需求衝突），改成只用 bg-transparent 切換要不要畫暗色
+          底色，aside 自己的 translate-x 才是真正控制面板本身顯示/隱藏
+          的機制。 */}
       <div
-        className={`fixed inset-0 z-50 bg-penguin-gray/25 transition-opacity ${isOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
+        className={`fixed inset-0 z-50 transition-colors md:pointer-events-none md:bg-transparent ${
+          isOpen ? "bg-penguin-gray/25 pointer-events-auto" : "pointer-events-none bg-transparent"
+        }`}
         onClick={() => setIsOpen(false)}
-        aria-hidden={!isOpen}
       >
+        {/* 電腦版多了 md:top-24/md:bottom-4/md:h-auto 幾個 class 讓面板
+            往下讓出標頭（sticky header，約 80px 高）的空間、底部留一點
+            呼吸空間，不會蓋住標頭或超出畫面底部；手機版的 top-0/h-full
+            完全不變，一樣是滿版抽屜。pointer-events-auto 是因為上面這層
+            外框在電腦版永遠是 pointer-events-none，面板自己要明確加回來
+            才能繼續被點擊（手機版外框本來就會視 isOpen 給 auto，這裡重複
+            加一次是無害的）。 */}
         <aside
-          className={`absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l-4 ${drawerTheme.border} bg-white shadow-2xl transition-transform duration-300 ${isOpen ? "translate-x-0" : "translate-x-full"}`}
+          className={`pointer-events-auto absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l-4 md:top-24 md:bottom-4 md:h-auto ${drawerTheme.border} bg-white shadow-2xl transition-transform duration-300 ${isOpen ? "translate-x-0" : "translate-x-full"}`}
           onClick={(event) => event.stopPropagation()}
         >
           {/* 桌機：資料夾標籤從抽屜左緣長出來，取代上面那條手機版的
@@ -388,7 +464,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           <div className="absolute right-full top-3.5 z-10 hidden flex-col gap-2 md:flex">
             <button
               type="button"
-              onClick={() => setActiveTab("cart")}
+              onClick={() => toggleTab("cart")}
               style={{ writingMode: "vertical-rl", textOrientation: "upright", letterSpacing: "0.12em" }}
               className={`relative flex h-[150px] items-center justify-center rounded-l-[14px] border-4 border-r-0 text-sm font-black text-[#3a4150] ${
                 activeTab === "cart"
@@ -405,7 +481,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab("preorder")}
+              onClick={() => toggleTab("preorder")}
               style={{ writingMode: "vertical-rl", textOrientation: "upright", letterSpacing: "0.12em" }}
               className={`relative flex h-[150px] items-center justify-center rounded-l-[14px] border-4 border-r-0 text-sm font-black text-[#3a4150] ${
                 activeTab === "preorder"
@@ -450,6 +526,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               {activeTab === "cart" ? <ShoppingBasket size={20} /> : <ClipboardList size={20} />}
               {activeTab === "cart" ? "購物車" : "預購清單"}
             </h2>
+            {/* 電腦版才顯示的收合按鈕（不是關閉，面板本身一直存在、只是
+                收合成右側標籤）；手機版沿用下面那顆 X 關閉按鈕。 */}
+            <button
+              type="button"
+              className="hidden h-8 w-8 items-center justify-center rounded-full bg-white text-penguin-gray shadow-sm hover:text-penguin-pink-dark md:grid"
+              onClick={() => setIsOpen(false)}
+              aria-label={activeTab === "cart" ? "收合購物車" : "收合預購清單"}
+            >
+              <ChevronRight size={16} />
+            </button>
             <button
               type="button"
               className="grid h-9 w-9 place-items-center rounded-full bg-white text-penguin-gray shadow-sm hover:text-red-500 md:hidden"

@@ -741,6 +741,28 @@ First step of a multi-phase plan to make the backend feel more like a standalone
   - **沒有驗證的部分**：`QuickViewModal`（商品分類頁快速預覽）跟 `preorder-catalog.tsx` 的 `ProductTile`（`/category/preorder`）這兩處只做了程式碼邏輯檢查＋`tsc`/`eslint`/`build`，沒有另外寫 jsdom 測試或 live API 測試覆蓋（前者是因為快速預覽的開啟/關閉邏輯跟其他已測過的入口共用同一支 `handleQuickViewAddToCart`，後者是既有、原本就正確的程式碼，這次只是把內部實作換成共用 hook，呼叫的 API/參數沒有變，風險相對低）；新按鈕的淡黃配色、「加入預購清單」文案在真實瀏覽器裡的視覺呈現（字體大小/對齊/hover 效果）完全沒有人眼看過。
 - **還沒部署**，這次對話沒有執行任何 `vercel deploy`。
 
+### 購物車/預購清單面板改成不擋畫面的懸浮面板（電腦版）(this round)
+
+使用者提供 DEMO 選了「B 懸浮面板」方案，範圍明確限定只改 `cart-provider.tsx` 這個面板本身的展開/收合機制，不碰任何頁面版面，也**不要**做 DEMO 裡寬螢幕「內容往左讓出空間」那個行為——所有電腦寬度一律是面板浮在頁面上面，不推開/不壓縮頁面內容。手機版（`md` 以下）完全不變。
+
+- **拿掉暗色遮罩/不攔截點擊（電腦版）**：原本外層 `fixed inset-0` 容器用 `opacity-0`/`opacity-100` 控制整個子樹（含 aside 跟桌機資料夾標籤）要不要顯示——這跟「收合時標籤仍要固定顯示在畫面右緣」互相衝突，因為 `opacity-0` 會連帶把子元素一起變不可見。改成這層容器不再用 `opacity` 控制，只用 `bg-penguin-gray/25`/`bg-transparent` 切換暗色底色，手機版 (`isOpen` 時) 有底色＋`pointer-events-auto`（點外面關閉，行為不變），電腦版一律 `md:bg-transparent`＋`md:pointer-events-none`（永遠透明、永遠不攔截點擊，頁面照常可點擊/捲動）。`aside` 本身補上 `pointer-events-auto`，確保電腦版面板/標籤仍然可以被點到（即使外層容器對電腦版是 `pointer-events-none`）。面板真正的顯示/隱藏完全交給 `aside` 自己的 `translate-x-0`/`translate-x-full`（原本就有的機制，沒有改）。
+- **收合狀態下標籤固定顯示在右緣**：桌機資料夾標籤本來就是用 `absolute right-full`（相對 `aside`自己的座標）定位在 `aside` 左緣外側，`aside` 收合時整個 `translate-x-full`（滑出去自己的寬度），連帶把標籤也滑到剛好貼著畫面右緣的位置——這個定位技巧本來就存在於程式碼裡，只是先前被外層的 `opacity-0` 蓋住看不到；拿掉 `opacity-0` 之後這個效果就自然生效，不需要另外重新設計定位。
+- **面板往下讓出標頭空間**：`aside` 電腦版多了 `md:top-24 md:bottom-4 md:h-auto`（手機版維持原本 `top-0 h-full`），讓面板跟桌機標籤不會蓋住 `sticky top-0 z-40` 的標頭（約 80px 高）；底部留一點呼吸空間，不會貼死螢幕下緣。
+- **展開/收合/切換三態互動（電腦版）**：新函式 `toggleTab(tab)`——收合時點標籤 → 展開並切到該分頁；已展開且就停在該分頁時點同一個標籤 → 收合；已展開但點另一個分頁 → 單純切換（不收合）。桌機資料夾標籤、新的圓形收合按鈕、標頭的桌機「購物車」「預購清單」按鈕（新 context 方法 `toggleCart`/`togglePreorderList`）全部共用這套語意。**手機版刻意不套用**：手機橫向分頁列跟標頭的手機版按鈕維持原本的 `setActiveTab`/`openCart`/`openPreorderList`（只會展開、不會因為點同一分頁而收合），符合「手機版完全不變」的要求。
+- **新增電腦版收合按鈕**：面板標題列右側新增一顆 `ChevronRight`（不是 `X`）的小圓形按鈕，只在 `md:` 以上顯示，點擊收合（`setIsOpen(false)`）；手機版原本的 `X` 關閉按鈕完全不動（`md:hidden`，兩顆按鈕互斥顯示）。
+- **Esc 鍵**：沿用既有的 `keydown` 監聽，行為不變，兩種裝置都適用。
+- **加入商品自動展開**：確認 `addProduct()` 成功時本來就會 `setActiveTab("cart")`+`setIsOpen(true)`（這次沒有改這段邏輯），跟預購清單那邊（上一輪 `useAddToPreorderList` 成功後呼叫 `openPreorderList()`）已經一致，失敗都不會展開——這次只是確認，不是新增。
+- **body 捲動鎖定只在手機版生效**：原本 `isOpen` 時一律 `document.body.style.overflow = "hidden"`，電腦版面板現在是浮動、不該鎖住背景捲動。改成用 `window.matchMedia("(min-width: 768px)")` 判斷，電腦版維持原本的 `overflow` 值（不鎖），手機版才鎖成 `hidden`；額外掛 `matchMedia` 的 `change` 監聽，視窗寬度在面板開著的情況下跨過 768px 門檻時會立刻反應（不是只看掛載當下量到的寬度）。
+- **展開/收合＋目前分頁記住狀態（只在電腦版生效）**：新 localStorage key `pinkkkuin_cart_panel_state`（`{open, tab}`，讀寫都包 try/catch）。SSR/第一次渲染一律維持預設值（收合、購物車分頁，跟原本行為一致，避免 hydration mismatch），掛載後才用一個獨立 effect 檢查 `matchMedia` 是不是電腦寬度，是才讀 localStorage 覆蓋 state；**手機版完全不讀這份記錄**，即使 localStorage 裡存著 `open:true`，手機版重新整理後還是維持收合——避免使用者在電腦版留著面板展開，之後用手機造訪同一個瀏覽器設定檔時被無預警跳出的滿版抽屜擋住畫面。寫入這份記錄則不分裝置，`isOpen`/`activeTab` 任何一個改變就寫一次（分頁記憶對手機版也無害，只是手機版不會因此自動展開）。换頁（client navigation）不會自己關掉——這是既有架構本來就有的特性（`CartProvider` 掛在 layout 最上層、整個 session 只建立一次），這次沒有新增任何東西來維持它，純粹確認沒有破壞。
+- **z-index**：面板所在的外層容器維持原本的 `z-50`（高於標頭的 `z-40`），`aside` 的 `md:top-24` 位移已經避開跟標頭的視覺重疊，不需要調整 z-index 本身；左下角「LINE 小企鵝」固定按鈕（`z-40`，定位在左側）跟面板（右側）沒有交集，沒有受影響，也沒有改到那段程式碼。
+- **驗證**：
+  - `npx tsc --noEmit`/`npx eslint`（`cart-provider.tsx`/`site-header-client.tsx`）/`npm run build` 全部乾淨（僅兩個跟這次改動無關的既有警告：`useMemo` 缺依賴、`site-header-client.tsx` 一個既有 `<img>` 效能建議）。
+  - `git diff --stat` 確認這輪只改了兩個檔案：`src/components/cart-provider.tsx`（面板本體）跟 `src/components/site-header-client.tsx`（只有 2 行，桌機版「購物車」「預購清單」按鈕的 `onClick` 從 `openCart`/`openPreorderList` 換成 `toggleCart`/`togglePreorderList`，手機版按鈕完全沒動）——沒有動到任何頁面/版面檔案。
+  - **本機 production build 直接 curl 首頁**，確認 SSR 輸出的原始 HTML 裡：外層容器 class 同時帶 `md:pointer-events-none`/`md:bg-transparent`；`aside` 的 class 帶 `translate-x-full`（預設收合）跟 `md:top-24 md:bottom-4 md:h-auto`；電腦版收合按鈕的 `aria-label="收合購物車"` 跟 `lucide-chevron-right` 圖示 class 都存在；手機版原本的 `aria-label="關閉購物車"`（X 按鈕）跟標頭 `aria-label="購物車"` 按鈕都還在——確認沒有漏改或改壞既有結構。
+  - **元件層級互動測試**（這個環境沒有瀏覽器，沿用「我的訂單切換分頁」「預購商品不可加入購物車」兩輪的方法：臨時安裝 `jsdom`+`tsx`，測完 `npm uninstall --no-save`，`Get-FileHash package-lock.json` 前後比對確認沒被動到）：直接 import 真實的 `cart-provider.tsx`（不是重寫邏輯），用假的 `matchMedia`（可以手動切換「電腦」/「手機」並觸發 `change` 事件）模擬兩種裝置寬度，render 真實 `CartProvider`/`PreorderListProvider`，模擬點擊/按鍵，斷言 DOM class／`localStorage`／`document.body.style.overflow`。7 個情境、25 項斷言全過：電腦版收合時桌機標籤仍在 DOM 裡（且外層容器 class 不再含 `opacity-0`）；標籤點擊的展開/收合/切換三態；圓形收合按鈕跟 Esc 鍵都能收合；電腦版展開時 `body.style.overflow` 不是 `hidden`、手機版展開時才會變成 `hidden`；電腦版重新掛載會從 localStorage 還原展開＋分頁，手機版重新掛載即使 localStorage 存著 `open:true` 也不會自動展開；`toggleCart`/`togglePreorderList` 這兩個新 context 方法本身的三態切換邏輯正確；`addProduct` 成功仍然會展開並切到購物車分頁（迴歸確認，沒有被這次改動動到）。**負對照**：把 `toggleTab()` 暫時改回單純 `setActiveTab`+`setIsOpen(true)`（拿掉收合判斷）重跑，確認「點同一個標籤應該收合」跟「`toggleCart()` 第二次呼叫應該收合」這兩項斷言真的會失敗，證明測試真的抓得到這個邏輯被改壞的情況；復原後重跑 25 項全過。
+  - **沒有驗證的部分（這個環境沒有瀏覽器，jsdom 不會真的套用 Tailwind 的 CSS/媒體查詢，只能驗證 React state／DOM class 字串層級的邏輯是否正確）**：面板實際浮在頁面上面的視覺效果（陰影、是否真的完全不擋住任何商品格、不同螢幕寬度下的實際留白是否好看）、桌機標籤收合時貼著畫面右緣的實際像素位置、面板往下讓出的 `md:top-24` 這個數值跟實際標頭高度是否剛好無縫（抓的是標頭程式碼裡的 class 估算出來的高度，沒有人眼在真實瀏覽器裡測量/比對）、`pointer-events-none` 在真實瀏覽器裡是否真的讓滑鼠點擊穿透到後面的頁面元素（jsdom 的 `.click()`/`dispatchEvent` 不會模擬真實的 hit-testing/CSS `pointer-events` 層級判定，這次只能驗證 class 字串寫對了，無法驗證瀏覽器實際套用後的點擊穿透效果）。
+- **還沒部署**，這次對話沒有執行任何 `vercel deploy`。
+
 ## 網站流暢度優化 第一階段（伺服器端）(this round)
 
 背景：Staging 每一頁 TTFB 實測約 1.3 秒，連 `/guide` 這種幾乎沒有頁面專屬查詢的頁面也一樣；`X-Vercel-Id` 回應標頭顯示函式跑在 `iad1`（美國東岸），資料庫 Staging 在新加坡（`ap-southeast-1`）、Production 在東京（`ap-northeast-1`），每次查詢都要橫跨太平洋。目標：一般頁面 TTFB 降到 0.5 秒以內。**這輪的部署一律只到 Staging（`pinkkkuin-staging.vercel.app`），沒有碰 Production。**

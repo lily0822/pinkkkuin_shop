@@ -219,7 +219,7 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
                 </span>
               ) : null}
             </button>
-            <button type="button" onClick={cart.openPreorderList} className={`hidden md:flex ${headerActionButtonBase} border-[#f0dc8f] bg-[#fff9df] text-penguin-gray hover:bg-[#fff2c4]`}>
+            <button type="button" onClick={cart.togglePreorderList} className={`hidden md:flex ${headerActionButtonBase} border-[#f0dc8f] bg-[#fff9df] text-penguin-gray hover:bg-[#fff2c4]`}>
               <ClipboardList size={15} strokeWidth={2} />
               <span className={headerActionTextClass} style={headerActionTextStyle}>
                 預購清單
@@ -238,7 +238,7 @@ export function SiteHeaderClient({ brand, announcements = [], navigationItems = 
                 </span>
               ) : null}
             </button>
-            <button type="button" onClick={cart.openCart} aria-label="購物車" className={`hidden md:flex ${headerActionButtonBase} ${cartButtonVariant}`}>
+            <button type="button" onClick={cart.toggleCart} aria-label="購物車" className={`hidden md:flex ${headerActionButtonBase} ${cartButtonVariant}`}>
               <ShoppingBasket size={15} strokeWidth={2} />
               <span className={headerActionTextClass} style={headerActionTextStyle}>
                 購物車
