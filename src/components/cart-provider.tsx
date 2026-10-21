@@ -430,14 +430,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             同樣粗、同一個 drawerTheme.border 色碼，三邊一起包起來）＋
             md:rounded-l-[14px]（跟桌機資料夾標籤的 rounded-l-[14px] 用
             一樣的角度，視覺上是同一組圓角語彙）；右邊貼著螢幕邊緣，刻意
-            不加邊框/圓角。選中的資料夾標籤固定從 top-3.5（14px）開始、
-            右邊無邊框直接貼上面板左緣——這個銜接點本來就落在面板左邊框
-            「還是直線」的那一段（圓角只發生在最頂跟最底各 14px 的範圍，
-            剛好跟 top-3.5 的位置對齊，不會咬到標籤的高度範圍），所以加了
-            上下邊框跟圓角之後，標籤蓋住面板左邊框、線條連續的視覺效果
-            不受影響；手機版沒有這些 md: class，維持原本只有左邊框、沒有
-            圓角的滿版抽屜。陰影（shadow-2xl）是瀏覽器原生跟著
-            border-radius 走的，不用額外加 class 處理圓角陰影。 */}
+            不加邊框/圓角。資料夾標籤 wrapper（下面那個 top-9 的 div）跟
+            面板左邊框的銜接細節寫在它自己上面的註解；手機版沒有這些
+            md: class，維持原本只有左邊框、沒有圓角的滿版抽屜。陰影
+            （shadow-2xl）是瀏覽器原生跟著 border-radius 走的，不用額外
+            加 class 處理圓角陰影。
+
+            這個 aside 故意不加 overflow-hidden（標籤 wrapper 要留在
+            aside 的直接子層用 absolute right-full 定位，套
+            overflow-hidden 會把超出 aside 本體寬度的標籤整個裁掉、變成
+            標籤消失，不只是裁掉視覺溢出）——代價是邊框「內側」的圓角
+            （半徑 = 外緣 14px − 邊框 4px = 10px）不會自動套用到裡面的
+            子區塊，標題列/底部這種方形、貼齊邊緣又有底色的區塊，角自己
+            要補 md:rounded-tl-[10px]/md:rounded-bl-[10px]，否則方形角
+            會蓋掉邊框內側的圓弧，變成一塊缺口（已經踩過這個坑，見下面
+            標題列/底部區塊自己的註解）。中間的捲動內容區沒有底色，不會
+            有這個問題，不用補。 */}
         <aside
           className={`pointer-events-auto absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l-4 md:top-24 md:bottom-4 md:h-auto md:border-t-4 md:border-b-4 md:rounded-l-[14px] ${drawerTheme.border} bg-white shadow-2xl transition-transform duration-300 ${isOpen ? "translate-x-0" : "translate-x-full"}`}
           onClick={(event) => event.stopPropagation()}
@@ -505,7 +513,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             </button>
           </div>
 
-          <div className={`flex items-center justify-between border-b p-4 ${drawerTheme.border} ${drawerTheme.headerBg}`}>
+          {/* aside 沒有 overflow-hidden（標籤 wrapper 要留在 aside 的
+              直接子層才不會被裁掉），所以邊框內側（半徑 10px = 外緣 14px
+              − 邊框 4px）的圓弧需要每個有底色、會碰到左上/左下角的子
+              區塊自己補對應的 md:rounded-tl-[10px]/md:rounded-bl-[10px]，
+              否則方形的子區塊背景會把邊框內側的圓弧蓋掉一塊，變成缺口。
+              這個標題列是購物車/預購清單共用同一個 DOM 元素（底色靠
+              drawerTheme.headerBg 切換），補一次兩個分頁都有效。 */}
+          <div className={`flex items-center justify-between border-b p-4 md:rounded-tl-[10px] ${drawerTheme.border} ${drawerTheme.headerBg}`}>
             <h2 className="flex items-center gap-2 text-lg font-black text-[#111]">
               {activeTab === "cart" ? <ShoppingBasket size={20} /> : <ClipboardList size={20} />}
               {activeTab === "cart" ? "購物車" : "預購清單"}
@@ -620,7 +635,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               </div>
 
               {preorderList.accessState === "ok" ? (
-                <div className="border-t bg-white p-4">
+                // accessState 是 loading/unauthenticated/not_linked/error
+                // 時這個底部區塊整個不渲染——這幾種狀態上面的內容區
+                // （flex-1 overflow-y-auto p-4）本身沒有背景色、裡面的
+                // 提示文字/按鈕也都是置中的小尺寸元素，不會碰到左下角，
+                // 不需要額外補圓角（見本輪 AI_HANDOFF.md 的說明）。
+                <div className="border-t bg-white p-4 md:rounded-bl-[10px]">
                   {preorderList.submitResult ? (
                     <div className="space-y-3 text-center">
                       <p className="text-sm font-black text-[#111]">
@@ -720,7 +740,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             )}
           </div>
 
-          <div className="border-t bg-white p-4">
+          <div className="border-t bg-white p-4 md:rounded-bl-[10px]">
             <div className="mb-3 flex items-center justify-between text-sm font-black text-[#111]">
               <span>本次小計</span>
               <span className="text-lg text-[#111]">{formatPrice(total)}</span>
