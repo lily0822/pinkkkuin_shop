@@ -127,7 +127,6 @@ function normalizeSavedItems(value: unknown): { items: CartItem[]; hadPreorder: 
 }
 
 const PREORDER_MIGRATION_NOTICE_KEY = "pinkkkuin_cart_preorder_migration_notice_shown";
-const CART_PANEL_STATE_KEY = "pinkkkuin_cart_panel_state";
 const DESKTOP_MEDIA_QUERY = "(min-width: 768px)";
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
@@ -172,34 +171,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     const timeout = setTimeout(() => setPreorderMigrationNotice(false), 4000);
     return () => clearTimeout(timeout);
   }, [preorderMigrationNotice]);
-
-  // 電腦版面板的展開/收合＋目前分頁記住上次狀態，重新整理後維持；手機版
-  // 完全不讀這份記錄——手機版每次都是收合、靠按鈕主動打開的滿版抽屜，
-  // 如果這裡也還原 isOpen，使用者重新整理手機頁面時會無預警跳出滿版
-  // 抽屜擋住畫面，跟「手機版完全不變」的要求衝突。SSR 階段/第一次渲染
-  // 都先維持預設值（收合、購物車分頁），掛載後才讀 localStorage 覆蓋，
-  // 避免 hydration mismatch。
-  useEffect(() => {
-    try {
-      if (!window.matchMedia(DESKTOP_MEDIA_QUERY).matches) return;
-      const saved = window.localStorage.getItem(CART_PANEL_STATE_KEY);
-      if (!saved) return;
-      const parsed = JSON.parse(saved) as { open?: unknown; tab?: unknown };
-      if (parsed.tab === "cart" || parsed.tab === "preorder") {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setActiveTab(parsed.tab);
-      }
-      if (typeof parsed.open === "boolean") {
-        setIsOpen(parsed.open);
-      }
-    } catch {}
-  }, []);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(CART_PANEL_STATE_KEY, JSON.stringify({ open: isOpen, tab: activeTab }));
-    } catch {}
-  }, [isOpen, activeTab]);
 
   useEffect(() => {
     try {
@@ -453,9 +424,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             完全不變，一樣是滿版抽屜。pointer-events-auto 是因為上面這層
             外框在電腦版永遠是 pointer-events-none，面板自己要明確加回來
             才能繼續被點擊（手機版外框本來就會視 isOpen 給 auto，這裡重複
-            加一次是無害的）。 */}
+            加一次是無害的）。
+
+            電腦版才加 md:border-t-4/md:border-b-4（跟既有的 border-l-4
+            同樣粗、同一個 drawerTheme.border 色碼，三邊一起包起來）＋
+            md:rounded-l-[14px]（跟桌機資料夾標籤的 rounded-l-[14px] 用
+            一樣的角度，視覺上是同一組圓角語彙）；右邊貼著螢幕邊緣，刻意
+            不加邊框/圓角。選中的資料夾標籤固定從 top-3.5（14px）開始、
+            右邊無邊框直接貼上面板左緣——這個銜接點本來就落在面板左邊框
+            「還是直線」的那一段（圓角只發生在最頂跟最底各 14px 的範圍，
+            剛好跟 top-3.5 的位置對齊，不會咬到標籤的高度範圍），所以加了
+            上下邊框跟圓角之後，標籤蓋住面板左邊框、線條連續的視覺效果
+            不受影響；手機版沒有這些 md: class，維持原本只有左邊框、沒有
+            圓角的滿版抽屜。陰影（shadow-2xl）是瀏覽器原生跟著
+            border-radius 走的，不用額外加 class 處理圓角陰影。 */}
         <aside
-          className={`pointer-events-auto absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l-4 md:top-24 md:bottom-4 md:h-auto ${drawerTheme.border} bg-white shadow-2xl transition-transform duration-300 ${isOpen ? "translate-x-0" : "translate-x-full"}`}
+          className={`pointer-events-auto absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l-4 md:top-24 md:bottom-4 md:h-auto md:border-t-4 md:border-b-4 md:rounded-l-[14px] ${drawerTheme.border} bg-white shadow-2xl transition-transform duration-300 ${isOpen ? "translate-x-0" : "translate-x-full"}`}
           onClick={(event) => event.stopPropagation()}
         >
           {/* 桌機：資料夾標籤從抽屜左緣長出來，取代上面那條手機版的
