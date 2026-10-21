@@ -445,7 +445,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           {/* 桌機：資料夾標籤從抽屜左緣長出來，取代上面那條手機版的
               橫向分頁列；選中的標籤填色跟抽屜內容區同色、邊框色跟抽屜
               外框一致，造成線條直接接上去、沒有凸起接縫的視覺效果。 */}
-          <div className="absolute right-full top-3.5 z-10 hidden flex-col gap-2 md:flex">
+          <div className="absolute right-full top-9 z-10 hidden flex-col gap-2 md:flex">
             <button
               type="button"
               onClick={() => toggleTab("cart")}
