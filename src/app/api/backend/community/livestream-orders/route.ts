@@ -8,6 +8,7 @@ import {
   shouldRequireBackendAuth,
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
+import { getCurrentOrMostRecentSession } from "@/lib/line/livestream-sessions";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -47,16 +48,44 @@ export async function GET(request: NextRequest) {
   const paymentStatus = (incoming.searchParams.get("paymentStatus") || "").trim();
   const unrecognizedOnly = incoming.searchParams.get("unrecognizedOnly") === "1";
   const priceDisputedOnly = incoming.searchParams.get("priceDisputedOnly") === "1";
+  // 連線代購下單改版：場次篩選——"unassigned" 對應舊資料（session_id is
+  // null）；沒帶這個參數時，用「當下連線／最近一場」當預設值（見
+  // getCurrentOrMostRecentSession），維持跟後台「連線場次」下拉選單的
+  // 預設選項一致。
+  const sessionIdParam = incoming.searchParams.get("sessionId");
 
   try {
     const supabase = createSupabaseServiceClient();
+
+    let appliedSessionId: string | null = null;
+    let appliedSessionName: string | null = null;
+    if (sessionIdParam === "unassigned") {
+      appliedSessionId = null;
+    } else if (sessionIdParam) {
+      appliedSessionId = sessionIdParam;
+    } else {
+      const defaultSession = await getCurrentOrMostRecentSession(supabase);
+      appliedSessionId = defaultSession?.id || null;
+      appliedSessionName = defaultSession?.name || null;
+    }
+
     let query = supabase
       .from("community_livestream_orders")
       .select(
         "id, line_user_id, line_display_name, nickname, product_name, unit_price, total_price, quantity, recognized_confidence, purchase_status, payment_status, notes, photo_storage_path, price_disputed_at, price_dispute_suggested_price, created_at, updated_at",
       )
+      // staged（客人還沒送出的暫存照片）跟 cancelled 永遠不出現在任何
+      // 後台列表——這次改版新增的中間狀態，既有的訂單管理畫面本來就不
+      // 是為了顯示「還沒確定的東西」設計的。
+      .eq("order_status", "submitted")
       .order("created_at", { ascending: false })
       .limit(500);
+
+    if (sessionIdParam === "unassigned") {
+      query = query.is("session_id", null);
+    } else if (appliedSessionId) {
+      query = query.eq("session_id", appliedSessionId);
+    }
 
     if (PURCHASE_STATUSES.has(purchaseStatus)) query = query.eq("purchase_status", purchaseStatus);
     if (PAYMENT_STATUSES.has(paymentStatus)) query = query.eq("payment_status", paymentStatus);
@@ -117,6 +146,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
+      appliedSessionId,
+      appliedSessionName,
       orders: rows.map((row, index) => {
         const remittance = row.payment_status === "confirming" ? findLatestRemittance(String(row.id)) : null;
         return {

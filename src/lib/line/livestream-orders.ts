@@ -1,16 +1,16 @@
 import "server-only";
 
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
-import { createSignedUrl, uploadPrivateFile } from "@/lib/supabase/storage";
+import { getSiteOrigin } from "@/lib/supabase/config";
+import { createSignedUrl, deletePrivateFiles, uploadPrivateFile } from "@/lib/supabase/storage";
 import {
   downloadLineMessageContent,
   getLineUserProfile,
   sendLineReply,
   sendLineReplyText,
+  type LineQuickReply,
   type LineReplyMessage,
 } from "./client";
-import { recognizeProductPhoto } from "./vision";
-import { recognizePriceFromPhoto } from "./price-ocr";
 import {
   getLivestreamBankAccounts,
   LIVESTREAM_BANK_ACCOUNT_KEYS,
@@ -30,6 +30,8 @@ import {
   type LivestreamReplyTemplateKey,
   type LivestreamReplyTemplates,
 } from "./livestream-reply-templates";
+import { getCurrentSession } from "./livestream-sessions";
+import { createLivestreamMagicLink } from "./livestream-magic-link";
 
 // 功能一 (下單觸發) + 功能二 (LINE 圖片下單對話流程). 社群暱稱綁定/審核機制
 // 已移除——真正區分客人身份的是 line_user_id 本身，nickname 欄位直接拿
@@ -45,21 +47,31 @@ import {
 // here — this entire feature is reply-only now (the one push it used to
 // have, on order confirmation, was removed by request — see AI_HANDOFF.md).
 //
-// 客人端數量/價格互動已整組移除：原本的數量確認清單 (Flex +
-// 1/2/3/4/5+ 按鈕)、「價格有誤」回報、清單上的「刪除」按鈕、「數量
-// 正確」鎖定機制全部拿掉——客人剩「傳照片」「我要匯款」「取消訂單」
-// 三件事，數量/價格交給後台人工處理。背景的 recognizeProductPhoto/
-// recognizePriceFromPhoto 自動辨識完全沒有改動，只是客人不會再看到/
-// 調整這些值。取消訂單清單維持純展示（只有照片＋商品名稱）。匯款時
-// 系統不計算金額，但客人回報時會自己依固定格式回報「銀行/金額/
+// 連線代購下單改版 第一階段（目前狀態，取代之前所有版本的說明）：
+// 自動辨識（vision.ts/price-ocr.ts，Anthropic 視覺辨識 + tesseract.js
+// OCR 備援）整個移除，不再猜商品名稱/價格——客人在 LINE 對話裡「傳
+// 照片」階段只是暫存（community_livestream_orders.order_status=
+// 'staged'，product_name/unit_price 都是 null），真正的數量/單價是
+// 客人自己在免登入網頁（/live/confirm，簽章連結見
+// livestream-magic-link.ts）填完「送出訂單」才算數
+// （submit_livestream_order RPC，202610270005 migration），商品編號
+// 也是送出當下才配（見該 RPC 裡呼叫 increment_livestream_product_
+// number）。下單現在需要先有「連線場次」（community_livestream_
+// sessions）進行中才能開始，而且有「下單模式」
+// （community_line_bot_states.order_mode）跟「閒置 10 分鐘／場次
+// 結束」的惰性判斷（見 resolveOrderingGate），兩者都不寫排程、不主動
+// 推播，只在客人下一次傳文字/圖片時才檢查。
+//
+// 「查詢訂單」「取消訂單」「我要匯款」三個功能這一階段維持改版前的
+// 行為不變（只補了 order_status='submitted' 的過濾，避免暫存中的
+// staged 照片意外出現在這三個功能的清單裡）——這三個會在第二、三階段
+// 整個重寫，見 AI_HANDOFF.md。取消訂單清單維持純展示（只有照片＋商品
+// 名稱）。匯款時系統不計算金額，客人回報時依固定格式回報「銀行/金額/
 // 末五碼」三項，amount 欄位存的是客人自報的金額，純供管理員核對用，
-// 不是系統算出來的。後來加回一個極簡的「傳好了」確認信號（見
-// handlePhotoConfirmTrigger）——跟被整組移除的舊版數量確認清單語意
-// 完全不同，純粹是查「最近 10 分鐘內有沒有收到照片」的輕量 count，
-// 回一句純文字，不附清單/按鈕/數量/價格。客人想看目前訂單要自己另外
-// 輸入「查詢訂單」——這是獨立功能（見功能七 handleOrderQueryTrigger），
-// 不篩選任何狀態、列出全部商品，跟「取消訂單」是兩個完全不同的功能
-// （上一輪曾經誤把兩者當成同義詞，這輪已拆開，見功能六/七）。
+// 不是系統算出來的（金額自動比對是第三階段的範圍）。客人想看目前訂單
+// 要自己另外輸入「查詢訂單」——這是獨立功能（見功能七
+// handleOrderQueryTrigger），不篩選任何狀態、列出全部商品，跟「取消
+// 訂單」是兩個完全不同的功能。
 // 「圖片+商品名稱」清單項目共用函式 buildPhotoNameItemBlock 目前被
 // 「我要匯款」（handleRemittanceTrigger）跟「查詢訂單」
 // （handleOrderQueryTrigger）共用；「取消訂單」改用自己的
@@ -84,11 +96,10 @@ export const PHOTO_BUCKET = "community-livestream-photos";
 const MAX_PHOTOS_PER_ROUND = 10;
 const CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days — long enough for LINE to fetch/cache the bubble image
 const MAX_REPLY_MESSAGES = 5; // LINE reply API hard limit
-// 跟 order_welcome 文案裡「超過 10 分鐘沒上傳新照片，請重新輸入
-// 「我要下單」」用的是同一個時間概念——這裡是 handlePhotoConfirmTrigger
-// 實際查詢用的時間窗，那邊只是提醒文字本身，兩者數值要保持一致（文案
-// 後台可編輯，改了分鐘數的話記得這裡也要一併改）。
-const RECENT_PHOTO_WINDOW_MINUTES = 10;
+// 「下單模式」閒置逾時——跟 order_welcome/order_idle_closed 文案裡的
+// 「10 分鐘」是同一個時間概念，改了這個數值記得文案（後台可編輯）也要
+// 一併改，不然文字跟實際行為會對不上。
+const IDLE_TIMEOUT_MINUTES = 10;
 
 // 六組觸發關鍵字（下單/匯款/取消/查詢訂單/傳照片確認/取消匯款）改成
 // 後台可設定——實際的預設值/讀取/fallback 邏輯都在
@@ -223,18 +234,37 @@ type BotState = {
   // 訂單範圍跟觸發當下不一致（例如中途有新訂單進來或被取消）。
   awaiting_remittance_last5: boolean;
   remittance_order_ids: string[] | null;
+  // 連線代購下單改版：「下單模式」狀態——order_mode==="ordering" 代表
+  // 這個客人按過「我要下單」、還在閒置逾時/場次結束之前；
+  // order_session_id 記錄當初是在哪一場按的（場次結束的判斷要用這個，
+  // 不是重新查「現在有沒有進行中的場次」，避免客人正在填照片的途中
+  // 下一場剛好開始又被誤判成「還在進行」）；order_last_activity_at 是
+  // 「我要下單」「傳照片」「傳好了」任一動作的最後時間，給 10 分鐘
+  // 閒置判斷用；order_burst_replied 是「這一輪照片有沒有回過『收到
+  // 囉』」的旗標，靠 UPDATE ... WHERE order_burst_replied=false 的原子
+  // 寫法決定誰來回覆（見 handleImageMessage）。
+  order_mode: "ordering" | null;
+  order_session_id: string | null;
+  order_last_activity_at: string | null;
+  order_burst_replied: boolean;
 };
 
 async function getBotState(supabase: SupabaseService, userId: string): Promise<BotState> {
   const { data } = await supabase
     .from("community_line_bot_states")
-    .select("awaiting_remittance_last5, remittance_order_ids")
+    .select(
+      "awaiting_remittance_last5, remittance_order_ids, order_mode, order_session_id, order_last_activity_at, order_burst_replied",
+    )
     .eq("line_user_id", userId)
     .maybeSingle();
-  const row = data as BotState | null;
+  const row = data as (BotState & Record<string, unknown>) | null;
   return {
     awaiting_remittance_last5: Boolean(row?.awaiting_remittance_last5),
     remittance_order_ids: Array.isArray(row?.remittance_order_ids) ? row.remittance_order_ids : null,
+    order_mode: row?.order_mode === "ordering" ? "ordering" : null,
+    order_session_id: typeof row?.order_session_id === "string" ? row.order_session_id : null,
+    order_last_activity_at: typeof row?.order_last_activity_at === "string" ? row.order_last_activity_at : null,
+    order_burst_replied: Boolean(row?.order_burst_replied),
   };
 }
 
@@ -245,39 +275,127 @@ async function setBotState(supabase: SupabaseService, userId: string, patch: Par
 }
 
 // ---------------------------------------------------------------------------
-// 功能一：下單觸發（不再需要任何綁定/審核）
+// 連線代購下單改版：閒置／場次結束的「惰性判斷」——不寫排程、不主動
+// 推播，只在客人下一次傳文字/圖片時才檢查。只套用在 order_mode===
+// "ordering" 這個狀態，不改變其他任何既有流程（查詢/取消/匯款）的行為。
+// postback（例如既有「取消這項」按鈕）不經過這裡——語意上跟下單模式
+// 閒置與否無關，中斷它只會讓既有的取消流程體驗變差。
+//
+// 回傳 true 代表「這次事件請照常往下處理」；回傳 false 代表這次事件已經
+// 被這支函式吃掉（場次結束/閒置關閉的提示已經回覆過），呼叫端要直接
+// return，不要再處理這次事件本身的內容（例如這次傳的照片不存、這次的
+// 文字不比對任何關鍵字）——這是刻意的簡化，不是逐字規格要求，細節在
+// AI_HANDOFF.md 有記錄，供使用者核對是否符合預期。
 // ---------------------------------------------------------------------------
 
-async function handleOrderTrigger(replyToken: string | undefined, templates: LivestreamReplyTemplates) {
-  await replyTemplate(replyToken, templates, "order_welcome");
-}
+async function resolveOrderingGate(
+  supabase: SupabaseService,
+  userId: string,
+  replyToken: string | undefined,
+  templates: LivestreamReplyTemplates,
+  state: BotState,
+): Promise<boolean> {
+  if (state.order_mode !== "ordering") return true;
 
-// ---------------------------------------------------------------------------
-// 功能二：LINE 圖片下單
-// ---------------------------------------------------------------------------
-
-// 辨識不出商品名稱時，不存 null、也不顯示「未辨識商品」——自動產生一個
-// 看得懂的名稱：{LINE顯示名稱}-商品{N}。N 曾經是「查詢這個 line_user_id
-// 目前總共有幾筆 community_livestream_orders + 1」算出來的——客人連續
-// 快速傳好幾張照片時，多個 handleImageMessage 呼叫會在前一筆真正寫進
-// 資料庫之前幾乎同時查到同一個筆數，算出同一個編號，造成兩筆不同訂單
-// 撞號（都叫「商品3」）。改呼叫 increment_livestream_product_number
-// 這支 Postgres function（202610050001 migration）——內部是單一 SQL
-// 陳述式的 INSERT ... ON CONFLICT DO UPDATE ... RETURNING，Postgres
-// 對同一列的並行寫入會自動排隊，從根本上不會有兩次呼叫拿到同一個號碼。
-async function generateFallbackProductName(supabase: SupabaseService, userId: string, displayName: string) {
-  const { data, error } = await supabase.rpc("increment_livestream_product_number", { p_line_user_id: userId });
-  if (!error && typeof data === "number") {
-    return `${displayName}-商品${data}`;
+  if (state.order_session_id) {
+    const { data: session } = await supabase
+      .from("community_livestream_sessions")
+      .select("ends_at")
+      .eq("id", state.order_session_id)
+      .maybeSingle();
+    const ended = !session || new Date((session as { ends_at: string }).ends_at).getTime() <= Date.now();
+    if (ended) {
+      const { data: stagedRows } = await supabase
+        .from("community_livestream_orders")
+        .select("id, photo_storage_path")
+        .eq("line_user_id", userId)
+        .eq("order_status", "staged");
+      const rows = (stagedRows as { id: string; photo_storage_path: string | null }[] | null) || [];
+      if (rows.length) {
+        await supabase
+          .from("community_livestream_orders")
+          .delete()
+          .in("id", rows.map((row) => row.id));
+        const paths = rows.map((row) => row.photo_storage_path).filter((path): path is string => Boolean(path));
+        await deletePrivateFiles(PHOTO_BUCKET, paths);
+      }
+      await setBotState(supabase, userId, { order_mode: null, order_session_id: null, order_burst_replied: false });
+      await replyTemplate(replyToken, templates, "order_session_ended", { 數量: String(rows.length) });
+      return false;
+    }
   }
 
-  // RPC 失敗時的最後防線（例如 migration 還沒套用到這個環境）——刻意
-  // 不退回原本「查詢現有筆數＋1」那套算法，那正是這次要修掉的競態
-  // 來源；改用時間戳記＋亂碼尾碼，犧牲編號的連續性/可讀性，換取任何
-  // 情況下都不會跟其他商品撞名。
-  const fallbackSuffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
-  return `${displayName}-商品-${fallbackSuffix}`;
+  if (state.order_last_activity_at) {
+    const idleMs = Date.now() - new Date(state.order_last_activity_at).getTime();
+    if (idleMs > IDLE_TIMEOUT_MINUTES * 60 * 1000) {
+      const { count } = await supabase
+        .from("community_livestream_orders")
+        .select("id", { count: "exact", head: true })
+        .eq("line_user_id", userId)
+        .eq("order_status", "staged");
+      // 只清 order_mode，不清 staged 照片、不清 order_session_id——客人
+      // 緊接著的下一則訊息（例如馬上按「傳好了」）會直接通過上面的
+      // state.order_mode !== "ordering" 檢查、正常往下跑，不會被二次
+      // 攔截，這樣「暫存照片保留，客人隨時按「傳好了」都能進確認頁」
+      // 才會成立。
+      await setBotState(supabase, userId, { order_mode: null });
+      await replyTemplate(replyToken, templates, "order_idle_closed", { 數量: String(count || 0) });
+      return false;
+    }
+  }
+
+  return true;
 }
+
+// 「傳好了」快速按鈕——用後台可設定的 photo_confirm 關鍵字組的第一個詞
+// 當按鈕送出的文字，不寫死「傳好了」三個字，這樣即使管理員改了關鍵字
+// 設定，按鈕送出的文字還是會命中對應的指令。
+function photoConfirmQuickReply(keywords: LivestreamKeywords): LineQuickReply {
+  const text = keywords.photo_confirm[0] || "傳好了";
+  return { items: [{ type: "action", action: { type: "message", label: "傳好了", text } }] };
+}
+
+// ---------------------------------------------------------------------------
+// 功能一：下單觸發（不再需要任何綁定/審核）——這次改版新增「要先有進行中
+// 的連線場次」這個門檻，有的話才開啟下單模式。
+// ---------------------------------------------------------------------------
+
+async function handleOrderTrigger(
+  supabase: SupabaseService,
+  userId: string,
+  replyToken: string | undefined,
+  templates: LivestreamReplyTemplates,
+  keywords: LivestreamKeywords,
+) {
+  const session = await getCurrentSession(supabase);
+  if (!session) {
+    await replyTemplate(replyToken, templates, "order_no_session");
+    return;
+  }
+
+  await setBotState(supabase, userId, {
+    order_mode: "ordering",
+    order_session_id: session.id,
+    order_last_activity_at: new Date().toISOString(),
+    order_burst_replied: false,
+  });
+
+  if (replyToken) {
+    await sendLineReply(replyToken, [
+      {
+        type: "text",
+        text: renderLivestreamReplyTemplate(templates.order_welcome),
+        quickReply: photoConfirmQuickReply(keywords),
+      },
+    ]);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 功能二：LINE 圖片下單——改版後不再做任何自動辨識（商品名稱/價格都交給
+// 客人自己在確認頁填），照片全程安靜暫存成 order_status='staged'，只有
+// 每一輪的「第一張」回一次「收到囉」。
+// ---------------------------------------------------------------------------
 
 async function handleImageMessage(
   supabase: SupabaseService,
@@ -286,6 +404,17 @@ async function handleImageMessage(
   messageId: string,
 ) {
   if (!messageId) return;
+
+  const templates = await getLivestreamReplyTemplates();
+  const { keywords } = await getLivestreamKeywordSettings();
+  const state = await getBotState(supabase, userId);
+
+  const shouldProceed = await resolveOrderingGate(supabase, userId, replyToken, templates, state);
+  if (!shouldProceed) return;
+
+  // 沒有在下單模式（沒按過「我要下單」，或已經被上面的惰性判斷清掉）：
+  // 完全不處理、不下載、不存檔、不回覆。
+  if (state.order_mode !== "ordering") return;
 
   const content = await downloadLineMessageContent(messageId);
   if (!content) {
@@ -302,50 +431,47 @@ async function handleImageMessage(
   }
 
   const displayName = await getLineDisplayName(userId);
-  const recognized = await recognizeProductPhoto(content.buffer, content.contentType);
-  const productName = recognized?.productName || (await generateFallbackProductName(supabase, userId, displayName));
 
-  // Anthropic 視覺辨識沒抓到價格（目前甚至完全沒設定 API 金鑰，一律回傳
-  // price:null）時，用免費的白框 OCR 備援試一次（見 price-ocr.ts）。一樣
-  // 遵守「不確定就跳過」——OCR 也認不出數字就維持 null，不會拿一個猜測值
-  // 蓋掉「沒辦法辨識」這個誠實的狀態。
-  //
-  // 這支呼叫先前在 Production 造成過一次真正的事故：tesseract.js 的
-  // worker thread 用 new Worker(path.join(__dirname, ...)) 動態組路徑
-  // 載入 worker-script/node/index.js，這條路徑對 @vercel/nft 的靜態
-  // 追蹤（只看 import/require/fs）完全不可見，導致那個檔案（跟它需要的
-  // 一切）沒被打包進部署，一呼叫就整個 process 崩潰（exit 129）——不是
-  // 辨識失敗，是連 handleImageMessage 都死掉，照片完全沒寫進資料庫。
-  // 本機 tsc/eslint/build 全部測不出來，只有真正的 Vercel 部署會炸。
-  // 修法在 next.config.ts 的 outputFileTracingIncludes 裡，把
-  // worker thread 需要的檔案強制打包進 /api/line/webhook 這個路由——
-  // 這支呼叫要重新接回來，前提是那個修法已經在真正的 Vercel 部署上
-  // （不是只有本機）驗證過不會再崩潰。
-  let unitPrice = recognized?.price ?? null;
-  if (unitPrice == null) {
-    unitPrice = await recognizePriceFromPhoto(content.buffer);
-  }
-
+  // product_name/unit_price 保持 null——不再辨識，交給客人在確認頁填；
+  // 商品編號（{LINE顯示名稱}-商品{N}）也延後到「送出訂單」當下才產生
+  // （見 submit_livestream_order RPC），避免客人移除照片後編號出現空洞。
   const { error: insertError } = await supabase.from("community_livestream_orders").insert({
     line_user_id: userId,
     line_display_name: displayName,
     nickname: displayName,
-    product_name: productName,
-    unit_price: unitPrice,
-    recognized_confidence: recognized?.confidence ?? null,
     quantity: 1,
     photo_storage_path: storagePath,
     source: "line",
+    order_status: "staged",
   });
   if (insertError) {
     await reply(replyToken, "圖片處理失敗，請稍後再試一次。");
     return;
   }
 
-  // 全程安靜——不回覆任何確認訊息。數量/價格互動已整組移除，客人這端
-  // 不再需要看到或確認任何東西，商品名稱/單價仍照常嘗試自動辨識並存進
-  // 資料庫，由後台管理員檢視/編輯（見上面的 recognizeProductPhoto /
-  // recognizePriceFromPhoto，本輪完全沒有改動這兩支函式本身）。
+  await setBotState(supabase, userId, { order_last_activity_at: new Date().toISOString() });
+
+  // 原子「搶」這一輪第一張的回覆權：UPDATE ... WHERE order_burst_replied
+  // = false ... RETURNING 本身是單一 SQL 陳述式，客人一次傳很多張、LINE
+  // 同時打來多個 webhook 事件時，Postgres 對同一列的並行寫入會自動
+  // 排隊，只有一次呼叫會真的把 false 改成 true、拿回非空結果——那一次
+  // 才負責回覆，其餘完全安靜。
+  const { data: claimed } = await supabase
+    .from("community_line_bot_states")
+    .update({ order_burst_replied: true })
+    .eq("line_user_id", userId)
+    .eq("order_burst_replied", false)
+    .select("line_user_id");
+
+  if (claimed && claimed.length > 0 && replyToken) {
+    await sendLineReply(replyToken, [
+      {
+        type: "text",
+        text: renderLivestreamReplyTemplate(templates.order_photo_first),
+        quickReply: photoConfirmQuickReply(keywords),
+      },
+    ]);
+  }
 }
 
 type PhotoNameOrderRow = {
@@ -381,24 +507,26 @@ async function buildPhotoNameItemBlock(row: PhotoNameOrderRow): Promise<object> 
   return { type: "box", layout: "horizontal", spacing: "md", contents: rowContents };
 }
 
-// 傳照片確認：客人傳完照片後打關鍵字（預設「傳好了」），查一下「這個
-// 人最近 10 分鐘內有沒有真的收到照片」——不是恢復「好了」那套數量
-// 確認清單（那套已經整組移除，見上方大段說明），純粹是輕量的 count
-// 查詢，只用來判斷要回哪句文字，不抓完整欄位、不附清單/按鈕/數量/
-// 價格。客人想看目前訂單，要自己另外輸入「查詢訂單」（見 handleCancelTrigger，
-// 兩個關鍵字共用同一套清單邏輯）。
+// 「傳好了」（功能四）：客人傳完照片後觸發，查這個人目前 order_status=
+// 'staged' 的筆數——沒有就回「還沒收到照片」；有的話產生一個免登入的
+// 確認頁簽章連結（60 分鐘內有效，見 livestream-magic-link.ts），回一張
+// Flex 卡片附「確認數量」按鈕開網頁，照片要等客人在那個網頁按「送出
+// 訂單」才真的變成正式訂單（見 /api/live/confirm/submit）。
+// order_burst_replied 重置成 false，讓客人之後如果還會繼續傳新照片，
+// 下一輪的「第一張」能再回覆一次「收到囉」——order_mode 不在這裡清除，
+// 客人可能還會繼續傳照片，要撐到閒置逾時或場次結束才清掉（見
+// resolveOrderingGate）。
 async function handlePhotoConfirmTrigger(
   supabase: SupabaseService,
   userId: string,
   replyToken: string | undefined,
   templates: LivestreamReplyTemplates,
 ) {
-  const sinceIso = new Date(Date.now() - RECENT_PHOTO_WINDOW_MINUTES * 60 * 1000).toISOString();
   const { count, error } = await supabase
     .from("community_livestream_orders")
     .select("id", { count: "exact", head: true })
     .eq("line_user_id", userId)
-    .gte("created_at", sinceIso);
+    .eq("order_status", "staged");
 
   if (error) {
     await reply(replyToken, "查詢失敗，請稍後再試一次。");
@@ -410,7 +538,45 @@ async function handlePhotoConfirmTrigger(
     return;
   }
 
-  await replyTemplate(replyToken, templates, "photo_confirm_success");
+  await setBotState(supabase, userId, { order_burst_replied: false });
+
+  const token = createLivestreamMagicLink(userId, "order-confirm");
+  const confirmUrl = `${getSiteOrigin()}/live/confirm?token=${encodeURIComponent(token)}`;
+
+  const bubble = {
+    type: "bubble",
+    body: {
+      type: "box",
+      layout: "vertical",
+      spacing: "md",
+      contents: [
+        { type: "text", text: `收到 ${count} 張照片`, weight: "bold", size: "lg" },
+        {
+          type: "text",
+          text: renderLivestreamReplyTemplate(templates.order_photo_confirm_card),
+          wrap: true,
+          size: "sm",
+          color: "#6b7280",
+        },
+      ],
+    },
+    footer: {
+      type: "box",
+      layout: "vertical",
+      contents: [
+        {
+          type: "button",
+          style: "primary",
+          height: "sm",
+          action: { type: "uri", label: "確認數量", uri: confirmUrl },
+        },
+      ],
+    },
+  };
+
+  if (replyToken) {
+    await sendLineReply(replyToken, [{ type: "flex", altText: `收到 ${count} 張照片`, contents: bubble }]);
+  }
 }
 
 // 匯款/取消訂單清單共用的 Flex 容器——把已經組好的 item block 陣列接上
@@ -520,6 +686,7 @@ async function handleCancelTrigger(
     .from("community_livestream_orders")
     .select("id, product_name, photo_storage_path")
     .eq("line_user_id", userId)
+    .eq("order_status", "submitted")
     .eq("purchase_status", "not_bought")
     .eq("payment_status", "unpaid")
     .order("created_at", { ascending: true })
@@ -538,11 +705,15 @@ async function handleCancelTrigger(
 
   // 開頭提示：涵蓋「已購買」跟「已購買以外、但已進入匯款流程（確認中/
   // 已付款）」這兩種不能取消的情況——用「這個人全部訂單筆數 - 可取消
-  // 筆數」算出不可取消的總數，不用另外寫一個 OR 條件的查詢。
+  // 筆數」算出不可取消的總數，不用另外寫一個 OR 條件的查詢。連線代購
+  // 下單改版之後，這裡的「全部訂單筆數」要排除 order_status='staged'
+  // 的暫存照片——那些還沒送出，不算「不能取消的訂單」，不該被算進
+  // 「不可取消」的提示數字裡。
   const { count: totalCount } = await supabase
     .from("community_livestream_orders")
     .select("id", { count: "exact", head: true })
-    .eq("line_user_id", userId);
+    .eq("line_user_id", userId)
+    .eq("order_status", "submitted");
 
   const noncancellableCount = Math.max((totalCount || 0) - cancellable.length, 0);
 
@@ -577,6 +748,7 @@ async function handleCancelOrder(
     .select("product_name, purchase_status, payment_status")
     .eq("id", orderId)
     .eq("line_user_id", userId)
+    .eq("order_status", "submitted")
     .maybeSingle();
   if (!row) {
     await reply(replyToken, "找不到這筆訂單，可能已經被取消過了。");
@@ -619,6 +791,7 @@ async function handleOrderQueryTrigger(
     .from("community_livestream_orders")
     .select("id, product_name, photo_storage_path")
     .eq("line_user_id", userId)
+    .eq("order_status", "submitted")
     .order("created_at", { ascending: true })
     .limit(MAX_PHOTOS_PER_ROUND * MAX_REPLY_MESSAGES);
 
@@ -688,6 +861,7 @@ async function handleRemittanceTrigger(
     .from("community_livestream_orders")
     .select("id, product_name, photo_storage_path")
     .eq("line_user_id", userId)
+    .eq("order_status", "submitted")
     .eq("payment_status", "unpaid");
 
   if (error) {
@@ -780,6 +954,12 @@ async function handleTextMessage(
   const templates = await getLivestreamReplyTemplates();
   const { keywords, enabled } = await getLivestreamKeywordSettings();
 
+  // 連線代購下單改版：閒置／場次結束的惰性判斷放在最前面，只有
+  // order_mode==="ordering" 才會真的做事，其餘情況直接通過，對下面的
+  // 查詢/取消/匯款/一般關鍵字完全沒有行為改變。
+  const shouldProceed = await resolveOrderingGate(supabase, userId, replyToken, templates, state);
+  if (!shouldProceed) return;
+
   // 明確的「取消匯款」逃生指令——檢查順序刻意放在最前面、獨立於下面的
   // awaiting 分支：預設詞「取消匯款」本身同時包含「取消」「匯款」兩個
   // 字，如果放給下面一般的關鍵字比對，客人在非等待狀態打這個詞會被
@@ -832,7 +1012,7 @@ async function handleTextMessage(
   }
 
   if (matchesEnabledGroup(text, keywords, enabled, "order")) {
-    await handleOrderTrigger(replyToken, templates);
+    await handleOrderTrigger(supabase, userId, replyToken, templates, keywords);
     return;
   }
 

@@ -37,3 +37,15 @@ export async function createSignedUrl(
   if (error || !data?.signedUrl) return null;
   return data.signedUrl;
 }
+
+/**
+ * Best-effort delete of one or more private objects. Never throws — callers
+ * that are cleaning up orphaned files (e.g. 連線代購下單 clearing staged
+ * photos when a session ends) should not fail their main operation just
+ * because storage cleanup didn't fully succeed.
+ */
+export async function deletePrivateFiles(bucket: string, paths: string[]): Promise<void> {
+  if (!paths.length) return;
+  const supabase = createSupabaseServiceClient();
+  await supabase.storage.from(bucket).remove(paths).catch(() => {});
+}

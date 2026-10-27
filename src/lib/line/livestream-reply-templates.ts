@@ -12,7 +12,12 @@ const SETTINGS_TYPE = "community-livestream-reply-templates";
 const MAX_TEMPLATE_LENGTH = 2000;
 
 export type LivestreamReplyTemplateKey =
+  | "order_no_session"
   | "order_welcome"
+  | "order_photo_first"
+  | "order_photo_confirm_card"
+  | "order_idle_closed"
+  | "order_session_ended"
   | "cancel_empty"
   | "cancel_intro_all"
   | "cancel_intro_partial"
@@ -24,13 +29,17 @@ export type LivestreamReplyTemplateKey =
   | "remittance_format_invalid"
   | "remittance_cancelled"
   | "remittance_success"
-  | "photo_confirm_success"
   | "photo_confirm_empty"
   | "order_query_empty"
   | "order_query_intro";
 
 export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
+  "order_no_session",
   "order_welcome",
+  "order_photo_first",
+  "order_photo_confirm_card",
+  "order_idle_closed",
+  "order_session_ended",
   "cancel_empty",
   "cancel_intro_all",
   "cancel_intro_partial",
@@ -42,7 +51,6 @@ export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
   "remittance_format_invalid",
   "remittance_cancelled",
   "remittance_success",
-  "photo_confirm_success",
   "photo_confirm_empty",
   "order_query_empty",
   "order_query_intro",
@@ -53,8 +61,13 @@ export type LivestreamReplyTemplates = Record<LivestreamReplyTemplateKey, string
 // 逐字跟改動前的寫死文案一致——即使從未進過後台設定畫面，bot 的回覆內容
 // 也跟改動前完全一樣，不會突然改變。
 export const DEFAULT_LIVESTREAM_REPLY_TEMPLATES: LivestreamReplyTemplates = {
-  order_welcome:
-    "已開啟下單功能，請直接上傳您要的商品圖片即可，不需要再輸入其他文字！提醒您：若超過 10 分鐘沒有上傳新照片，請重新輸入「我要下單」繼續使用。",
+  order_no_session: "目前沒有進行中的連線，連線時間再來下單喔！",
+  order_welcome: "開始下單囉！請把想買的商品照片傳給我，傳完請按「傳好了」。（10 分鐘沒有動作會自動關閉）",
+  order_photo_first: "收到囉！可以繼續傳，傳完請按「傳好了」。",
+  order_photo_confirm_card: "請確認後點下方按鈕填寫數量與單價。",
+  order_idle_closed:
+    "超過 10 分鐘沒有動作，下單功能已自動關閉。已傳的 {{數量}} 張照片還保留著，按「傳好了」可以確認數量後送出；要繼續傳照片，請重新按「我要下單」。",
+  order_session_ended: "這場連線已經結束了。沒有送出的 {{數量}} 張照片已清除。下次連線開始時再按「我要下單」就可以囉。",
   cancel_empty: "目前沒有可以取消的商品喔（已購買或已在匯款流程中的商品無法取消）。",
   cancel_intro_all: "以下是您目前可以取消的商品：",
   cancel_intro_partial: "您已購買或已在匯款流程中的 {{數量}} 項商品不會列在這裡，恕無法取消。以下是可以取消的商品：",
@@ -68,8 +81,7 @@ export const DEFAULT_LIVESTREAM_REPLY_TEMPLATES: LivestreamReplyTemplates = {
     "格式有誤或漏填，請依照以下格式重新回覆（三項都要填）：\n1.匯到哪家銀行：\n2.金額：\n3.末五碼：\n\n如需取消匯款請輸入「取消匯款」。",
   remittance_cancelled: "已取消匯款申報，如需使用請重新輸入「我要匯款」。",
   remittance_success: "已收到您的匯款回報，我們將盡快為您核對，感謝您！",
-  photo_confirm_success: "已錄入商品，感謝您的訂購！如想查詢目前訂單，請輸入「查詢訂單」。",
-  photo_confirm_empty: "目前沒有收到您的商品照片喔，請先上傳圖片再回覆「傳好了」。",
+  photo_confirm_empty: "還沒收到照片喔，請先按「我要下單」再傳商品照片。",
   order_query_empty: "目前沒有查到您的下單紀錄喔。",
   order_query_intro: "以下是您目前下單的所有商品：",
 };

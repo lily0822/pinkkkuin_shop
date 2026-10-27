@@ -20,9 +20,7 @@
     "lucide-react": "latest",
     "next": "^16.1.6",
     "react": "^19.2.6",
-    "react-dom": "^19.2.6",
-    "sharp": "^0.34.5",
-    "tesseract.js": "^7.0.0"
+    "react-dom": "^19.2.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "latest",

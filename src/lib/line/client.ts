@@ -11,15 +11,31 @@ export type LinePushResult = {
   disabled?: boolean;
 };
 
+// Quick Reply chips shown above the keyboard on the customer's next reply
+// (up to 13 items per LINE's own limit). Only text/flex *reply* messages use
+// this in practice (see livestream-orders.ts's 連線代購下單 flow) — kept
+// optional on both message types rather than introducing a third message
+// shape, since LINE itself allows quickReply on either.
+export type LineQuickReplyItem = {
+  type: "action";
+  action: Record<string, unknown>;
+};
+
+export type LineQuickReply = {
+  items: LineQuickReplyItem[];
+};
+
 type LineTextMessage = {
   type: "text";
   text: string;
+  quickReply?: LineQuickReply;
 };
 
 type LineFlexMessage = {
   type: "flex";
   altText: string;
   contents: Record<string, unknown>;
+  quickReply?: LineQuickReply;
 };
 
 type LineAdminMessage = LineTextMessage | LineFlexMessage;
@@ -328,6 +344,7 @@ export async function getLineUserProfile(userId: string): Promise<{ displayName:
 export async function downloadLineMessageContent(
   messageId: string,
 ): Promise<{ buffer: Buffer; contentType: string } | null> {
+
   const config = getLineConfig();
   const id = messageId.trim();
   if (!config.channelAccessToken || !id) return null;
