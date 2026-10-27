@@ -30,7 +30,7 @@ import {
   type LivestreamReplyTemplateKey,
   type LivestreamReplyTemplates,
 } from "./livestream-reply-templates";
-import { getCurrentSession } from "./livestream-sessions";
+import { getCurrentSession, getCurrentOrMostRecentSession } from "./livestream-sessions";
 import { createLivestreamMagicLink } from "./livestream-magic-link";
 
 // 功能一 (下單觸發) + 功能二 (LINE 圖片下單對話流程). 社群暱稱綁定/審核機制
@@ -62,20 +62,23 @@ import { createLivestreamMagicLink } from "./livestream-magic-link";
 // 結束」的惰性判斷（見 resolveOrderingGate），兩者都不寫排程、不主動
 // 推播，只在客人下一次傳文字/圖片時才檢查。
 //
-// 「查詢訂單」「取消訂單」「我要匯款」三個功能這一階段維持改版前的
-// 行為不變（只補了 order_status='submitted' 的過濾，避免暫存中的
-// staged 照片意外出現在這三個功能的清單裡）——這三個會在第二、三階段
-// 整個重寫，見 AI_HANDOFF.md。取消訂單清單維持純展示（只有照片＋商品
-// 名稱）。匯款時系統不計算金額，客人回報時依固定格式回報「銀行/金額/
-// 末五碼」三項，amount 欄位存的是客人自報的金額，純供管理員核對用，
-// 不是系統算出來的（金額自動比對是第三階段的範圍）。客人想看目前訂單
-// 要自己另外輸入「查詢訂單」——這是獨立功能（見功能七
-// handleOrderQueryTrigger），不篩選任何狀態、列出全部商品，跟「取消
-// 訂單」是兩個完全不同的功能。
-// 「圖片+商品名稱」清單項目共用函式 buildPhotoNameItemBlock 目前被
-// 「我要匯款」（handleRemittanceTrigger）跟「查詢訂單」
-// （handleOrderQueryTrigger）共用；「取消訂單」改用自己的
-// buildCancelItemBlock（多一顆取消按鈕，見功能六）。
+// 「我要匯款」這一階段維持改版前的行為不變（只補了
+// order_status='submitted' 的過濾，避免暫存中的 staged 照片意外出現在
+// 清單裡）——匯款流程整個重寫是第三階段的範圍，見 AI_HANDOFF.md。匯款時
+// 系統不計算金額，客人回報時依固定格式回報「銀行/金額/末五碼」三項，
+// amount 欄位存的是客人自報的金額，純供管理員核對用，不是系統算出來的
+// （金額自動比對是第三階段的範圍）。
+//
+// 「查詢訂單」「取消訂單」這一階段整個重寫（見功能六/七
+// handleOrderManageTrigger）：兩個關鍵字組現在共用同一個函式，都是回一張
+// 帶簽章連結的 Flex 卡片，連去新網頁 /live/orders——客人在網頁上看到
+// 「目前這一波連線」（getCurrentOrMostRecentSession）的全部訂單、每項的
+// 採買/付款狀態、尚未匯款金額合計，並能修改數量／取消還沒採買、還沒
+// 進入匯款流程的項目。舊版「查詢訂單純展示」「取消訂單輪播+postback」
+// 兩套在聊天室裡各自呈現清單的邏輯已經整個刪除（buildCancelItemBlock、
+// handleCancelOrder、postback action=cancel_order 都不再存在）。
+// 「圖片+商品名稱」清單項目共用函式 buildPhotoNameItemBlock 現在只剩
+// 「我要匯款」（handleRemittanceTrigger）在用。
 //
 // awaiting_remittance_last5 等待狀態不再是「獨佔」文字輸入的黑洞：
 // handleTextMessage 進入這個狀態後，會先比對 order/remittance/cancel/
@@ -93,9 +96,7 @@ export type LineWebhookEvent = {
 };
 
 export const PHOTO_BUCKET = "community-livestream-photos";
-const MAX_PHOTOS_PER_ROUND = 10;
 const CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days — long enough for LINE to fetch/cache the bubble image
-const MAX_REPLY_MESSAGES = 5; // LINE reply API hard limit
 // 「下單模式」閒置逾時——跟 order_welcome/order_idle_closed 文案裡的
 // 「10 分鐘」是同一個時間概念，改了這個數值記得文案（後台可編輯）也要
 // 一併改，不然文字跟實際行為會對不上。
@@ -175,12 +176,6 @@ function parseRemittanceReport(rawText: string): RemittanceReport | null {
   if (!/^\d{5}$/.test(last5Digits)) return null;
 
   return { bankName, amount, last5: last5Digits };
-}
-
-function chunk<T>(items: T[], size: number): T[][] {
-  const batches: T[][] = [];
-  for (let i = 0; i < items.length; i += size) batches.push(items.slice(i, i + size));
-  return batches;
 }
 
 async function reply(replyToken: string | undefined, text: string) {
@@ -600,220 +595,79 @@ function buildOrderListBubble(itemBlocks: object[]) {
   };
 }
 
-async function handlePostback(
-  supabase: SupabaseService,
-  userId: string,
-  replyToken: string | undefined,
-  data: string,
-) {
-  const templates = await getLivestreamReplyTemplates();
-  const params = new URLSearchParams(data);
-  const action = params.get("action") || "";
-  const orderId = params.get("order_id") || "";
-  if (!orderId) return;
-
-  if (action === "cancel_order") {
-    await handleCancelOrder(supabase, userId, orderId, replyToken, templates);
-  }
-}
-
 // ---------------------------------------------------------------------------
-// 功能六：自助取消訂單 — 比照「我要下單」的觸發模式。只有 purchase_status
-// 還是 'not_bought' 且 payment_status 還是 'unpaid'（客人還沒進入匯款
-// 流程）的訂單能取消；取消即直接硬刪除該筆 community_livestream_orders
-// （跟後台的刪除按鈕共用 deleteLivestreamOrder，不另外寫一套邏輯），不留
-// 取消紀錄。
-//
-// 跟功能七「查詢訂單」是兩個完全獨立的功能（上一輪曾經誤把「查詢訂單」
-// 當成這組關鍵字的同義詞，這輪已拆開）——這裡只查「還能取消」的子集
-// (not_bought + unpaid)，查詢訂單則是不篩選任何狀態、列出全部商品，純
-// 展示沒有取消按鈕。
-//
-// 排版這輪改成直向列表（跟 buildOrderListBubble 那套用分隔線往下排的
-// 做法一致），不再是「一張一張橫向滑動的 Carousel」：每一列是圖片在
-// 左、商品名稱在中間、「取消這項」按鈕在右邊的同一列三欄式排版，不是
-// 舊版 buildCancelBubble「圖片在上、按鈕在下」的堆疊卡片——buildCancelBubble
-// 整支已刪除，改用下面的 buildCancelItemBlock。
+// 功能六/七：查詢訂單／取消訂單 — 第二階段整個重寫，兩個關鍵字組現在
+// 共用同一個觸發函式。只查「目前這一波連線」（getCurrentOrMostRecentSession）
+// 的 submitted 訂單，0 筆回 order_query_empty，有筆數就回一張簽章連結
+// Flex 卡片，連去 /live/orders——實際的查看/修改數量/取消互動都在那個
+// 網頁上完成，不再像舊版那樣把整份清單塞進 LINE 聊天室（舊版沒有場次
+// 範圍、沒有採買/付款狀態顯示，而且 >10 筆會被 chunk+slice 靜默截斷，
+// 這些問題這次順便一起解決，不用在聊天室裡維護分頁）。
 // ---------------------------------------------------------------------------
 
-type CancellableOrderRow = {
-  id: string;
-  product_name: string | null;
-  photo_storage_path: string | null;
-};
-
-// 單列三欄：縮圖（左）＋ 商品名稱（中，撐滿剩餘空間）＋「取消這項」
-// 按鈕（右）。跟 buildPhotoNameItemBlock 的左右兩欄版型同源，只是多了
-// 第三欄的按鈕——兩邊不合併成一支共用函式，因為按鈕這個差異是取消
-// 清單獨有的，匯款/查詢訂單都不需要任何互動元件。
-async function buildCancelItemBlock(row: CancellableOrderRow): Promise<object> {
-  const imageUrl = row.photo_storage_path
-    ? await createSignedUrl(PHOTO_BUCKET, row.photo_storage_path, CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS)
-    : null;
-
-  const rowContents: object[] = [];
-  if (imageUrl) {
-    rowContents.push({ type: "image", url: imageUrl, size: "60px", aspectMode: "cover", aspectRatio: "1:1", flex: 0 });
-  }
-  rowContents.push({
-    type: "box",
-    layout: "vertical",
-    flex: 1,
-    justifyContent: "center",
-    contents: [{ type: "text", text: row.product_name || "商品", weight: "bold", wrap: true, size: "sm" }],
-  });
-  rowContents.push({
-    type: "button",
-    style: "primary",
-    height: "sm",
-    color: "#ef4444",
-    flex: 0,
-    action: { type: "postback", label: "取消這項", data: `action=cancel_order&order_id=${row.id}`, displayText: "取消這項" },
-  });
-
-  return { type: "box", layout: "horizontal", spacing: "md", alignItems: "center", contents: rowContents };
-}
-
-async function handleCancelTrigger(
+async function handleOrderManageTrigger(
   supabase: SupabaseService,
   userId: string,
   replyToken: string | undefined,
   templates: LivestreamReplyTemplates,
 ) {
-  // 只有「還沒購買」且「還沒付款（含匯款確認中）」的訂單才能自助取消——
-  // 一旦客人回報過匯款（confirming/paid），就不該再讓他把這筆訂單取消掉。
-  const { data, error } = await supabase
-    .from("community_livestream_orders")
-    .select("id, product_name, photo_storage_path")
-    .eq("line_user_id", userId)
-    .eq("order_status", "submitted")
-    .eq("purchase_status", "not_bought")
-    .eq("payment_status", "unpaid")
-    .order("created_at", { ascending: true })
-    .limit(MAX_PHOTOS_PER_ROUND * MAX_REPLY_MESSAGES);
+  const session = await getCurrentOrMostRecentSession(supabase);
 
-  if (error) {
-    await reply(replyToken, "查詢訂單失敗，請稍後再試一次。");
-    return;
-  }
-
-  const cancellable = (data as CancellableOrderRow[] | null) || [];
-  if (!cancellable.length) {
-    await replyTemplate(replyToken, templates, "cancel_empty");
-    return;
-  }
-
-  // 開頭提示：涵蓋「已購買」跟「已購買以外、但已進入匯款流程（確認中/
-  // 已付款）」這兩種不能取消的情況——用「這個人全部訂單筆數 - 可取消
-  // 筆數」算出不可取消的總數，不用另外寫一個 OR 條件的查詢。連線代購
-  // 下單改版之後，這裡的「全部訂單筆數」要排除 order_status='staged'
-  // 的暫存照片——那些還沒送出，不算「不能取消的訂單」，不該被算進
-  // 「不可取消」的提示數字裡。
-  const { count: totalCount } = await supabase
+  let countQuery = supabase
     .from("community_livestream_orders")
     .select("id", { count: "exact", head: true })
     .eq("line_user_id", userId)
     .eq("order_status", "submitted");
+  countQuery = session ? countQuery.eq("session_id", session.id) : countQuery;
 
-  const noncancellableCount = Math.max((totalCount || 0) - cancellable.length, 0);
-
-  const introText =
-    noncancellableCount > 0
-      ? renderLivestreamReplyTemplate(templates.cancel_intro_partial, { 數量: String(noncancellableCount) })
-      : renderLivestreamReplyTemplate(templates.cancel_intro_all);
-
-  const batches = chunk(cancellable, MAX_PHOTOS_PER_ROUND).slice(0, MAX_REPLY_MESSAGES - 1);
-  const messages: LineReplyMessage[] = [{ type: "text", text: introText }];
-  for (const batch of batches) {
-    const itemBlocks = await Promise.all(batch.map((row) => buildCancelItemBlock(row)));
-    messages.push({
-      type: "flex",
-      altText: "請選擇要取消的商品",
-      contents: buildOrderListBubble(itemBlocks),
-    });
-  }
-
-  if (replyToken) await sendLineReply(replyToken, messages);
-}
-
-async function handleCancelOrder(
-  supabase: SupabaseService,
-  userId: string,
-  orderId: string,
-  replyToken: string | undefined,
-  templates: LivestreamReplyTemplates,
-) {
-  const { data: row } = await supabase
-    .from("community_livestream_orders")
-    .select("product_name, purchase_status, payment_status")
-    .eq("id", orderId)
-    .eq("line_user_id", userId)
-    .eq("order_status", "submitted")
-    .maybeSingle();
-  if (!row) {
-    await reply(replyToken, "找不到這筆訂單，可能已經被取消過了。");
-    return;
-  }
-  if (row.purchase_status !== "not_bought") {
-    await replyTemplate(replyToken, templates, "cancel_blocked_bought");
-    return;
-  }
-  if (row.payment_status !== "unpaid") {
-    await replyTemplate(replyToken, templates, "cancel_blocked_paying");
-    return;
-  }
-
-  const label = row.product_name || "這項商品";
-  const ok = await deleteLivestreamOrder(supabase, orderId);
-  if (!ok) {
-    await reply(replyToken, "取消失敗，請稍後再試一次。");
-    return;
-  }
-  await replyTemplate(replyToken, templates, "cancel_success", { 商品名稱: label });
-}
-
-// ---------------------------------------------------------------------------
-// 功能七：查詢訂單 — 純查詢，不是取消訂單的同義詞（上一輪曾經誤把兩者
-// 合併，這輪拆開成獨立功能，見功能六開頭的說明）。列出這個客人**全部**
-// 的 community_livestream_orders，不篩選 purchase_status/payment_status
-// ——已購買、未購買、確認中、已付款通通列出來，純粹讓客人確認自己
-// 下了哪些單，不能從這裡取消任何商品。樣式比照「我要匯款」，直接重用
-// buildPhotoNameItemBlock（圖片在左、商品名稱在右，無按鈕）。
-// ---------------------------------------------------------------------------
-
-async function handleOrderQueryTrigger(
-  supabase: SupabaseService,
-  userId: string,
-  replyToken: string | undefined,
-  templates: LivestreamReplyTemplates,
-) {
-  const { data, error } = await supabase
-    .from("community_livestream_orders")
-    .select("id, product_name, photo_storage_path")
-    .eq("line_user_id", userId)
-    .eq("order_status", "submitted")
-    .order("created_at", { ascending: true })
-    .limit(MAX_PHOTOS_PER_ROUND * MAX_REPLY_MESSAGES);
-
+  const { count, error } = await countQuery;
   if (error) {
     await reply(replyToken, "查詢訂單失敗，請稍後再試一次。");
     return;
   }
 
-  const rows = (data as PhotoNameOrderRow[] | null) || [];
-  if (!rows.length) {
+  if (!count) {
     await replyTemplate(replyToken, templates, "order_query_empty");
     return;
   }
 
-  const batches = chunk(rows, MAX_PHOTOS_PER_ROUND).slice(0, MAX_REPLY_MESSAGES - 1);
-  const messages: LineReplyMessage[] = [{ type: "text", text: renderLivestreamReplyTemplate(templates.order_query_intro) }];
-  for (const batch of batches) {
-    const itemBlocks = await Promise.all(batch.map((row) => buildPhotoNameItemBlock(row)));
-    messages.push({ type: "flex", altText: "您目前下單的商品", contents: buildOrderListBubble(itemBlocks) });
-  }
+  const token = createLivestreamMagicLink(userId, "order-edit");
+  const ordersUrl = `${getSiteOrigin()}/live/orders?token=${encodeURIComponent(token)}`;
 
-  if (replyToken) await sendLineReply(replyToken, messages);
+  const bubble = {
+    type: "bubble",
+    body: {
+      type: "box",
+      layout: "vertical",
+      spacing: "md",
+      contents: [
+        { type: "text", text: `目前有 ${count} 項訂單`, weight: "bold", size: "lg" },
+        {
+          type: "text",
+          text: renderLivestreamReplyTemplate(templates.order_manage_card),
+          wrap: true,
+          size: "sm",
+          color: "#6b7280",
+        },
+      ],
+    },
+    footer: {
+      type: "box",
+      layout: "vertical",
+      contents: [
+        {
+          type: "button",
+          style: "primary",
+          height: "sm",
+          action: { type: "uri", label: "查看訂單", uri: ordersUrl },
+        },
+      ],
+    },
+  };
+
+  if (replyToken) {
+    await sendLineReply(replyToken, [{ type: "flex", altText: `目前有 ${count} 項訂單`, contents: bubble }]);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1021,13 +875,11 @@ async function handleTextMessage(
     return;
   }
 
-  if (matchesEnabledGroup(text, keywords, enabled, "cancel")) {
-    await handleCancelTrigger(supabase, userId, replyToken, templates);
-    return;
-  }
-
-  if (matchesEnabledGroup(text, keywords, enabled, "order_query")) {
-    await handleOrderQueryTrigger(supabase, userId, replyToken, templates);
+  if (
+    matchesEnabledGroup(text, keywords, enabled, "cancel") ||
+    matchesEnabledGroup(text, keywords, enabled, "order_query")
+  ) {
+    await handleOrderManageTrigger(supabase, userId, replyToken, templates);
     return;
   }
 
@@ -1059,9 +911,8 @@ export async function handleLineEvent(event: LineWebhookEvent): Promise<void> {
     await handleImageMessage(supabase, userId, replyToken, String(event.message.id || ""));
     return;
   }
-  if (event.type === "postback") {
-    await handlePostback(supabase, userId, replyToken, String(event.postback?.data || ""));
-    return;
-  }
-  // follow/unfollow/other event types: no-op for this feature.
+  // postback/follow/unfollow/other event types: no-op for this feature —
+  // 連線代購下單改版 第二階段把取消訂單改成網頁上的操作後，已經沒有
+  // 任何 postback action 需要處理（之前唯一的 action=cancel_order 已經
+  // 整個移除，見功能六/七 handleOrderManageTrigger）。
 }

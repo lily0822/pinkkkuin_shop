@@ -18,12 +18,6 @@ export type LivestreamReplyTemplateKey =
   | "order_photo_confirm_card"
   | "order_idle_closed"
   | "order_session_ended"
-  | "cancel_empty"
-  | "cancel_intro_all"
-  | "cancel_intro_partial"
-  | "cancel_blocked_bought"
-  | "cancel_blocked_paying"
-  | "cancel_success"
   | "remittance_empty"
   | "remittance_summary"
   | "remittance_format_invalid"
@@ -31,7 +25,7 @@ export type LivestreamReplyTemplateKey =
   | "remittance_success"
   | "photo_confirm_empty"
   | "order_query_empty"
-  | "order_query_intro";
+  | "order_manage_card";
 
 export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
   "order_no_session",
@@ -40,12 +34,6 @@ export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
   "order_photo_confirm_card",
   "order_idle_closed",
   "order_session_ended",
-  "cancel_empty",
-  "cancel_intro_all",
-  "cancel_intro_partial",
-  "cancel_blocked_bought",
-  "cancel_blocked_paying",
-  "cancel_success",
   "remittance_empty",
   "remittance_summary",
   "remittance_format_invalid",
@@ -53,7 +41,7 @@ export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
   "remittance_success",
   "photo_confirm_empty",
   "order_query_empty",
-  "order_query_intro",
+  "order_manage_card",
 ];
 
 export type LivestreamReplyTemplates = Record<LivestreamReplyTemplateKey, string>;
@@ -68,12 +56,6 @@ export const DEFAULT_LIVESTREAM_REPLY_TEMPLATES: LivestreamReplyTemplates = {
   order_idle_closed:
     "超過 10 分鐘沒有動作，下單功能已自動關閉。已傳的 {{數量}} 張照片還保留著，按「傳好了」可以確認數量後送出；要繼續傳照片，請重新按「我要下單」。",
   order_session_ended: "這場連線已經結束了。沒有送出的 {{數量}} 張照片已清除。下次連線開始時再按「我要下單」就可以囉。",
-  cancel_empty: "目前沒有可以取消的商品喔（已購買或已在匯款流程中的商品無法取消）。",
-  cancel_intro_all: "以下是您目前可以取消的商品：",
-  cancel_intro_partial: "您已購買或已在匯款流程中的 {{數量}} 項商品不會列在這裡，恕無法取消。以下是可以取消的商品：",
-  cancel_blocked_bought: "這項商品已經購買，無法取消。",
-  cancel_blocked_paying: "這項商品已在匯款流程中，無法取消。",
-  cancel_success: "已為您取消「{{商品名稱}}」，感謝您的訂購！",
   remittance_empty: "目前沒有待匯款的訂單喔。",
   remittance_summary:
     "以上是您目前下單的所有商品，請自行計算總金額，完成匯款後請依照以下格式回覆：\n1.匯到哪家銀行：\n2.金額：\n3.末五碼：",
@@ -83,7 +65,7 @@ export const DEFAULT_LIVESTREAM_REPLY_TEMPLATES: LivestreamReplyTemplates = {
   remittance_success: "已收到您的匯款回報，我們將盡快為您核對，感謝您！",
   photo_confirm_empty: "還沒收到照片喔，請先按「我要下單」再傳商品照片。",
   order_query_empty: "目前沒有查到您的下單紀錄喔。",
-  order_query_intro: "以下是您目前下單的所有商品：",
+  order_manage_card: "點下方按鈕查看與管理您目前的訂單。",
 };
 
 function sanitizeTemplates(input: Partial<Record<LivestreamReplyTemplateKey, unknown>>): LivestreamReplyTemplates {

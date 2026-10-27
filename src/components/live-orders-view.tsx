@@ -1,0 +1,233 @@
+"use client";
+
+import { useMemo, useState } from "react";
+
+export type LiveOrderItem = {
+  id: string;
+  productName: string | null;
+  photoUrl: string | null;
+  quantity: number;
+  unitPrice: number | null;
+  purchasedQuantity: number | null;
+  lockReason: "remitted" | "purchased" | null;
+  purchaseStatus: string;
+  paymentStatus: string;
+};
+
+type DraftItem = LiveOrderItem & {
+  originalQuantity: number;
+  removed: boolean;
+  cancelled: boolean;
+};
+
+type LiveOrdersViewProps = {
+  token: string;
+  sessionName: string | null;
+  unpaidTotal: number;
+  initialItems: LiveOrderItem[];
+};
+
+const PURCHASE_LABELS: Record<string, string> = { not_bought: "未採買", bought: "已採買" };
+const PAYMENT_LABELS: Record<string, string> = { unpaid: "未付款", confirming: "確認中", paid: "已付款" };
+
+// 純 React 局部 state 處理調數量/取消（跟 live-confirm-form.tsx 同一套
+// 寫法），只有按「儲存修改」才打一次 API；已採買/已匯款的項目一律唯讀。
+export function LiveOrdersView({ token, sessionName, unpaidTotal, initialItems }: LiveOrdersViewProps) {
+  const [items, setItems] = useState<DraftItem[]>(
+    initialItems.map((item) => ({ ...item, originalQuantity: item.quantity, removed: false, cancelled: false })),
+  );
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [saveNotice, setSaveNotice] = useState("");
+
+  const visibleItems = useMemo(() => items.filter((item) => !item.cancelled), [items]);
+  const dirtyItems = useMemo(
+    () => visibleItems.filter((item) => !item.lockReason && (item.removed || item.quantity !== item.originalQuantity)),
+    [visibleItems],
+  );
+  const canSave = dirtyItems.length > 0 && !saving;
+
+  function updateQuantity(id: string, quantity: number) {
+    setItems((current) => current.map((item) => (item.id === id ? { ...item, quantity } : item)));
+  }
+
+  function toggleRemoved(id: string) {
+    setItems((current) => current.map((item) => (item.id === id ? { ...item, removed: !item.removed } : item)));
+  }
+
+  async function handleSave() {
+    if (!canSave) return;
+    setSaving(true);
+    setSaveError("");
+    setSaveNotice("");
+    try {
+      const quantityChanges = dirtyItems.filter((item) => !item.removed).map((item) => ({ id: item.id, quantity: item.quantity }));
+      const cancelIds = dirtyItems.filter((item) => item.removed).map((item) => item.id);
+      const response = await fetch("/api/live/orders/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, items: quantityChanges, cancelIds }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.ok) {
+        setSaveError("儲存失敗，請稍後再試一次。");
+        return;
+      }
+
+      const results = (result.results || []) as { id: string; action: "quantity" | "cancel"; success: boolean }[];
+      const failedIds = new Set(results.filter((row) => !row.success).map((row) => row.id));
+      const succeededCancelIds = new Set(
+        results.filter((row) => row.success && row.action === "cancel").map((row) => row.id),
+      );
+      const succeededQuantityIds = new Set(
+        results.filter((row) => row.success && row.action === "quantity").map((row) => row.id),
+      );
+
+      setItems((current) =>
+        current.map((item) => {
+          if (succeededCancelIds.has(item.id)) return { ...item, cancelled: true };
+          if (succeededQuantityIds.has(item.id)) return { ...item, originalQuantity: item.quantity, removed: false };
+          if (failedIds.has(item.id)) {
+            // 送出時才發現這筆已經被標記採買/進入匯款流程，不能靜默失敗——
+            // 把這筆鎖起來、復原成送出前的數量，明確告知客人。
+            return { ...item, quantity: item.originalQuantity, removed: false, lockReason: "purchased" };
+          }
+          return item;
+        }),
+      );
+
+      if (failedIds.size > 0) {
+        setSaveNotice(`有 ${failedIds.size} 項剛好已經被標記採買或進入匯款流程，無法修改，已經為您還原。`);
+      } else {
+        setSaveNotice("已儲存修改。");
+      }
+    } catch {
+      setSaveError("儲存失敗，請稍後再試一次。");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <main className="min-h-screen bg-penguin-cream pb-32">
+      <div className="mx-auto max-w-md px-4 py-6">
+        <h1 className="text-xl font-black text-penguin-gray">{sessionName ? `${sessionName}` : "目前訂單"}</h1>
+        <p className="mt-1 text-sm text-penguin-gray">已採買或已在匯款流程中的商品無法修改/取消。</p>
+
+        {unpaidTotal > 0 ? (
+          <div
+            className="mt-4 rounded-2xl border-2 px-4 py-3 text-sm leading-6 text-penguin-gray"
+            style={{ backgroundColor: "#fff9df", borderColor: "#f0dc8f" }}
+          >
+            尚未匯款金額：NT${unpaidTotal.toLocaleString("zh-TW")}
+          </div>
+        ) : null}
+
+        {saveError ? (
+          <p role="status" className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm font-bold text-red-500">
+            {saveError}
+          </p>
+        ) : null}
+        {saveNotice ? (
+          <p role="status" className="mt-3 rounded-xl bg-green-50 px-3 py-2 text-sm font-bold text-green-600">
+            {saveNotice}
+          </p>
+        ) : null}
+
+        <div className="mt-4 space-y-3">
+          {visibleItems.length ? (
+            visibleItems.map((item) => (
+              <div key={item.id} className="flex items-center gap-3 rounded-2xl border border-penguin-peach bg-white p-3">
+                <div className="grid h-[68px] w-[68px] shrink-0 place-items-center overflow-hidden rounded-xl bg-penguin-cream text-xl text-penguin-gray">
+                  {item.photoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={item.photoUrl} alt={item.productName || "商品"} className="h-full w-full object-cover" />
+                  ) : (
+                    "P"
+                  )}
+                </div>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <p className="truncate text-sm font-black text-penguin-gray">{item.productName || "商品"}</p>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="rounded-full bg-penguin-cream px-2 py-0.5 text-xs font-bold text-penguin-gray">
+                      {PURCHASE_LABELS[item.purchaseStatus] || item.purchaseStatus}
+                    </span>
+                    <span className="rounded-full bg-penguin-cream px-2 py-0.5 text-xs font-bold text-penguin-gray">
+                      {PAYMENT_LABELS[item.paymentStatus] || item.paymentStatus}
+                    </span>
+                  </div>
+                  {item.unitPrice !== null ? (
+                    <p className="text-xs text-penguin-gray">
+                      單價 NT${item.unitPrice.toLocaleString("zh-TW")}
+                      {item.purchasedQuantity !== null ? `・買到 ${item.purchasedQuantity} 個` : ""}
+                    </p>
+                  ) : null}
+
+                  {item.lockReason ? (
+                    <p className="text-xs font-bold text-gray-400">
+                      {item.lockReason === "remitted" ? "已在匯款流程中，無法修改/取消" : "已採買，無法修改/取消"}（訂購數量 {item.quantity}）
+                    </p>
+                  ) : (
+                    <div className="flex items-center gap-2 pt-1">
+                      <div className="inline-flex h-9 items-center overflow-hidden rounded-full border-2 border-penguin-pink bg-white">
+                        <button
+                          type="button"
+                          aria-label="減少數量"
+                          disabled={item.quantity <= 1 || item.removed}
+                          onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1))}
+                          className="grid h-full w-8 place-items-center font-black text-penguin-gray disabled:cursor-not-allowed disabled:text-gray-300"
+                        >
+                          -
+                        </button>
+                        <span className="min-w-7 text-center text-sm font-black text-penguin-gray">{item.quantity}</span>
+                        <button
+                          type="button"
+                          aria-label="增加數量"
+                          disabled={item.quantity >= 99 || item.removed}
+                          onClick={() => updateQuantity(item.id, Math.min(99, item.quantity + 1))}
+                          className="grid h-full w-8 place-items-center font-black text-penguin-gray disabled:cursor-not-allowed disabled:text-gray-300"
+                        >
+                          +
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => toggleRemoved(item.id)}
+                        className={`text-xs font-bold ${item.removed ? "text-red-500" : "text-gray-400 hover:text-red-500"}`}
+                      >
+                        {item.removed ? "已標記取消（再按一次還原）" : "取消這項"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-2xl border-2 border-dashed border-penguin-peach bg-white px-4 py-10 text-center text-sm text-penguin-gray">
+              目前沒有訂單。
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div
+        className="fixed inset-x-0 bottom-0 z-50 border-t-2 border-penguin-peach bg-white px-4 py-3"
+        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+      >
+        <div className="mx-auto flex max-w-md items-center justify-between gap-3">
+          <p className="text-xs text-penguin-gray">
+            {dirtyItems.length > 0 ? `有 ${dirtyItems.length} 項尚未儲存` : "調整數量或按取消後，記得按儲存"}
+          </p>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={!canSave}
+            className="shrink-0 rounded-full bg-penguin-pink-dark px-5 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+          >
+            {saving ? "儲存中..." : "儲存修改"}
+          </button>
+        </div>
+      </div>
+    </main>
+  );
+}

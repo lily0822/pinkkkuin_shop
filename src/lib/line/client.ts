@@ -344,7 +344,6 @@ export async function getLineUserProfile(userId: string): Promise<{ displayName:
 export async function downloadLineMessageContent(
   messageId: string,
 ): Promise<{ buffer: Buffer; contentType: string } | null> {
-
   const config = getLineConfig();
   const id = messageId.trim();
   if (!config.channelAccessToken || !id) return null;

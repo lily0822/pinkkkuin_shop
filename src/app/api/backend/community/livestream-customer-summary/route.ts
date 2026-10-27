@@ -46,7 +46,11 @@ export async function GET(request: NextRequest) {
     const [{ data: orderRows, error: orderError }, { data: remittanceRows, error: remittanceError }] = await Promise.all([
       supabase
         .from("community_livestream_orders")
-        .select("line_user_id, line_display_name, unit_price, quantity, created_at")
+        .select("line_user_id, line_display_name, unit_price, customer_unit_price, quantity, created_at")
+        // 連線代購下單改版 第二階段：排除 staged（客人還沒送出的暫存
+        // 照片）跟 cancelled（客人自助取消的軟刪除訂單），這兩種都不該
+        // 算進「訂單總額」。
+        .eq("order_status", "submitted")
         .order("created_at", { ascending: false })
         .limit(FETCH_LIMIT),
       supabase
@@ -85,7 +89,15 @@ export async function GET(request: NextRequest) {
       if (!userId) return;
       const accumulator = getAccumulator(userId);
       if (!accumulator.lineDisplayName) accumulator.lineDisplayName = String(row.line_display_name || "LINE 使用者");
-      const unitPrice = row.unit_price === null || row.unit_price === undefined ? 0 : Number(row.unit_price);
+      // 有效單價優先用客人自己填的 customer_unit_price，退回舊的
+      // unit_price 只是為了第一階段以前的舊資料——跟後台訂單列表/會員
+      // 連線下單紀錄同一套算法。
+      const unitPrice =
+        row.customer_unit_price !== null && row.customer_unit_price !== undefined
+          ? Number(row.customer_unit_price)
+          : row.unit_price === null || row.unit_price === undefined
+            ? 0
+            : Number(row.unit_price);
       accumulator.totalAmount += unitPrice * Number(row.quantity || 1);
     });
 

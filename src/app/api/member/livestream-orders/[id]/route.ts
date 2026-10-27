@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { deleteLivestreamOrder } from "@/lib/line/livestream-orders";
-import { getLivestreamReplyTemplates } from "@/lib/line/livestream-reply-templates";
 import { isMemberDisabled } from "@/lib/member/status";
 import { authJsonError, createSupabaseRouteClient } from "@/lib/supabase/route";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
@@ -31,23 +29,33 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   const service = createSupabaseServiceClient();
 
   // Ownership is enforced by scoping this lookup to the member's own bound
-  // line_user_id — the row is only found (and therefore only deletable) if it
-  // belongs to this member, mirroring handleCancelOrder's lookup-then-delete pattern.
+  // line_user_id. 連線代購下單改版 第二階段：鎖定規則改成跟 /live/orders
+  // 同一套（purchased_quantity/remittance_id 皆為 null 才能取消），不再
+  // 用舊的 purchase_status/payment_status 二元判斷；取消改成軟刪除
+  // （order_status='cancelled'，跟 /api/live/orders/update 一致），不再
+  // 硬刪除資料列。
   const { data: row } = await service
     .from("community_livestream_orders")
-    .select("purchase_status, payment_status")
+    .select("purchased_quantity, remittance_id")
     .eq("id", orderId)
     .eq("line_user_id", binding.line_user_id)
+    .eq("order_status", "submitted")
     .maybeSingle();
 
   if (!row) return authJsonError("找不到這筆訂單，可能已經被取消過了。", 404);
+  if (row.purchased_quantity !== null) return authJsonError("這項商品已經採買，無法取消。", 409);
+  if (row.remittance_id !== null) return authJsonError("這項商品已在匯款流程中，無法取消。", 409);
 
-  const templates = await getLivestreamReplyTemplates();
-  if (row.purchase_status !== "not_bought") return authJsonError(templates.cancel_blocked_bought, 409);
-  if (row.payment_status !== "unpaid") return authJsonError(templates.cancel_blocked_paying, 409);
-
-  const ok = await deleteLivestreamOrder(service, orderId);
-  if (!ok) return authJsonError("取消失敗，請稍後再試一次。");
+  const { data: updated } = await service
+    .from("community_livestream_orders")
+    .update({ order_status: "cancelled" })
+    .eq("id", orderId)
+    .eq("line_user_id", binding.line_user_id)
+    .eq("order_status", "submitted")
+    .is("purchased_quantity", null)
+    .is("remittance_id", null)
+    .select("id");
+  if (!updated || !updated.length) return authJsonError("取消失敗，請稍後再試一次。");
 
   return response;
 }
