@@ -68,7 +68,13 @@ export function isBackendAuthConfigured() {
 export function shouldRequireBackendAuth() {
   const runtime = getBackendRuntime();
   if (runtime === "production") return true;
-  return runtime === "staging" && Boolean(env("BACKEND_ADMIN_PASSWORD") && env("BACKEND_SESSION_SECRET"));
+  // The mobile-admin staging project is intentionally open during the UI
+  // build and acceptance phase. Authentication can be switched back on later
+  // without another code change by setting BACKEND_REQUIRE_AUTH=true together
+  // with the existing password/session variables. Production is never bypassed.
+  return runtime === "staging"
+    && env("BACKEND_REQUIRE_AUTH").toLowerCase() === "true"
+    && Boolean(env("BACKEND_ADMIN_PASSWORD") && env("BACKEND_SESSION_SECRET"));
 }
 
 function getSupabaseAdminConfig() {
