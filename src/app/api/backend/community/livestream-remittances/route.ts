@@ -56,7 +56,9 @@ type RemittanceRow = {
   bank_name: string | null;
   account_last5: string | null;
   amount: number | null;
+  expected_amount_at_submit: number | null;
   order_ids: string[] | null;
+  session_id: string | null;
   submitted_at: string | null;
   reviewed_at: string | null;
 };
@@ -89,6 +91,11 @@ export async function GET(request: NextRequest) {
   // 而不是直接傳中文名稱，跟這個 feature 其他地方（收款帳號設定）的
   // 慣例一致。
   const bankFilter = (incoming.searchParams.get("bank") || "").trim();
+  // 第三階段審查修正：匯款紀錄本身「隨時開放、不限場次」，所以沒帶這個
+  // 參數時不做任何場次篩選（跟上面 bank/q 一樣是純粹的篩選條件，不像
+  // livestream-orders 那支預設帶入「當下連線／最近一場」）。"unassigned"
+  // 對應沒有場次歸屬的舊資料（session_id is null）。
+  const sessionIdFilter = (incoming.searchParams.get("sessionId") || "").trim();
 
   try {
     const supabase = createSupabaseServiceClient();
@@ -107,7 +114,9 @@ export async function GET(request: NextRequest) {
         .limit(FETCH_LIMIT),
       supabase
         .from("community_livestream_remittances")
-        .select("id, line_user_id, nickname, bank_name, account_last5, amount, order_ids, submitted_at, reviewed_at")
+        .select(
+          "id, line_user_id, nickname, bank_name, account_last5, amount, expected_amount_at_submit, order_ids, session_id, submitted_at, reviewed_at",
+        )
         .order("submitted_at", { ascending: false })
         .limit(FETCH_LIMIT),
     ]);
@@ -203,6 +212,10 @@ export async function GET(request: NextRequest) {
         const relatedOrders = orderIds.map((id) => ordersById.get(id)).filter((order): order is OrderRow => Boolean(order));
         const systemCalculatedTotal = sumOrders(relatedOrders);
         const amount = remittance.amount === null || remittance.amount === undefined ? null : Number(remittance.amount);
+        const expectedAmountAtSubmit =
+          remittance.expected_amount_at_submit === null || remittance.expected_amount_at_submit === undefined
+            ? null
+            : Number(remittance.expected_amount_at_submit);
         const bankName = remittance.bank_name ? String(remittance.bank_name) : null;
         return {
           id: String(remittance.id),
@@ -210,8 +223,15 @@ export async function GET(request: NextRequest) {
           isBankAnomaly: isLivestreamBankNameAnomaly(bankName),
           accountLast5: String(remittance.account_last5 || ""),
           amount,
+          // 送出當下系統即時重算出來的應收金額，純供參考對照（賣家事後
+          // 改價格/採買結果不會跟著變）——跟 systemCalculatedTotal（這裡、
+          // 當下用最新資料即時重算）是兩個不同的數字，後台比對一律用
+          // systemCalculatedTotal/mismatch，這個欄位只是給後台多一個
+          // 「客人送出當時系統算的是多少」的參考數字。
+          expectedAmountAtSubmit,
           systemCalculatedTotal,
           mismatch: amount !== null && amount !== systemCalculatedTotal,
+          sessionId: remittance.session_id ? String(remittance.session_id) : null,
           submittedAt: String(remittance.submitted_at || ""),
           reviewedAt: remittance.reviewed_at ? String(remittance.reviewed_at) : null,
           orders: relatedOrders.map(buildOrderSummary),
@@ -235,6 +255,13 @@ export async function GET(request: NextRequest) {
         if (bankFilter === "anomaly") return customer.remittances.some((remittance) => remittance.isBankAnomaly);
         if (!bankLabelFilter) return true;
         return customer.remittances.some((remittance) => remittance.bankName === bankLabelFilter);
+      });
+    }
+
+    if (sessionIdFilter) {
+      customers = customers.filter((customer) => {
+        if (sessionIdFilter === "unassigned") return customer.remittances.some((remittance) => !remittance.sessionId);
+        return customer.remittances.some((remittance) => remittance.sessionId === sessionIdFilter);
       });
     }
 
@@ -333,7 +360,9 @@ export async function POST(request: NextRequest) {
     // 全部都通過，不是只檢查第一筆。
     const { data: matchedOrders, error: orderError } = await supabase
       .from("community_livestream_orders")
-      .select("id, line_display_name")
+      .select(
+        "id, line_display_name, session_id, quantity, purchased_quantity, unit_price, customer_unit_price, seller_unit_price",
+      )
       .eq("line_user_id", lineUserId)
       .eq("order_status", "submitted")
       .eq("payment_status", "unpaid")
@@ -351,6 +380,29 @@ export async function POST(request: NextRequest) {
 
     const lineDisplayName = String(matchedRows[0]?.line_display_name || "客人");
 
+    // 第三階段審查修正：手動補登也要填 session_id/expected_amount_at_submit，
+    // 跟 LINE 自助流程（submit_livestream_remittance RPC）同一套邏輯——
+    // 橫跨多場時取 starts_at 最晚（最近）的一場；即時重算的應收金額存成
+    // 參考紀錄，後台比對仍然用 GET 這支路由當下的即時重算（systemCalculatedTotal），
+    // 不是這裡存的快照。
+    const sessionIds = [...new Set(matchedRows.map((row) => row.session_id).filter((id): id is string => Boolean(id)))];
+    let sessionId: string | null = null;
+    if (sessionIds.length) {
+      const { data: sessionRows } = await supabase
+        .from("community_livestream_sessions")
+        .select("id")
+        .in("id", sessionIds)
+        .order("starts_at", { ascending: false })
+        .limit(1);
+      sessionId = sessionRows?.[0]?.id ? String(sessionRows[0].id) : null;
+    }
+
+    const expectedAmountAtSubmit = matchedRows.reduce((sum, row) => {
+      const unitPrice = effectiveLivestreamUnitPrice(row.seller_unit_price, row.customer_unit_price, row.unit_price) ?? 0;
+      const quantity = effectiveLivestreamQuantity(row.purchased_quantity, row.quantity);
+      return sum + unitPrice * quantity;
+    }, 0);
+
     const { data: inserted, error: insertError } = await supabase
       .from("community_livestream_remittances")
       .insert({
@@ -360,6 +412,8 @@ export async function POST(request: NextRequest) {
         bank_name: bankName,
         account_last5: accountLast5,
         amount,
+        expected_amount_at_submit: expectedAmountAtSubmit,
+        session_id: sessionId,
       })
       .select("id")
       .single();
