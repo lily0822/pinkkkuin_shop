@@ -8,6 +8,7 @@ import {
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
 import { effectiveLivestreamUnitPrice } from "@/lib/line/livestream-pricing";
+import { getLineUserBindingLabelsBatch } from "@/lib/line/live-bindings";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -105,11 +106,14 @@ export async function GET(request: NextRequest) {
       else accumulator.pendingRemittanceAmount += amount;
     });
 
+    const bindingsByUser = await getLineUserBindingLabelsBatch([...byUserId.keys()]);
+
     return NextResponse.json({
       ok: true,
       customers: [...byUserId.values()].map((c) => ({
         lineUserId: c.lineUserId,
         lineDisplayName: c.lineDisplayName || "LINE 使用者",
+        binding: bindingsByUser.get(c.lineUserId) || null,
         totalAmount: c.totalAmount,
         confirmedRemittanceAmount: c.confirmedRemittanceAmount,
         pendingRemittanceAmount: c.pendingRemittanceAmount,

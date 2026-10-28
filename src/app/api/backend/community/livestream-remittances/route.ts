@@ -12,6 +12,7 @@ import { backendRateLimit } from "@/lib/backend-security";
 import { LIVESTREAM_BANK_ACCOUNT_KEYS, LIVESTREAM_BANK_ACCOUNT_LABELS } from "@/lib/line/livestream-bank-info";
 import { isLivestreamBankNameAnomaly, LIVESTREAM_STANDARD_BANK_NAMES } from "@/lib/line/livestream-bank-aliases";
 import { effectiveLivestreamUnitPrice, effectiveLivestreamQuantity } from "@/lib/line/livestream-pricing";
+import { getLineUserBindingLabelsBatch } from "@/lib/line/live-bindings";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -197,6 +198,8 @@ export async function GET(request: NextRequest) {
         ? LIVESTREAM_BANK_ACCOUNT_LABELS[bankFilter as (typeof LIVESTREAM_BANK_ACCOUNT_KEYS)[number]]
         : null;
 
+    const bindingsByUser = await getLineUserBindingLabelsBatch([...allUserIds]);
+
     let customers = [...allUserIds].map((userId) => {
       const userOrders = ordersByUser.get(userId) || []; // 已經依 created_at desc 排序
       const userRemittances = (remittancesByUser.get(userId) || [])
@@ -206,6 +209,7 @@ export async function GET(request: NextRequest) {
       const latestOrder = userOrders[0];
       const latestRemittance = userRemittances[0];
       const lineDisplayName = String(latestOrder?.line_display_name || latestRemittance?.nickname || "LINE 使用者");
+      const binding = bindingsByUser.get(userId) || null;
 
       const remittanceList = userRemittances.map((remittance) => {
         const orderIds = remittance.order_ids || [];
@@ -243,11 +247,14 @@ export async function GET(request: NextRequest) {
         ? { systemCalculatedTotal: sumOrders(unpaidOrders), orders: unpaidOrders.map(buildOrderSummary) }
         : null;
 
-      return { lineUserId: userId, lineDisplayName, remittances: remittanceList, unpaid };
+      return { lineUserId: userId, lineDisplayName, binding, remittances: remittanceList, unpaid };
     });
 
     if (q) {
-      customers = customers.filter((customer) => customer.lineDisplayName.toLocaleLowerCase().includes(q));
+      customers = customers.filter((customer) => {
+        const haystack = `${customer.lineDisplayName} ${customer.binding?.value || ""}`.toLocaleLowerCase();
+        return haystack.includes(q);
+      });
     }
 
     if (bankFilter) {

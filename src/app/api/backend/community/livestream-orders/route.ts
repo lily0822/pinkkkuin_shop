@@ -10,6 +10,7 @@ import {
 import { backendRateLimit } from "@/lib/backend-security";
 import { getCurrentOrMostRecentSession } from "@/lib/line/livestream-sessions";
 import { effectiveLivestreamUnitPrice, effectiveLivestreamQuantity } from "@/lib/line/livestream-pricing";
+import { getLineUserBindingLabelsBatch } from "@/lib/line/live-bindings";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -107,9 +108,17 @@ export async function GET(request: NextRequest) {
     // filtering an already status-filtered, capped (500-row) result set
     // in memory is simple and has no injection surface at all.
     const allRows = Array.isArray(data) ? data : [];
+
+    // 社群綁定功能：批次查一次這批訂單涵蓋的全部客人的綁定標籤，不要
+    // 每筆訂單各查一次。同時讓搜尋框可以搜到暱稱/IG（不只是 LINE 名稱/
+    // 社群記事本舊暱稱/商品名）。
+    const bindingsByUser = await getLineUserBindingLabelsBatch(
+      allRows.map((row) => String(row.line_user_id || "")).filter(Boolean),
+    );
     const rows = q
       ? allRows.filter((row) => {
-          const haystack = `${row.nickname || ""} ${row.line_display_name || ""} ${row.product_name || ""}`.toLocaleLowerCase();
+          const binding = bindingsByUser.get(String(row.line_user_id || ""));
+          const haystack = `${row.nickname || ""} ${row.line_display_name || ""} ${row.product_name || ""} ${binding?.value || ""}`.toLocaleLowerCase();
           return haystack.includes(q);
         })
       : allRows;
@@ -167,6 +176,7 @@ export async function GET(request: NextRequest) {
           id: String(row.id || ""),
           lineUserId: String(row.line_user_id || ""),
           lineDisplayName: String(row.line_display_name || ""),
+          binding: bindingsByUser.get(String(row.line_user_id || "")) || null,
           nickname: String(row.nickname || ""),
           productName: row.product_name ? String(row.product_name) : "",
           unitPrice: effectiveUnitPrice,

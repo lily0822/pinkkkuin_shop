@@ -27,3 +27,4 @@ shop-env.js
 .vercel
 .env*
 supabase/.temp/
+scratch/

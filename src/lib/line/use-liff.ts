@@ -75,5 +75,15 @@ export function useLiff() {
     [status],
   );
 
-  return { status, trySendMessageAndClose };
+  // 單純關閉 LIFF 視窗，不送任何訊息——綁定成功後刻意不推播/不自動送
+  // 訊息給客人（這點跟確認訂單/查詢訂單那兩個頁面的「送出後自動查詢」
+  // 不一樣），回傳值讓呼叫端決定要不要顯示「請自己關閉頁面」的文字
+  // 說明。
+  const tryClose = useCallback((): boolean => {
+    if (status !== "ready" || !liffRef.current) return false;
+    liffRef.current.closeWindow();
+    return true;
+  }, [status]);
+
+  return { status, trySendMessageAndClose, tryClose };
 }

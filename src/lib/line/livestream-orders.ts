@@ -33,6 +33,7 @@ import { getCurrentSession, getCurrentOrMostRecentSession } from "./livestream-s
 import { createLivestreamMagicLink } from "./livestream-magic-link";
 import { effectiveLivestreamUnitPrice, effectiveLivestreamQuantity } from "./livestream-pricing";
 import { buildLiveLiffUrl } from "./liff-url";
+import { getLineUserBindingLabel } from "./live-bindings";
 
 // 功能一 (下單觸發) + 功能二 (LINE 圖片下單對話流程). 社群暱稱綁定/審核機制
 // 已移除——真正區分客人身份的是 line_user_id 本身，nickname 欄位直接拿
@@ -143,6 +144,22 @@ function matchesEnabledGroup(
 ) {
   if (!enabled[group]) return false;
   return matchesAny(text, keywords[group]);
+}
+
+// 社群綁定功能上線這輪：「綁定」「開通」「加入社群」「註冊」從 order
+// 組的預設值移除、改放進新的 bind 組，但正式環境資料庫可能還留著舊
+// 設定（order 組裡還有這幾個詞）——比對 order 組時先排除掉「同時存在於
+// bind 組」的詞，避免舊設定讓「綁定」被誤判成下單。bind 組本身要排在
+// 這支之前先檢查（見 handleTextMessage），兩層保護疊在一起。
+function matchesOrderGroupExcludingBindWords(
+  text: string,
+  keywords: LivestreamKeywords,
+  enabled: LivestreamKeywordEnabled,
+) {
+  if (!enabled.order) return false;
+  const bindWords = new Set(keywords.bind.map((word) => normalizeText(word)));
+  const orderWordsExcludingBind = keywords.order.filter((word) => !bindWords.has(normalizeText(word)));
+  return matchesAny(text, orderWordsExcludingBind);
 }
 
 
@@ -1127,6 +1144,71 @@ async function handleRemitLast5Submission(
   if (replyToken) await sendLineReply(replyToken, messages);
 }
 
+// ---------------------------------------------------------------------------
+// 功能九：社群綁定——客人輸入 bind 組關鍵字，回一張 Flex 卡片，兩顆
+// 並排的 URI 按鈕各自開 LIFF 網頁（/live/bind?mode=bind 或 ?mode=edit），
+// 真正的填寫/驗證/衝突檢查都在那個網頁跟 /api/live/bind 完成（見
+// live-bind-form.tsx、live-identity-rpc.ts）。這裡只負責：查目前有沒有
+// 綁定（決定卡片內文要顯示哪一種）、組出兩顆按鈕的連結。不寫入任何
+// 狀態——跟查詢訂單/修改訂單那兩個入口一樣，單純是「開一張帶簽章連結
+// 的卡片」，沒有自己的對話狀態機。
+// ---------------------------------------------------------------------------
+
+async function handleBindTrigger(
+  supabase: SupabaseService,
+  userId: string,
+  replyToken: string | undefined,
+  templates: LivestreamReplyTemplates,
+) {
+  const binding = await getLineUserBindingLabel(userId);
+
+  const bindToken = createLivestreamMagicLink(userId, "bind");
+  const bindUrl = buildLiveLiffUrl("bind", bindToken, { mode: "bind" });
+  const editUrl = buildLiveLiffUrl("bind", bindToken, { mode: "edit" });
+
+  const bodyText = binding
+    ? renderLivestreamReplyTemplate(templates.bind_card_body_bound, {
+        值: binding.type === "ig" ? `@${binding.value}` : binding.value,
+      })
+    : renderLivestreamReplyTemplate(templates.bind_card_body_unbound);
+
+  const bubble = {
+    type: "bubble",
+    body: {
+      type: "box",
+      layout: "vertical",
+      spacing: "md",
+      contents: [
+        { type: "text", text: renderLivestreamReplyTemplate(templates.bind_card_title), weight: "bold", size: "lg" },
+        { type: "text", text: bodyText, wrap: true, size: "sm", color: "#6b7280" },
+      ],
+    },
+    footer: {
+      type: "box",
+      layout: "horizontal",
+      spacing: "sm",
+      contents: [
+        {
+          type: "button",
+          style: "primary",
+          height: "sm",
+          action: { type: "uri", label: renderLivestreamReplyTemplate(templates.bind_button_bind), uri: bindUrl },
+        },
+        {
+          type: "button",
+          style: "secondary",
+          height: "sm",
+          action: { type: "uri", label: renderLivestreamReplyTemplate(templates.bind_button_edit), uri: editUrl },
+        },
+      ],
+    },
+  };
+
+  if (replyToken) {
+    await sendLineReply(replyToken, [{ type: "flex", altText: renderLivestreamReplyTemplate(templates.bind_card_title), contents: bubble }]);
+  }
+}
+
 async function handleTextMessage(
   supabase: SupabaseService,
   userId: string,
@@ -1167,7 +1249,8 @@ async function handleTextMessage(
   // 該指令執行，客人完全不會感覺到有「卡住」這回事。停用的組一律不算數
   // （matchesEnabledGroup 內部已經處理）。
   const matchesKnownCommand = () =>
-    matchesEnabledGroup(text, keywords, enabled, "order") ||
+    matchesEnabledGroup(text, keywords, enabled, "bind") ||
+    matchesOrderGroupExcludingBindWords(text, keywords, enabled) ||
     matchesEnabledGroup(text, keywords, enabled, "remittance") ||
     matchesEnabledGroup(text, keywords, enabled, "cancel") ||
     matchesEnabledGroup(text, keywords, enabled, "order_query") ||
@@ -1198,7 +1281,16 @@ async function handleTextMessage(
     }
   }
 
-  if (matchesEnabledGroup(text, keywords, enabled, "order")) {
+  // bind 組排在 order 組之前檢查——「綁定」這類詞這輪從 order 的預設值
+  // 移除、改放進 bind，但正式環境資料庫可能還留著舊設定，兩層保護
+  // （這裡的優先順序 + matchesOrderGroupExcludingBindWords 排除同名詞）
+  // 疊在一起才完全擋得住。
+  if (matchesEnabledGroup(text, keywords, enabled, "bind")) {
+    await handleBindTrigger(supabase, userId, replyToken, templates);
+    return;
+  }
+
+  if (matchesOrderGroupExcludingBindWords(text, keywords, enabled)) {
     await handleOrderTrigger(supabase, userId, replyToken, templates, keywords);
     return;
   }

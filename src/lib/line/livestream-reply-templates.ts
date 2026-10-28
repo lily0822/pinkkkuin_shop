@@ -35,7 +35,12 @@ export type LivestreamReplyTemplateKey =
   | "remittance_done"
   | "photo_confirm_empty"
   | "order_query_empty"
-  | "order_manage_card";
+  | "order_manage_card"
+  | "bind_card_title"
+  | "bind_card_body_unbound"
+  | "bind_card_body_bound"
+  | "bind_button_bind"
+  | "bind_button_edit";
 
 export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
   "order_no_session",
@@ -62,6 +67,11 @@ export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
   "photo_confirm_empty",
   "order_query_empty",
   "order_manage_card",
+  "bind_card_title",
+  "bind_card_body_unbound",
+  "bind_card_body_bound",
+  "bind_button_bind",
+  "bind_button_edit",
 ];
 
 export type LivestreamReplyTemplates = Record<LivestreamReplyTemplateKey, string>;
@@ -94,6 +104,11 @@ export const DEFAULT_LIVESTREAM_REPLY_TEMPLATES: LivestreamReplyTemplates = {
   photo_confirm_empty: "還沒收到照片喔，請先按「我要下單」再傳商品照片。",
   order_query_empty: "目前沒有查到您的下單紀錄喔。",
   order_manage_card: "點下方按鈕查看與管理您目前的訂單。",
+  bind_card_title: "綁定社群帳號",
+  bind_card_body_unbound: "讓賣家知道你是社群裡的誰，只要填一次。",
+  bind_card_body_bound: "你目前綁定的是「{{值}}」。",
+  bind_button_bind: "綁定",
+  bind_button_edit: "修改",
 };
 
 function sanitizeTemplates(input: Partial<Record<LivestreamReplyTemplateKey, unknown>>): LivestreamReplyTemplates {

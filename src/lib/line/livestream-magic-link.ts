@@ -6,17 +6,17 @@ import crypto from "crypto";
 // 的簽章機制（同一套做法，這裡重新寫一份而不是共用程式碼，理由也一樣：
 // 兩邊是不同 feature，用途/到期時間不同，沒有必要耦合在一起）。
 //
-// purpose 限 "order-confirm"（/live/confirm，第一階段）跟 "order-edit"
-// （/live/orders，第二階段）——兩種 token 不可互相通用，也不可以拿來當
-// 會員登入憑證：payload 只放 lineUserId，不放 user_id/session，跟會員
-// 系統完全無關。
+// purpose 限 "order-confirm"（/live/confirm，第一階段）、"order-edit"
+// （/live/orders，第二階段）、"bind"（/live/bind，社群綁定功能）——三種
+// token 不可互相通用，也不可以拿來當會員登入憑證：payload 只放
+// lineUserId，不放 user_id/session，跟會員系統完全無關。
 //
 // 到期時間比預購的 10 分鐘長很多（客人填單價會花時間），兩種都給 60
 // 分鐘。沒有一次性/黑名單機制，純時效到期——這個連結是回覆給本人的
 // LINE 訊息裡的按鈕，不是公開貼出去的東西。
 const TTL_MS = 60 * 60 * 1000;
 
-export type LivestreamMagicLinkPurpose = "order-confirm" | "order-edit";
+export type LivestreamMagicLinkPurpose = "order-confirm" | "order-edit" | "bind";
 
 type LivestreamMagicLinkPayload = {
   lineUserId: string;

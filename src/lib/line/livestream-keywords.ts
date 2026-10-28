@@ -37,6 +37,7 @@ const MAX_KEYWORDS_PER_GROUP = 30;
 const MAX_KEYWORD_LENGTH = 40;
 
 export type LivestreamKeywordGroup =
+  | "bind"
   | "order"
   | "remittance"
   | "cancel"
@@ -45,6 +46,7 @@ export type LivestreamKeywordGroup =
   | "remittance_cancel";
 
 export const LIVESTREAM_KEYWORD_GROUPS: LivestreamKeywordGroup[] = [
+  "bind",
   "order",
   "remittance",
   "cancel",
@@ -54,6 +56,7 @@ export const LIVESTREAM_KEYWORD_GROUPS: LivestreamKeywordGroup[] = [
 ];
 
 export const LIVESTREAM_KEYWORD_GROUP_LABELS: Record<LivestreamKeywordGroup, string> = {
+  bind: "綁定觸發詞",
   order: "下單觸發詞",
   remittance: "匯款觸發詞",
   cancel: "取消觸發詞",
@@ -62,8 +65,16 @@ export const LIVESTREAM_KEYWORD_GROUP_LABELS: Record<LivestreamKeywordGroup, str
   remittance_cancel: "取消匯款觸發詞",
 };
 
+// 社群綁定功能上線這輪：「綁定」「開通」「加入社群」「註冊」從 order
+// 組的預設值移除，改放進新的 bind 組——這幾個詞原本的語意其實是「我要
+// 開始使用」，跟「綁定社群帳號」比較接近，不該觸發下單流程。正式環境
+// 的資料庫可能還留著舊設定（order 組裡還有這幾個詞），所以光改這裡的
+// 預設值不夠，程式判斷順序也要保護（見 livestream-orders.ts
+// handleTextMessage：bind 組排在 order 組之前比對，而且 order 組比對時
+// 會排除掉同時存在於 bind 組的詞）。
 export const DEFAULT_LIVESTREAM_KEYWORDS: Record<LivestreamKeywordGroup, string[]> = {
-  order: ["我要下單", "下單", "開始下單", "開通", "綁定", "加入社群", "註冊"],
+  bind: ["綁定", "綁定帳號", "修改綁定"],
+  order: ["我要下單", "下單", "開始下單"],
   remittance: ["我要匯款", "匯款申報", "回報匯款", "匯款"],
   cancel: ["取消訂單", "我要取消", "取消"],
   order_query: ["查詢訂單"],
@@ -76,6 +87,7 @@ export type LivestreamKeywords = Record<LivestreamKeywordGroup, string[]>;
 export type LivestreamKeywordEnabled = Record<LivestreamKeywordGroup, boolean>;
 
 export const DEFAULT_LIVESTREAM_KEYWORD_ENABLED: LivestreamKeywordEnabled = {
+  bind: true,
   order: true,
   remittance: true,
   cancel: true,

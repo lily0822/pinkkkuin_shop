@@ -10,3 +10,5 @@ shop-env.js
 public/shop-env.js
 .backend-product-publish/.git/
 .backend-product-publish/backend-env.local.js
+.tmp-community-psycopg/
+scratch/

@@ -10,11 +10,16 @@ import { getSiteOrigin } from "@/lib/supabase/config";
 // 沒設定時（例如本機開發、或這個環境還沒設定 LIFF）直接退回原本的直接
 // 網址，不讓整個下單/查詢流程壞掉——這個 fallback 的重要性等同於
 // LIFF 從頭到尾都是「錦上添花」，不是必要路徑。
-export function buildLiveLiffUrl(subPath: "confirm" | "orders", token: string): string {
+export function buildLiveLiffUrl(
+  subPath: "confirm" | "orders" | "bind",
+  token: string,
+  extraParams?: Record<string, string>,
+): string {
   const liffId = process.env.NEXT_PUBLIC_LIFF_ID?.trim();
-  const encodedToken = encodeURIComponent(token);
+  const params = new URLSearchParams({ token, ...extraParams });
+  const query = params.toString();
   if (!liffId) {
-    return `${getSiteOrigin()}/live/${subPath}?token=${encodedToken}`;
+    return `${getSiteOrigin()}/live/${subPath}?${query}`;
   }
-  return `https://liff.line.me/${liffId}/${subPath}?token=${encodedToken}`;
+  return `https://liff.line.me/${liffId}/${subPath}?${query}`;
 }
