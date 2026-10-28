@@ -64,27 +64,32 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   const patch: Record<string, unknown> = {};
   if (typeof body.productName === "string") patch.product_name = body.productName.trim().slice(0, 300) || null;
-  // 連線代購下單改版 第二階段：管理員改單價一律寫回 customer_unit_price
-  // （往後唯一的有效單價欄位），不再寫舊的 unit_price——GET 列表路由回應
-  // 的 unitPrice 本來就是「customer_unit_price 優先、沒有才退回
-  // unit_price」算出來的，這裡寫新欄位才會跟那個顯示邏輯一致。
+  // 連線代購下單改版 第三階段：管理員改單價改寫 seller_unit_price（跟
+  // 客人自己填的 customer_unit_price 分開保存），不再寫第二階段那樣
+  // 共用同一欄位——匯款金額計算需要「賣家單價 ?? 客人單價」這種
+  // fallback，一旦共用欄位，賣家改價就會把客人原始輸入永久蓋掉，沒辦法
+  // 再做這個 fallback。GET 列表路由的 unitPrice 回應值對應改成
+  // 「seller_unit_price ?? customer_unit_price ?? unit_price」。
   if (body.unitPrice === null) {
-    patch.customer_unit_price = null;
+    patch.seller_unit_price = null;
   } else if (typeof body.unitPrice === "number" && Number.isFinite(body.unitPrice) && body.unitPrice >= 0) {
-    patch.customer_unit_price = body.unitPrice;
+    patch.seller_unit_price = body.unitPrice;
   }
   // 管理員透過「單價可直接編輯」改動單價，視為已經處理完客人回報的
   // 「價格有誤」——自動清掉標記跟建議金額，不用另外按一顆清除按鈕。
-  if ("customer_unit_price" in patch) {
+  if ("seller_unit_price" in patch) {
     patch.price_disputed_at = null;
     patch.price_dispute_suggested_price = null;
   }
   if (typeof body.quantity === "number" && Number.isFinite(body.quantity) && body.quantity > 0) patch.quantity = Math.round(body.quantity);
-  // 「買到幾個」：null 代表重設回未採買，否則是 ≥0 整數——不特別跟
-  // quantity 比上限，買到比訂購數量多理論上可能發生，後端不擋，交給
-  // 管理員自行判斷是否合理。寫入的同時讓 purchase_status 自動跟著衍生
-  // （null→未購買、其餘→已購買），維持既有程式碼（客人自助取消、我要
-  // 匯款）讀 purchase_status 的邏輯不用改。
+  // 「買到幾個」：null 代表重設回未採買，否則是 ≥0 整數；上限（不能
+  // 超過訂購數量）交給資料庫 CHECK constraint
+  // （community_livestream_orders_purchased_quantity_cap，第三階段
+  // migration）擋，下面 catch 區塊偵測違反 constraint 的錯誤碼 23514
+  // 轉成友善訊息，這裡不用先查一次 quantity 才能驗證。寫入的同時讓
+  // purchase_status 自動跟著衍生（null→未購買、其餘→已購買），維持
+  // 既有程式碼（客人自助取消、我要匯款）讀 purchase_status 的邏輯
+  // 不用改。
   if (body.purchasedQuantity === null) {
     patch.purchased_quantity = null;
     patch.purchase_status = "not_bought";
@@ -115,7 +120,24 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       .eq("id", orderId)
       .select("id")
       .maybeSingle();
-    if (updateError) throw updateError;
+    if (updateError) {
+      // 23514 = check_violation——這裡唯一可能違反的 CHECK constraint 是
+      // 「買到幾個不能超過訂購數量」，查一次目前的 quantity 組出帶數字的
+      // 友善訊息（只有真的超過上限才會走到這個分支，不是每次 PATCH 都查）。
+      if (updateError.code === "23514" && "purchased_quantity" in patch) {
+        const { data: orderRow } = await supabase
+          .from("community_livestream_orders")
+          .select("quantity")
+          .eq("id", orderId)
+          .maybeSingle();
+        const quantity = orderRow?.quantity ? Number(orderRow.quantity) : null;
+        return NextResponse.json(
+          { ok: false, error: quantity ? `買到的數量不能超過訂購數量（${quantity}）。` : "買到的數量不能超過訂購數量。" },
+          { status: 400 },
+        );
+      }
+      throw updateError;
+    }
     if (!updated) return NextResponse.json({ ok: false, error: "更新失敗，請重新整理後再試。" }, { status: 409 });
 
     return NextResponse.json({ ok: true });

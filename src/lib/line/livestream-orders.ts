@@ -15,9 +15,9 @@ import {
   getLivestreamBankAccounts,
   LIVESTREAM_BANK_ACCOUNT_KEYS,
   LIVESTREAM_BANK_ACCOUNT_LABELS,
+  type LivestreamBankAccountKey,
   type LivestreamBankAccounts,
 } from "./livestream-bank-info";
-import { normalizeLivestreamBankName } from "./livestream-bank-aliases";
 import {
   getLivestreamKeywordSettings,
   type LivestreamKeywordEnabled,
@@ -32,6 +32,7 @@ import {
 } from "./livestream-reply-templates";
 import { getCurrentSession, getCurrentOrMostRecentSession } from "./livestream-sessions";
 import { createLivestreamMagicLink } from "./livestream-magic-link";
+import { effectiveLivestreamUnitPrice, effectiveLivestreamQuantity } from "./livestream-pricing";
 
 // 功能一 (下單觸發) + 功能二 (LINE 圖片下單對話流程). 社群暱稱綁定/審核機制
 // 已移除——真正區分客人身份的是 line_user_id 本身，nickname 欄位直接拿
@@ -62,30 +63,27 @@ import { createLivestreamMagicLink } from "./livestream-magic-link";
 // 結束」的惰性判斷（見 resolveOrderingGate），兩者都不寫排程、不主動
 // 推播，只在客人下一次傳文字/圖片時才檢查。
 //
-// 「我要匯款」這一階段維持改版前的行為不變（只補了
-// order_status='submitted' 的過濾，避免暫存中的 staged 照片意外出現在
-// 清單裡）——匯款流程整個重寫是第三階段的範圍，見 AI_HANDOFF.md。匯款時
-// 系統不計算金額，客人回報時依固定格式回報「銀行/金額/末五碼」三項，
-// amount 欄位存的是客人自報的金額，純供管理員核對用，不是系統算出來的
-// （金額自動比對是第三階段的範圍）。
+// 「我要匯款」第三階段整個重寫：固定格式文字回報拿掉，改成「連線/
+// 預購」兩顆按鈕（這輪只做「連線」，「預購」先回「尚未開放」）→ 選
+// 銀行 Quick Reply → 確認金額/轉帳 → 回覆末五碼 → 完成卡片。金額不再
+// 是客人自己算、自己打——選「連線」那一刻系統就算好（Σ 有效數量 ×
+// 有效單價）存成快照，從頭到尾信任這個系統算出來的數字，不是客人自報
+// 金額（見功能五 handleRemitStartLive）。
 //
-// 「查詢訂單」「取消訂單」這一階段整個重寫（見功能六/七
+// 「查詢訂單」「取消訂單」第二階段整個重寫（見功能六/七
 // handleOrderManageTrigger）：兩個關鍵字組現在共用同一個函式，都是回一張
 // 帶簽章連結的 Flex 卡片，連去新網頁 /live/orders——客人在網頁上看到
 // 「目前這一波連線」（getCurrentOrMostRecentSession）的全部訂單、每項的
 // 採買/付款狀態、尚未匯款金額合計，並能修改數量／取消還沒採買、還沒
-// 進入匯款流程的項目。舊版「查詢訂單純展示」「取消訂單輪播+postback」
-// 兩套在聊天室裡各自呈現清單的邏輯已經整個刪除（buildCancelItemBlock、
-// handleCancelOrder、postback action=cancel_order 都不再存在）。
-// 「圖片+商品名稱」清單項目共用函式 buildPhotoNameItemBlock 現在只剩
-// 「我要匯款」（handleRemittanceTrigger）在用。
+// 進入匯款流程的項目。
 //
-// awaiting_remittance_last5 等待狀態不再是「獨佔」文字輸入的黑洞：
-// handleTextMessage 進入這個狀態後，會先比對 order/remittance/cancel/
-// order_query/photo_confirm 任一組已知關鍵字，符合就自動清掉等待狀態、
-// 照常執行該指令；另外新增 remittance_cancel（預設「取消匯款」）明確
-// 逃生指令，客人隨時可以直接退出。都是為了避免客人不小心碰到「我要
-// 匯款」後卡在格式提醒裡出不來。
+// remit_step 等待狀態不是「獨佔」文字輸入的黑洞：handleTextMessage 在
+// remit_step==='await_last5' 時，會先比對 order/remittance/cancel/
+// order_query/photo_confirm 任一組已知關鍵字，符合就自動清掉匯款狀態、
+// 照常執行該指令；remit_step 是 select_bank/confirm_amount（等按鈕）時
+// 已知指令一樣能逃生，其餘文字直接忽略。remittance_cancel（預設「取消
+// 匯款」）是明確逃生指令，任何一步都能直接退出。都是為了避免客人不小心
+// 碰到「我要匯款」後卡在流程裡出不來。
 
 export type LineWebhookEvent = {
   type?: string;
@@ -133,50 +131,6 @@ function matchesEnabledGroup(
   return matchesAny(text, keywords[group]);
 }
 
-// 匯款回報改成固定三項格式（銀行／金額／末五碼），客人自行計算總金額
-// 後依格式回覆——用寬鬆比對解析，不要求逐字照格式打：逐行找出含有
-// 「銀行」「金額」「末五碼」關鍵字的那一行，取冒號（全/半形皆可）後面
-// 的內容當作該欄位的值，不管客人有沒有打數字編號、行順序對不對。
-type RemittanceReport = { bankName: string; amount: number; last5: string };
-
-function extractReportFieldValue(lines: string[], keyword: string): string | null {
-  for (const line of lines) {
-    if (!line.includes(keyword)) continue;
-    const colonIndex = line.search(/[:：]/);
-    if (colonIndex === -1) continue;
-    const value = line.slice(colonIndex + 1).trim();
-    if (value) return value;
-  }
-  return null;
-}
-
-function parseRemittanceReport(rawText: string): RemittanceReport | null {
-  const lines = rawText
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  const bankNameRaw = extractReportFieldValue(lines, "銀行");
-  if (!bankNameRaw) return null;
-  // 客人打的銀行名稱先查別名表正規化成標準名稱（中信/富邦/國泰）——
-  // 對照不到的名稱原文照存，後台「匯款紀錄」頁籤會把它標成「異常」，
-  // 不會因為查無此名就擋下整筆申報（見 livestream-bank-aliases.ts）。
-  const bankName = normalizeLivestreamBankName(bankNameRaw.slice(0, 50));
-
-  const amountRaw = extractReportFieldValue(lines, "金額");
-  if (!amountRaw) return null;
-  const amountMatch = amountRaw.replace(/,/g, "").match(/\d+/);
-  if (!amountMatch) return null;
-  const amount = Number(amountMatch[0]);
-  if (!(amount > 0)) return null;
-
-  const last5Raw = extractReportFieldValue(lines, "末五碼");
-  if (!last5Raw) return null;
-  const last5Digits = last5Raw.replace(/\D/g, "");
-  if (!/^\d{5}$/.test(last5Digits)) return null;
-
-  return { bankName, amount, last5: last5Digits };
-}
 
 async function reply(replyToken: string | undefined, text: string) {
   if (!replyToken) return;
@@ -220,15 +174,10 @@ async function getLineDisplayName(userId: string): Promise<string> {
   return profile?.displayName || "客人";
 }
 
+type RemitStep = "select_bank" | "confirm_amount" | "await_last5";
+type RemitKind = "live" | "preorder";
+
 type BotState = {
-  // 功能五 (自助匯款申報)：這個人現在在等他回覆匯款資訊（欄位名稱
-  // 仍叫 awaiting_remittance_last5，是從只問後 5 碼的舊版沿用下來的，
-  // 沒有為了這次改成問「銀行/金額/末五碼」三項而特地去改欄位名稱/
-  // 加 migration——語意上現在代表「等客人回報完整匯款資訊」），以及
-  // 觸發當下記錄的「這次申報涵蓋哪些訂單」快照，避免客人回覆的當下
-  // 訂單範圍跟觸發當下不一致（例如中途有新訂單進來或被取消）。
-  awaiting_remittance_last5: boolean;
-  remittance_order_ids: string[] | null;
   // 連線代購下單改版：「下單模式」狀態——order_mode==="ordering" 代表
   // 這個客人按過「我要下單」、還在閒置逾時/場次結束之前；
   // order_session_id 記錄當初是在哪一場按的（場次結束的判斷要用這個，
@@ -242,24 +191,47 @@ type BotState = {
   order_session_id: string | null;
   order_last_activity_at: string | null;
   order_burst_replied: boolean;
+  // 第三階段：匯款流程的對話狀態機，取代第一、二階段沿用的
+  // awaiting_remittance_last5/remittance_order_ids（固定格式文字回報
+  // 整個拿掉了）。remit_step 是 null 代表沒有在跑匯款流程；有值時依序
+  // select_bank（等客人點銀行 Quick Reply）→ confirm_amount（等客人點
+  // 「我已經完成轉帳」）→ await_last5（等客人輸入末五碼文字）。
+  // remit_expected_amount 是選「連線」那一刻系統算好的金額快照（不是
+  // 客人自己填的），remit_order_ids 是同一時間點涵蓋的訂單 id 快照，
+  // 送出當下直接信任這份快照（跟其他地方「觸發時快照、不即時重算」的
+  // 慣例一致）。
+  remit_step: RemitStep | null;
+  remit_kind: RemitKind | null;
+  remit_bank: LivestreamBankAccountKey | null;
+  remit_expected_amount: number | null;
+  remit_order_ids: string[] | null;
 };
 
 async function getBotState(supabase: SupabaseService, userId: string): Promise<BotState> {
   const { data } = await supabase
     .from("community_line_bot_states")
     .select(
-      "awaiting_remittance_last5, remittance_order_ids, order_mode, order_session_id, order_last_activity_at, order_burst_replied",
+      "order_mode, order_session_id, order_last_activity_at, order_burst_replied, remit_step, remit_kind, remit_bank, remit_expected_amount, remit_order_ids",
     )
     .eq("line_user_id", userId)
     .maybeSingle();
   const row = data as (BotState & Record<string, unknown>) | null;
   return {
-    awaiting_remittance_last5: Boolean(row?.awaiting_remittance_last5),
-    remittance_order_ids: Array.isArray(row?.remittance_order_ids) ? row.remittance_order_ids : null,
     order_mode: row?.order_mode === "ordering" ? "ordering" : null,
     order_session_id: typeof row?.order_session_id === "string" ? row.order_session_id : null,
     order_last_activity_at: typeof row?.order_last_activity_at === "string" ? row.order_last_activity_at : null,
     order_burst_replied: Boolean(row?.order_burst_replied),
+    remit_step:
+      row?.remit_step === "select_bank" || row?.remit_step === "confirm_amount" || row?.remit_step === "await_last5"
+        ? row.remit_step
+        : null,
+    remit_kind: row?.remit_kind === "live" || row?.remit_kind === "preorder" ? row.remit_kind : null,
+    remit_bank: (LIVESTREAM_BANK_ACCOUNT_KEYS as string[]).includes(String(row?.remit_bank))
+      ? (row?.remit_bank as LivestreamBankAccountKey)
+      : null,
+    remit_expected_amount:
+      row?.remit_expected_amount === null || row?.remit_expected_amount === undefined ? null : Number(row.remit_expected_amount),
+    remit_order_ids: Array.isArray(row?.remit_order_ids) ? row.remit_order_ids : null,
   };
 }
 
@@ -267,6 +239,11 @@ async function setBotState(supabase: SupabaseService, userId: string, patch: Par
   await supabase
     .from("community_line_bot_states")
     .upsert({ line_user_id: userId, ...patch }, { onConflict: "line_user_id" });
+}
+
+// 匯款流程結束（完成/取消/逃生）時用來一次清空全部 remit_* 欄位。
+function clearRemitState(): Partial<BotState> {
+  return { remit_step: null, remit_kind: null, remit_bank: null, remit_expected_amount: null, remit_order_ids: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -671,27 +648,36 @@ async function handleOrderManageTrigger(
 }
 
 // ---------------------------------------------------------------------------
-// 功能五：自助匯款申報 — 比照「我要下單」的觸發模式，全新對話流程。
-// 只動 community_livestream_orders 自己的 payment_status 欄位和新的
-// community_livestream_remittances 表，不碰 community_orders/
-// community_remittance_submissions（那組是舊的記事本系統，存的是客人自己
-// 匯出的帳戶資訊，跟這裡的「這次要核對哪些訂單」完全是兩回事）。
+// 功能五：自助匯款申報 — 第三階段全面改版。固定格式文字回報整個拿掉，
+// 改成「連線/預購」兩顆按鈕 → 選銀行（Quick Reply）→ 確認金額/轉帳 →
+// 回覆末五碼 → 完成卡片。金額不再是客人自己算、自己打——選「連線」那
+// 一刻系統就算好（Σ 有效數量 × 有效單價），存進 remit_expected_amount，
+// 從頭到尾都信任這個系統算出來的數字。狀態機用
+// community_line_bot_states 的 remit_step/remit_kind/remit_bank/
+// remit_expected_amount/remit_order_ids（第一階段就建好、這輪第一次
+// 真的讀寫）。只動 community_livestream_orders 自己的
+// remittance_id/payment_status 欄位和 community_livestream_remittances
+// 表，不碰 community_orders/community_remittance_submissions（那組是
+// 舊的記事本系統，跟這裡完全是兩回事）。
 // ---------------------------------------------------------------------------
 
-// 收款帳號改成三顆 LINE Flex 原生的 clipboard 按鈕——點了直接把帳號文字
-// 複製到客人剪貼簿，不用跳頁、不用打後端。只有後台實際填了帳號的銀行
-// 才會出現對應按鈕；三個都沒填就整個不送這則訊息（見呼叫端）。
-function buildBankAccountButtonsBubble(accounts: LivestreamBankAccounts) {
-  const buttons = LIVESTREAM_BANK_ACCOUNT_KEYS.filter((key) => accounts[key]).map((key) => ({
-    type: "button",
-    style: "secondary",
-    height: "sm",
-    action: {
-      type: "clipboard",
-      label: `複製${LIVESTREAM_BANK_ACCOUNT_LABELS[key]}帳號`,
-      clipboardText: accounts[key],
-    },
-  }));
+// 收款帳號複製按鈕——LINE Flex 原生 clipboard 按鈕，點了直接把帳號文字
+// 複製到客人剪貼簿。onlyKey 給定時只顯示那一家（客人選完銀行之後），
+// 不給時列出全部已填帳號的銀行。
+function buildBankAccountButtonsBubble(accounts: LivestreamBankAccounts, onlyKey?: LivestreamBankAccountKey) {
+  const keys = onlyKey ? [onlyKey] : LIVESTREAM_BANK_ACCOUNT_KEYS;
+  const buttons = keys
+    .filter((key) => accounts[key])
+    .map((key) => ({
+      type: "button",
+      style: "secondary",
+      height: "sm",
+      action: {
+        type: "clipboard",
+        label: `複製${LIVESTREAM_BANK_ACCOUNT_LABELS[key]}帳號`,
+        clipboardText: accounts[key],
+      },
+    }));
   if (!buttons.length) return null;
 
   return {
@@ -705,7 +691,100 @@ function buildBankAccountButtonsBubble(accounts: LivestreamBankAccounts) {
   };
 }
 
+type RemitEligibleRow = {
+  id: string;
+  product_name: string | null;
+  photo_storage_path: string | null;
+  quantity: number;
+  purchased_quantity: number | null;
+  customer_unit_price: number | null;
+  seller_unit_price: number | null;
+  unit_price: number | null;
+};
+
+// 匯款清單項目：圖片+商品名稱（跟 buildPhotoNameItemBlock 同一套排版）
+// 再加一行「數量 N」，還沒採買的項目額外補一句「（還沒採買，用訂購
+// 數量估算）」文字提醒——這兩種清單項目長得很像但多了數量行，不跟
+// buildPhotoNameItemBlock 合併，避免把「傳好了」確認清單跟匯款清單的
+// 排版耦合在一起。
+async function buildRemitItemBlock(row: RemitEligibleRow, notYetPurchased: boolean): Promise<object> {
+  const imageUrl = row.photo_storage_path
+    ? await createSignedUrl(PHOTO_BUCKET, row.photo_storage_path, CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS)
+    : null;
+  const quantity = effectiveLivestreamQuantity(row.purchased_quantity, row.quantity);
+
+  const rowContents: object[] = [];
+  if (imageUrl) {
+    rowContents.push({ type: "image", url: imageUrl, size: "60px", aspectMode: "cover", aspectRatio: "1:1", flex: 0 });
+  }
+  const textContents: object[] = [{ type: "text", text: row.product_name || "商品", weight: "bold", wrap: true, size: "sm" }];
+  textContents.push({
+    type: "text",
+    text: notYetPurchased ? `數量 ${quantity}（還沒採買，用訂購數量估算）` : `數量 ${quantity}`,
+    size: "xs",
+    color: "#6b7280",
+    wrap: true,
+  });
+  rowContents.push({ type: "box", layout: "vertical", flex: 1, justifyContent: "center", contents: textContents });
+
+  return { type: "box", layout: "horizontal", spacing: "md", contents: rowContents };
+}
+
+// 功能五：「我要匯款」觸發——不再直接列清單，改回一張「連線／預購」
+// 兩顆按鈕的卡片：兩種匯款的資料來源完全不同（連線訂單 vs 網站預購
+// 訂單），選了哪種才知道要查哪張表。
 async function handleRemittanceTrigger(
+  supabase: SupabaseService,
+  userId: string,
+  replyToken: string | undefined,
+  templates: LivestreamReplyTemplates,
+) {
+  const bubble = {
+    type: "bubble",
+    body: {
+      type: "box",
+      layout: "vertical",
+      spacing: "md",
+      contents: [{ type: "text", text: renderLivestreamReplyTemplate(templates.remittance_choose_kind), wrap: true, size: "sm" }],
+    },
+    footer: {
+      type: "box",
+      layout: "vertical",
+      spacing: "sm",
+      contents: [
+        {
+          type: "button",
+          style: "primary",
+          height: "sm",
+          action: { type: "postback", label: "連線", data: "action=remit_start&kind=live", displayText: "連線" },
+        },
+        {
+          type: "button",
+          style: "secondary",
+          height: "sm",
+          action: { type: "postback", label: "預購", data: "action=remit_start&kind=preorder", displayText: "預購" },
+        },
+      ],
+    },
+  };
+  if (replyToken) await sendLineReply(replyToken, [{ type: "flex", altText: "請選擇要匯款的類型", contents: bubble }]);
+}
+
+// postback action=remit_start&kind=preorder — 這輪只做「連線」，預購
+// 清單的資料來源（網站 orders 表 × member_line_accounts 綁定）還沒
+// 設計，先回覆「尚未開放」，不異動任何狀態（已跟使用者確認這個範圍）。
+async function handleRemitStartPreorder(replyToken: string | undefined, templates: LivestreamReplyTemplates) {
+  await replyTemplate(replyToken, templates, "remittance_preorder_unavailable");
+}
+
+// postback action=remit_start&kind=live — 查這個客人「隨時可匯款」的
+// 連線訂單：order_status='submitted' 且還沒連到任何一筆匯款紀錄
+// （remittance_id is null），不限場次、不管這次連線有沒有結束。缺貨
+// （賣家已確認買到 0 個）不列入清單，只計入提示筆數；其餘（還沒採買／
+// 買到一部分或全部）都納入，數量用「買到幾個（還沒採買就用訂購
+// 數量）」，單價用「賣家單價 ?? 客人單價 ?? 舊欄位」。只能整批一起
+// 匯款，沒有挑選——這裡查到的全部 id 直接存進 remit_order_ids 快照。
+async function handleRemitStartLive(
   supabase: SupabaseService,
   userId: string,
   replyToken: string | undefined,
@@ -713,46 +792,147 @@ async function handleRemittanceTrigger(
 ) {
   const { data, error } = await supabase
     .from("community_livestream_orders")
-    .select("id, product_name, photo_storage_path")
+    .select(
+      "id, product_name, photo_storage_path, quantity, purchased_quantity, customer_unit_price, seller_unit_price, unit_price",
+    )
     .eq("line_user_id", userId)
     .eq("order_status", "submitted")
-    .eq("payment_status", "unpaid");
+    .is("remittance_id", null);
 
   if (error) {
     await reply(replyToken, "查詢訂單失敗，請稍後再試一次。");
     return;
   }
 
-  const rows = (data as PhotoNameOrderRow[] | null) || [];
-  if (!rows.length) {
-    await replyTemplate(replyToken, templates, "remittance_empty");
+  const rows = (data as RemitEligibleRow[] | null) || [];
+  const shortageCount = rows.filter((row) => row.purchased_quantity === 0).length;
+  const eligible = rows.filter((row) => row.purchased_quantity !== 0);
+
+  if (!eligible.length) {
+    if (shortageCount) {
+      await replyTemplate(replyToken, templates, "remittance_all_shortage", { 數量: String(shortageCount) });
+    } else {
+      await replyTemplate(replyToken, templates, "remittance_empty");
+    }
     return;
   }
 
-  // 不再檢查/擋下「有商品還沒確認金額」——反正這裡不算金額了，任何
-  // unpaid 訂單（不論單價是否已辨識）都直接列出。
   const bankAccounts = await getLivestreamBankAccounts();
+  const availableBankKeys = LIVESTREAM_BANK_ACCOUNT_KEYS.filter((key) => bankAccounts[key]);
+  if (!availableBankKeys.length) {
+    // 後台還沒填任何收款帳號——這個流程沒辦法繼續，不設定 remit_step，
+    // 客人之後重新輸入「我要匯款」可以直接重來（不會卡在半途的狀態）。
+    await reply(replyToken, "目前尚未設定收款帳號，請直接聯繫賣家協助處理，謝謝。");
+    return;
+  }
+
+  let expectedAmount = 0;
+  const itemBlocks = await Promise.all(
+    eligible.map(async (row) => {
+      const effectiveQty = effectiveLivestreamQuantity(row.purchased_quantity, row.quantity);
+      const effectivePrice = effectiveLivestreamUnitPrice(row.seller_unit_price, row.customer_unit_price, row.unit_price) ?? 0;
+      expectedAmount += effectiveQty * effectivePrice;
+      return buildRemitItemBlock(row, row.purchased_quantity === null);
+    }),
+  );
 
   await setBotState(supabase, userId, {
-    awaiting_remittance_last5: true,
-    remittance_order_ids: rows.map((row) => row.id),
+    remit_step: "select_bank",
+    remit_kind: "live",
+    remit_bank: null,
+    remit_expected_amount: expectedAmount,
+    remit_order_ids: eligible.map((row) => row.id),
   });
 
-  // 商品清單（共用的「圖片+商品名稱」樣式，跟「傳好了」確認清單一致）
-  // → 收款帳號複製按鈕（只有填了帳號的銀行才出現）→ 固定格式的回報
-  // 說明文字，三則訊息都在同一次 reply 裡送出，沒超過 LINE 單次 reply
-  // 5 則的上限。
-  const itemBlocks = await Promise.all(rows.map((row) => buildPhotoNameItemBlock(row)));
-  const bankButtonsBubble = buildBankAccountButtonsBubble(bankAccounts);
-  const messages: LineReplyMessage[] = [{ type: "flex", altText: "本次下單商品", contents: buildOrderListBubble(itemBlocks) }];
-  if (bankButtonsBubble) {
-    messages.push({ type: "flex", altText: "收款帳號", contents: bankButtonsBubble });
-  }
-  messages.push({ type: "text", text: renderLivestreamReplyTemplate(templates.remittance_summary) });
+  const bankQuickReplyItems = availableBankKeys.map((key) => ({
+    type: "action" as const,
+    action: {
+      type: "postback",
+      label: LIVESTREAM_BANK_ACCOUNT_LABELS[key],
+      data: `action=remit_bank&bank=${key}`,
+      displayText: `選擇 ${LIVESTREAM_BANK_ACCOUNT_LABELS[key]}`,
+    },
+  }));
+
+  const introText =
+    renderLivestreamReplyTemplate(templates.remittance_items_intro, { 金額: String(expectedAmount) }) +
+    (shortageCount ? renderLivestreamReplyTemplate(templates.remittance_shortage_note, { 數量: String(shortageCount) }) : "");
+
+  const messages: LineReplyMessage[] = [
+    { type: "flex", altText: "本次要匯款的商品", contents: buildOrderListBubble(itemBlocks) },
+    { type: "text", text: introText, quickReply: { items: bankQuickReplyItems } },
+  ];
   if (replyToken) await sendLineReply(replyToken, messages);
 }
 
-async function handleRemittanceLast5Submission(
+// postback action=remit_bank&bank=<key> — 只有 remit_step==='select_bank'
+// 時生效，避免舊卡片上的按鈕被重複點擊或在錯誤的時機點擊造成狀態錯亂。
+async function handleRemitBankSelect(
+  supabase: SupabaseService,
+  userId: string,
+  replyToken: string | undefined,
+  state: BotState,
+  bankKey: string,
+  templates: LivestreamReplyTemplates,
+) {
+  if (state.remit_step !== "select_bank" || !(LIVESTREAM_BANK_ACCOUNT_KEYS as string[]).includes(bankKey)) return;
+
+  const key = bankKey as LivestreamBankAccountKey;
+  await setBotState(supabase, userId, { remit_step: "confirm_amount", remit_bank: key });
+
+  const bankAccounts = await getLivestreamBankAccounts();
+  const bankButtonsBubble = buildBankAccountButtonsBubble(bankAccounts, key);
+  const amountText = renderLivestreamReplyTemplate(templates.remittance_items_intro, {
+    金額: String(state.remit_expected_amount ?? 0),
+  });
+
+  const messages: LineReplyMessage[] = [];
+  if (bankButtonsBubble) messages.push({ type: "flex", altText: "收款帳號", contents: bankButtonsBubble });
+  messages.push({
+    type: "flex",
+    altText: "請確認金額並完成轉帳",
+    contents: {
+      type: "bubble",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "sm",
+        contents: [{ type: "text", text: amountText, wrap: true, size: "sm" }],
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        contents: [
+          {
+            type: "button",
+            style: "primary",
+            height: "sm",
+            action: { type: "postback", label: "我已經完成轉帳", data: "action=remit_confirm", displayText: "我已經完成轉帳" },
+          },
+        ],
+      },
+    },
+  });
+  if (replyToken) await sendLineReply(replyToken, messages);
+}
+
+// postback action=remit_confirm — 只有 remit_step==='confirm_amount'
+// 時生效。
+async function handleRemitConfirm(
+  supabase: SupabaseService,
+  userId: string,
+  replyToken: string | undefined,
+  state: BotState,
+  templates: LivestreamReplyTemplates,
+) {
+  if (state.remit_step !== "confirm_amount") return;
+  await setBotState(supabase, userId, { remit_step: "await_last5" });
+  await replyTemplate(replyToken, templates, "remittance_ask_last5");
+}
+
+// 文字訊息、remit_step==='await_last5' 時觸發——把輸入文字當末五碼
+// 解析（純 5 碼數字，不是固定格式整段解析），驗證通過才真的寫入資料庫。
+async function handleRemitLast5Submission(
   supabase: SupabaseService,
   userId: string,
   replyToken: string | undefined,
@@ -760,39 +940,67 @@ async function handleRemittanceLast5Submission(
   state: BotState,
   templates: LivestreamReplyTemplates,
 ) {
-  const report = parseRemittanceReport(rawText);
-  if (!report) {
-    await replyTemplate(replyToken, templates, "remittance_format_invalid");
-    return; // stays in awaiting_remittance_last5 so the next message can retry
+  const last5 = rawText.replace(/\D/g, "");
+  if (!/^\d{5}$/.test(last5)) {
+    await replyTemplate(replyToken, templates, "remittance_last5_invalid");
+    return; // 留在 await_last5，客人可以直接重新輸入
   }
 
-  const orderIds = state.remittance_order_ids || [];
-  if (!orderIds.length) {
-    await setBotState(supabase, userId, { awaiting_remittance_last5: false, remittance_order_ids: null });
+  const orderIds = state.remit_order_ids || [];
+  const bankKey = state.remit_bank;
+  if (!orderIds.length || !bankKey) {
+    await setBotState(supabase, userId, clearRemitState());
     await reply(replyToken, "找不到待申報的匯款資料，請重新輸入「我要匯款」。");
     return;
   }
 
   const displayName = await getLineDisplayName(userId);
-  // amount 這次是客人自己回報的金額（不是系統算的），純記錄供管理員核對
-  // 用；community_livestream_remittances.amount 已改成可為 null
-  // （202610020001 migration），這裡有值直接寫入即可。
-  const { error: insertError } = await supabase.from("community_livestream_remittances").insert({
-    line_user_id: userId,
-    nickname: displayName,
-    order_ids: orderIds,
-    bank_name: report.bankName,
-    account_last5: report.last5,
-    amount: report.amount,
-  });
-  if (insertError) {
+  // amount 是選「連線」那一刻系統算好的金額快照（remit_expected_amount），
+  // 不是客人自己填的——跟舊版「客人自報金額」是完全不同的信任模型。
+  const { data: inserted, error: insertError } = await supabase
+    .from("community_livestream_remittances")
+    .insert({
+      line_user_id: userId,
+      nickname: displayName,
+      order_ids: orderIds,
+      bank_name: LIVESTREAM_BANK_ACCOUNT_LABELS[bankKey],
+      account_last5: last5,
+      amount: state.remit_expected_amount,
+      kind: "live",
+    })
+    .select("id")
+    .single();
+  if (insertError || !inserted) {
     await reply(replyToken, "匯款申報失敗，請稍後再試一次。");
-    return; // keep the awaiting state so the customer can just retry, no need to re-trigger
+    return; // 留在 await_last5，客人可以直接重試，不用重新觸發整個流程
   }
 
-  await supabase.from("community_livestream_orders").update({ payment_status: "confirming" }).in("id", orderIds);
-  await setBotState(supabase, userId, { awaiting_remittance_last5: false, remittance_order_ids: null });
-  await replyTemplate(replyToken, templates, "remittance_success");
+  // guarded update——只更新還是 submitted 且還沒連到任何匯款紀錄的那些
+  // id（理論上不會有變化，客人同時跑兩次流程才可能發生，極端邊界，
+  // 沒更新到的筆就留在原狀，不特別回滾剛剛已經 insert 的紀錄）。
+  await supabase
+    .from("community_livestream_orders")
+    .update({ remittance_id: inserted.id, payment_status: "confirming" })
+    .in("id", orderIds)
+    .eq("order_status", "submitted")
+    .is("remittance_id", null);
+
+  await setBotState(supabase, userId, clearRemitState());
+
+  const { data: doneRows } = await supabase
+    .from("community_livestream_orders")
+    .select("id, product_name, photo_storage_path")
+    .in("id", orderIds);
+  const doneItemBlocks = await Promise.all(((doneRows as PhotoNameOrderRow[] | null) || []).map((row) => buildPhotoNameItemBlock(row)));
+
+  const messages: LineReplyMessage[] = [
+    { type: "flex", altText: "本次匯款涵蓋的商品", contents: buildOrderListBubble(doneItemBlocks) },
+    {
+      type: "text",
+      text: renderLivestreamReplyTemplate(templates.remittance_done, { 金額: String(state.remit_expected_amount ?? 0) }),
+    },
+  ];
+  if (replyToken) await sendLineReply(replyToken, messages);
 }
 
 async function handleTextMessage(
@@ -814,53 +1022,49 @@ async function handleTextMessage(
   const shouldProceed = await resolveOrderingGate(supabase, userId, replyToken, templates, state);
   if (!shouldProceed) return;
 
-  // 明確的「取消匯款」逃生指令——檢查順序刻意放在最前面、獨立於下面的
-  // awaiting 分支：預設詞「取消匯款」本身同時包含「取消」「匯款」兩個
-  // 字，如果放給下面一般的關鍵字比對，客人在非等待狀態打這個詞會被
-  // substring 比對誤判成「我要匯款」（或「取消訂單」），反而意外觸發
-  // 一個全新的匯款流程——跟這整個功能想避免的「意外觸發」正好相反。
-  // 所以提前判斷：有在等待格式才真的執行取消、回覆確認；不在等待狀態
-  // 就單純不處理，不落入下面任何一般指令的分派。
+  // 明確的「取消匯款」逃生指令——檢查順序刻意放在最前面：預設詞「取消
+  // 匯款」本身同時包含「取消」「匯款」兩個字，如果放給下面一般的關鍵字
+  // 比對，客人在非匯款流程中打這個詞會被 substring 比對誤判成「我要
+  // 匯款」（或「取消訂單」），反而意外觸發一個全新的流程。有在跑匯款
+  // 流程（remit_step 不是 null，不管在哪一步）才真的執行取消、回覆
+  // 確認；沒有在跑就單純不處理，不落入下面任何一般指令的分派。
   if (matchesEnabledGroup(text, keywords, enabled, "remittance_cancel")) {
-    if (state.awaiting_remittance_last5) {
-      await setBotState(supabase, userId, { awaiting_remittance_last5: false, remittance_order_ids: null });
+    if (state.remit_step !== null) {
+      await setBotState(supabase, userId, clearRemitState());
       await replyTemplate(replyToken, templates, "remittance_cancelled");
     }
     return;
   }
 
-  if (state.awaiting_remittance_last5) {
-    // 先真的嘗試解析格式，解析成功就直接當有效回報處理，不管文字裡
-    // 還夾雜了什麼別的關鍵字——客人很常把機器人剛剛送出的提示文字
-    // 整段複製貼上、自己填完答案再送出，提示文字本身就含有「完成」
-    // 「匯款」這類字，照舊版「文字裡出現任何已知指令關鍵字就整個放棄
-    // 解析格式」的邏輯會被誤判成別的指令，整筆匯款申報從未被記錄。
-    // 只有在真的解析不出完整的銀行/金額/末五碼時，才落到下面檢查
-    // 客人是不是其實想做別的事。
-    if (parseRemittanceReport(text)) {
-      await handleRemittanceLast5Submission(supabase, userId, replyToken, text, state, templates);
+  // 已知指令優先於匯款流程中途的任何一步：客人可能是不小心點到/打到
+  // 「我要匯款」才卡在這裡，根本沒有要匯款。只要這則文字符合
+  // order/remittance/cancel/order_query/photo_confirm 任一組**已啟用**
+  // 的關鍵字，就視為客人其實是要做別的事——自動清掉匯款狀態，直接照
+  // 該指令執行，客人完全不會感覺到有「卡住」這回事。停用的組一律不算數
+  // （matchesEnabledGroup 內部已經處理）。
+  const matchesKnownCommand = () =>
+    matchesEnabledGroup(text, keywords, enabled, "order") ||
+    matchesEnabledGroup(text, keywords, enabled, "remittance") ||
+    matchesEnabledGroup(text, keywords, enabled, "cancel") ||
+    matchesEnabledGroup(text, keywords, enabled, "order_query") ||
+    matchesEnabledGroup(text, keywords, enabled, "photo_confirm");
+
+  if (state.remit_step === "await_last5") {
+    // 真的在等末五碼文字——已知指令才清狀態改走別的分派，否則當成末
+    // 五碼解析（不是 5 碼數字會回格式提醒，留在這一步讓客人重試）。
+    if (matchesKnownCommand()) {
+      await setBotState(supabase, userId, clearRemitState());
+    } else {
+      await handleRemitLast5Submission(supabase, userId, replyToken, text, state, templates);
       return;
     }
-
-    // 其他已知指令優先於「等待匯款格式」狀態：客人可能是不小心點到/
-    // 打到「我要匯款」才卡在這裡，根本沒有要匯款。只要這則文字符合
-    // order/remittance/cancel/order_query/photo_confirm 任一組**已啟用**
-    // 的關鍵字，就視為客人其實是要做別的事——自動清掉等待狀態，直接
-    // 照該指令執行，客人完全不會感覺到有「卡住」這回事。停用的組
-    // 一律不算數（matchesEnabledGroup 內部已經處理），完全不符合任何
-    // 已知關鍵字，才真的當作格式回報來解析（會再次解析失敗，回格式
-    // 提醒）。
-    const matchesKnownCommand =
-      matchesEnabledGroup(text, keywords, enabled, "order") ||
-      matchesEnabledGroup(text, keywords, enabled, "remittance") ||
-      matchesEnabledGroup(text, keywords, enabled, "cancel") ||
-      matchesEnabledGroup(text, keywords, enabled, "order_query") ||
-      matchesEnabledGroup(text, keywords, enabled, "photo_confirm");
-
-    if (matchesKnownCommand) {
-      await setBotState(supabase, userId, { awaiting_remittance_last5: false, remittance_order_ids: null });
+  } else if (state.remit_step !== null) {
+    // 卡在等按鈕的步驟（select_bank/confirm_amount）——這兩步是按鈕
+    // 導向，客人打字通常是別的意圖。已知指令照樣讓它逃生，其餘文字
+    // 直接忽略、不特別回覆，維持跟下單模式一致的低干擾原則。
+    if (matchesKnownCommand()) {
+      await setBotState(supabase, userId, clearRemitState());
     } else {
-      await handleRemittanceLast5Submission(supabase, userId, replyToken, text, state, templates);
       return;
     }
   }
@@ -892,6 +1096,43 @@ async function handleTextMessage(
   // chatter for normal conversation the customer wasn't directing at us.
 }
 
+// 第三階段起匯款流程改用按鈕 + postback 引導（取消訂單那組 postback 在
+// 第二階段已經整個移除，這裡是這輪重新引入的唯一一組 postback action）。
+// 不經過 resolveOrderingGate——postback 是客人點擊機器人稍早送出的按鈕，
+// 語意上跟「下單模式」閒置與否無關（沿用第二階段以前就有的既有判斷）。
+async function handlePostback(
+  supabase: SupabaseService,
+  userId: string,
+  replyToken: string | undefined,
+  data: string,
+) {
+  const templates = await getLivestreamReplyTemplates();
+  const params = new URLSearchParams(data);
+  const action = params.get("action") || "";
+
+  if (action === "remit_start") {
+    const kind = params.get("kind");
+    if (kind === "preorder") {
+      await handleRemitStartPreorder(replyToken, templates);
+    } else if (kind === "live") {
+      await handleRemitStartLive(supabase, userId, replyToken, templates);
+    }
+    return;
+  }
+
+  if (action === "remit_bank") {
+    const state = await getBotState(supabase, userId);
+    await handleRemitBankSelect(supabase, userId, replyToken, state, params.get("bank") || "", templates);
+    return;
+  }
+
+  if (action === "remit_confirm") {
+    const state = await getBotState(supabase, userId);
+    await handleRemitConfirm(supabase, userId, replyToken, state, templates);
+    return;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
@@ -911,8 +1152,9 @@ export async function handleLineEvent(event: LineWebhookEvent): Promise<void> {
     await handleImageMessage(supabase, userId, replyToken, String(event.message.id || ""));
     return;
   }
-  // postback/follow/unfollow/other event types: no-op for this feature —
-  // 連線代購下單改版 第二階段把取消訂單改成網頁上的操作後，已經沒有
-  // 任何 postback action 需要處理（之前唯一的 action=cancel_order 已經
-  // 整個移除，見功能六/七 handleOrderManageTrigger）。
+  if (event.type === "postback") {
+    await handlePostback(supabase, userId, replyToken, String(event.postback?.data || ""));
+    return;
+  }
+  // follow/unfollow/other event types: no-op for this feature.
 }

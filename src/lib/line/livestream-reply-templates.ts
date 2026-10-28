@@ -18,11 +18,16 @@ export type LivestreamReplyTemplateKey =
   | "order_photo_confirm_card"
   | "order_idle_closed"
   | "order_session_ended"
+  | "remittance_choose_kind"
+  | "remittance_preorder_unavailable"
   | "remittance_empty"
-  | "remittance_summary"
-  | "remittance_format_invalid"
+  | "remittance_all_shortage"
+  | "remittance_items_intro"
+  | "remittance_shortage_note"
+  | "remittance_ask_last5"
+  | "remittance_last5_invalid"
   | "remittance_cancelled"
-  | "remittance_success"
+  | "remittance_done"
   | "photo_confirm_empty"
   | "order_query_empty"
   | "order_manage_card";
@@ -34,11 +39,16 @@ export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
   "order_photo_confirm_card",
   "order_idle_closed",
   "order_session_ended",
+  "remittance_choose_kind",
+  "remittance_preorder_unavailable",
   "remittance_empty",
-  "remittance_summary",
-  "remittance_format_invalid",
+  "remittance_all_shortage",
+  "remittance_items_intro",
+  "remittance_shortage_note",
+  "remittance_ask_last5",
+  "remittance_last5_invalid",
   "remittance_cancelled",
-  "remittance_success",
+  "remittance_done",
   "photo_confirm_empty",
   "order_query_empty",
   "order_manage_card",
@@ -56,13 +66,16 @@ export const DEFAULT_LIVESTREAM_REPLY_TEMPLATES: LivestreamReplyTemplates = {
   order_idle_closed:
     "超過 10 分鐘沒有動作，下單功能已自動關閉。已傳的 {{數量}} 張照片還保留著，按「傳好了」可以確認數量後送出；要繼續傳照片，請重新按「我要下單」。",
   order_session_ended: "這場連線已經結束了。沒有送出的 {{數量}} 張照片已清除。下次連線開始時再按「我要下單」就可以囉。",
+  remittance_choose_kind: "請選擇要匯款的類型：",
+  remittance_preorder_unavailable: "預購匯款功能尚未開放，請直接聯繫賣家協助處理，謝謝。",
   remittance_empty: "目前沒有待匯款的訂單喔。",
-  remittance_summary:
-    "以上是您目前下單的所有商品，請自行計算總金額，完成匯款後請依照以下格式回覆：\n1.匯到哪家銀行：\n2.金額：\n3.末五碼：",
-  remittance_format_invalid:
-    "格式有誤或漏填，請依照以下格式重新回覆（三項都要填）：\n1.匯到哪家銀行：\n2.金額：\n3.末五碼：\n\n如需取消匯款請輸入「取消匯款」。",
+  remittance_all_shortage: "您目前的 {{數量}} 項商品都缺貨，不用匯款喔。",
+  remittance_items_intro: "以上是這次要匯款的商品，總金額 NT${{金額}}。請選擇要用哪家銀行匯款：",
+  remittance_shortage_note: "\n另外有 {{數量}} 樣缺貨，不用匯款。",
+  remittance_ask_last5: "請完成轉帳後，輸入轉帳帳號的末五碼：",
+  remittance_last5_invalid: "末五碼需為 5 碼數字，請重新輸入。如需取消匯款請輸入「取消匯款」。",
   remittance_cancelled: "已取消匯款申報，如需使用請重新輸入「我要匯款」。",
-  remittance_success: "已收到您的匯款回報，我們將盡快為您核對，感謝您！",
+  remittance_done: "已收到您的匯款資訊（總金額 NT${{金額}}），我們將盡快為您核對，感謝您！",
   photo_confirm_empty: "還沒收到照片喔，請先按「我要下單」再傳商品照片。",
   order_query_empty: "目前沒有查到您的下單紀錄喔。",
   order_manage_card: "點下方按鈕查看與管理您目前的訂單。",

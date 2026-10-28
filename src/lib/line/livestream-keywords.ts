@@ -13,10 +13,11 @@ import { createSupabaseServiceClient } from "@/lib/supabase/service";
 // 完全不同：不是回傳數量確認清單，純粹是「查一下最近 10 分鐘內有沒有
 // 收到照片」的一句文字回覆，見 livestream-orders.ts::handlePhotoConfirmTrigger。
 //
-// remittance_cancel（預設「取消匯款」）是給卡在 awaiting_remittance_last5
-// 等待狀態的客人用的明確逃生指令——見 livestream-orders.ts::
-// handleTextMessage 開頭那段「等待匯款格式時優先比對其他已知指令」的
-// 說明，這組關鍵字只在那個等待狀態下才有意義，不在一般對話觸發。
+// remittance_cancel（預設「取消匯款」）是給卡在匯款流程中途
+// （remit_step 不是 null，見第三階段的按鈕/Quick Reply 引導流程）的
+// 客人用的明確逃生指令——見 livestream-orders.ts::handleTextMessage
+// 開頭「明確的取消匯款逃生指令」那段說明，這組關鍵字只在匯款流程
+// 進行中才有意義，不在一般對話觸發。
 //
 // order_query（預設「查詢訂單」）是獨立的一組——**上一輪曾經誤把它當成
 // cancel 組的同義詞**（純粹多一種方式叫出取消清單），這輪拆開成真正

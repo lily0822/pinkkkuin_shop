@@ -9,6 +9,7 @@ import {
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
 import { getCurrentOrMostRecentSession } from "@/lib/line/livestream-sessions";
+import { effectiveLivestreamUnitPrice, effectiveLivestreamQuantity } from "@/lib/line/livestream-pricing";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -72,7 +73,7 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from("community_livestream_orders")
       .select(
-        "id, line_user_id, line_display_name, nickname, product_name, unit_price, customer_unit_price, purchased_quantity, remittance_id, total_price, quantity, recognized_confidence, purchase_status, payment_status, notes, photo_storage_path, price_disputed_at, price_dispute_suggested_price, created_at, updated_at",
+        "id, line_user_id, line_display_name, nickname, product_name, unit_price, customer_unit_price, seller_unit_price, purchased_quantity, remittance_id, total_price, quantity, recognized_confidence, purchase_status, payment_status, notes, photo_storage_path, price_disputed_at, price_dispute_suggested_price, created_at, updated_at",
       )
       // staged（客人還沒送出的暫存照片）跟 cancelled 永遠不出現在任何
       // 後台列表——這次改版新增的中間狀態，既有的訂單管理畫面本來就不
@@ -91,8 +92,9 @@ export async function GET(request: NextRequest) {
     if (PAYMENT_STATUSES.has(paymentStatus)) query = query.eq("payment_status", paymentStatus);
     // 連線代購下單改版 第二階段：新流程的訂單一律有 customer_unit_price
     // （確認頁必填），unit_price 永遠是 null——這個「無法辨識價格」快篩
-    // 現在只該命中兩個欄位都是 null 的真正舊資料，不能只看 unit_price。
-    if (unrecognizedOnly) query = query.is("unit_price", null).is("customer_unit_price", null);
+    // 現在只該命中三個欄位都是 null 的真正舊資料，不能只看 unit_price。
+    // 第三階段新增 seller_unit_price 後，三個都要一起檢查。
+    if (unrecognizedOnly) query = query.is("unit_price", null).is("customer_unit_price", null).is("seller_unit_price", null);
     if (priceDisputedOnly) query = query.not("price_disputed_at", "is", null);
 
     const { data, error } = await query;
@@ -153,20 +155,14 @@ export async function GET(request: NextRequest) {
       appliedSessionName,
       orders: rows.map((row, index) => {
         const remittance = row.payment_status === "confirming" ? findLatestRemittance(String(row.id)) : null;
-        // 連線代購下單改版 第二階段：有效單價優先用客人自己填的
-        // customer_unit_price，退回舊的 unit_price 只是為了顯示第一階段
-        // 以前的舊資料——管理員這次改單價一律寫回 customer_unit_price
-        // （見 PATCH route），往後只有這一個欄位要維護。
-        const effectiveUnitPrice =
-          row.customer_unit_price !== null && row.customer_unit_price !== undefined
-            ? Number(row.customer_unit_price)
-            : row.unit_price !== null && row.unit_price !== undefined
-              ? Number(row.unit_price)
-              : null;
+        // 連線代購下單改版 第三階段：有效單價改成「賣家單價 ?? 客人單價
+        // ?? 舊欄位」——管理員改單價這次改回寫 seller_unit_price（見
+        // PATCH route），跟客人自己填的 customer_unit_price 分開保存。
+        const effectiveUnitPrice = effectiveLivestreamUnitPrice(row.seller_unit_price, row.customer_unit_price, row.unit_price);
         const purchasedQuantity =
           row.purchased_quantity === null || row.purchased_quantity === undefined ? null : Number(row.purchased_quantity);
         const quantity = Number(row.quantity || 1);
-        const effectiveQuantity = purchasedQuantity === null ? quantity : purchasedQuantity;
+        const effectiveQuantity = effectiveLivestreamQuantity(purchasedQuantity, quantity);
         return {
           id: String(row.id || ""),
           lineUserId: String(row.line_user_id || ""),
@@ -174,6 +170,8 @@ export async function GET(request: NextRequest) {
           nickname: String(row.nickname || ""),
           productName: row.product_name ? String(row.product_name) : "",
           unitPrice: effectiveUnitPrice,
+          customerUnitPrice:
+            row.customer_unit_price === null || row.customer_unit_price === undefined ? null : Number(row.customer_unit_price),
           totalPrice: effectiveUnitPrice === null ? null : effectiveUnitPrice * effectiveQuantity,
           quantity,
           purchasedQuantity,

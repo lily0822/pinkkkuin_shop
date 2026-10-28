@@ -2,6 +2,7 @@ import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { createSignedUrl } from "@/lib/supabase/storage";
 import { verifyLivestreamMagicLink } from "@/lib/line/livestream-magic-link";
 import { getCurrentOrMostRecentSession } from "@/lib/line/livestream-sessions";
+import { effectiveLivestreamUnitPrice } from "@/lib/line/livestream-pricing";
 import { LiveOrdersView, type LiveOrderItem } from "@/components/live-orders-view";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,7 @@ type OrderRow = {
   photo_storage_path: string | null;
   quantity: number;
   customer_unit_price: number | null;
+  seller_unit_price: number | null;
   unit_price: number | null;
   purchased_quantity: number | null;
   remittance_id: string | null;
@@ -58,7 +60,7 @@ export default async function LiveOrdersPage({
   let query = supabase
     .from("community_livestream_orders")
     .select(
-      "id, product_name, photo_storage_path, quantity, customer_unit_price, unit_price, purchased_quantity, remittance_id, purchase_status, payment_status",
+      "id, product_name, photo_storage_path, quantity, customer_unit_price, seller_unit_price, unit_price, purchased_quantity, remittance_id, purchase_status, payment_status",
     )
     .eq("line_user_id", payload.lineUserId)
     .eq("order_status", "submitted")
@@ -68,21 +70,24 @@ export default async function LiveOrdersPage({
   const { data } = await query;
   const rows = (data as OrderRow[] | null) || [];
 
-  // 未匯款金額：已採買（purchased_quantity 有值）但還沒匯款
-  // （remittance_id 是 null）的項目，用實際買到的數量 × 有效單價加總。
-  // 用獨立的 reduce 算，不跟下面抓 signed URL 的 async map 混在一起，
-  // 避免在 async 函式裡 reassign 閉包變數。
+  // 未匯款金額：跟第三階段「連線」匯款清單同一套規則——還沒匯款
+  // （remittance_id 是 null）的項目裡，缺貨（purchased_quantity===0）
+  // 不計入，其餘用「買到幾個（還沒採買就用訂購數量）× 有效單價」加總，
+  // 讓這個頁面看到的金額跟實際跑一次匯款流程算出來的金額一致。用獨立
+  // 的 reduce 算，不跟下面抓 signed URL 的 async map 混在一起，避免在
+  // async 函式裡 reassign 閉包變數。
   const unpaidTotal = rows.reduce((sum, row) => {
-    const effectiveUnitPrice = row.customer_unit_price ?? row.unit_price;
-    if (row.purchased_quantity !== null && row.remittance_id === null && effectiveUnitPrice !== null) {
-      return sum + row.purchased_quantity * effectiveUnitPrice;
-    }
-    return sum;
+    if (row.remittance_id !== null) return sum;
+    if (row.purchased_quantity === 0) return sum; // 缺貨，不計入
+    const effectiveUnitPrice = effectiveLivestreamUnitPrice(row.seller_unit_price, row.customer_unit_price, row.unit_price);
+    if (effectiveUnitPrice === null) return sum;
+    const effectiveQty = row.purchased_quantity ?? row.quantity;
+    return sum + effectiveQty * effectiveUnitPrice;
   }, 0);
 
   const items: LiveOrderItem[] = await Promise.all(
     rows.map(async (row) => {
-      const effectiveUnitPrice = row.customer_unit_price ?? row.unit_price;
+      const effectiveUnitPrice = effectiveLivestreamUnitPrice(row.seller_unit_price, row.customer_unit_price, row.unit_price);
       const lockReason: "remitted" | "purchased" | null =
         row.remittance_id !== null ? "remitted" : row.purchased_quantity !== null ? "purchased" : null;
       return {

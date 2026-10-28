@@ -129,6 +129,17 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
   try {
     const supabase = createSupabaseServiceClient();
+    // community_livestream_orders.remittance_id 有外鍵指向這張表（預設
+    // NO ACTION，不是 ON DELETE SET NULL）——第三階段起這個欄位開始真的
+    // 被寫入，直接刪除匯款紀錄會因為外鍵限制失敗。要先把關聯訂單的
+    // remittance_id 清回 null、payment_status 退回 unpaid，讓那些訂單
+    // 重新變成「還沒匯款」，才能刪除這筆紀錄本身。
+    const { error: unlinkError } = await supabase
+      .from("community_livestream_orders")
+      .update({ remittance_id: null, payment_status: "unpaid" })
+      .eq("remittance_id", remittanceId);
+    if (unlinkError) throw unlinkError;
+
     const { error } = await supabase.from("community_livestream_remittances").delete().eq("id", remittanceId);
     if (error) throw error;
     return NextResponse.json({ ok: true });

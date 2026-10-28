@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PHOTO_BUCKET } from "@/lib/line/livestream-orders";
+import { effectiveLivestreamUnitPrice, effectiveLivestreamQuantity } from "@/lib/line/livestream-pricing";
 import { isMemberDisabled } from "@/lib/member/status";
 import { authJsonError, createSupabaseRouteClient } from "@/lib/supabase/route";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
   const { data: rows, error } = await service
     .from("community_livestream_orders")
     .select(
-      "id, product_name, quantity, unit_price, customer_unit_price, purchased_quantity, purchase_status, payment_status, photo_storage_path, created_at",
+      "id, product_name, quantity, unit_price, customer_unit_price, seller_unit_price, purchased_quantity, purchase_status, payment_status, photo_storage_path, created_at",
     )
     .eq("line_user_id", binding.line_user_id)
     .eq("order_status", "submitted")
@@ -47,16 +48,11 @@ export async function GET(request: NextRequest) {
 
   const orders = await Promise.all(
     (rows || []).map(async (row) => {
-      // 有效單價優先用客人自己填的 customer_unit_price，退回舊欄位只是
-      // 為了顯示第一階段以前的舊資料；總價改用「買到幾個（還沒採買就用
-      // 訂購數量）× 有效單價」——跟後台「社群連線訂單」GET 路由同一套算法。
-      const effectiveUnitPrice =
-        row.customer_unit_price !== null && row.customer_unit_price !== undefined
-          ? Number(row.customer_unit_price)
-          : row.unit_price !== null && row.unit_price !== undefined
-            ? Number(row.unit_price)
-            : null;
-      const effectiveQuantity = row.purchased_quantity === null || row.purchased_quantity === undefined ? row.quantity : Number(row.purchased_quantity);
+      // 有效單價＝賣家單價 ?? 客人單價 ?? 舊欄位；總價改用「買到幾個
+      // （還沒採買就用訂購數量）× 有效單價」——跟後台「社群連線訂單」
+      // GET 路由同一套算法。
+      const effectiveUnitPrice = effectiveLivestreamUnitPrice(row.seller_unit_price, row.customer_unit_price, row.unit_price);
+      const effectiveQuantity = effectiveLivestreamQuantity(row.purchased_quantity, row.quantity);
       return {
         id: row.id,
         productName: row.product_name || "",

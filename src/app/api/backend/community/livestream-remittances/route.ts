@@ -11,6 +11,7 @@ import {
 import { backendRateLimit } from "@/lib/backend-security";
 import { LIVESTREAM_BANK_ACCOUNT_KEYS, LIVESTREAM_BANK_ACCOUNT_LABELS } from "@/lib/line/livestream-bank-info";
 import { isLivestreamBankNameAnomaly, LIVESTREAM_STANDARD_BANK_NAMES } from "@/lib/line/livestream-bank-aliases";
+import { effectiveLivestreamUnitPrice, effectiveLivestreamQuantity } from "@/lib/line/livestream-pricing";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -39,7 +40,10 @@ type OrderRow = {
   line_display_name: string | null;
   product_name: string | null;
   unit_price: number | null;
+  customer_unit_price: number | null;
+  seller_unit_price: number | null;
   quantity: number | null;
+  purchased_quantity: number | null;
   payment_status: string | null;
   photo_storage_path: string | null;
   created_at: string | null;
@@ -92,7 +96,13 @@ export async function GET(request: NextRequest) {
     const [{ data: orderData, error: orderError }, { data: remittanceData, error: remittanceError }] = await Promise.all([
       supabase
         .from("community_livestream_orders")
-        .select("id, line_user_id, line_display_name, product_name, unit_price, quantity, payment_status, photo_storage_path, created_at")
+        .select(
+          "id, line_user_id, line_display_name, product_name, unit_price, customer_unit_price, seller_unit_price, quantity, purchased_quantity, payment_status, photo_storage_path, created_at",
+        )
+        // 連線代購下單改版 第三階段：排除 staged（客人還沒送出的暫存
+        // 照片）跟 cancelled（客人自助取消的軟刪除訂單）——這條之前完全
+        // 沒過濾，是第二階段發現既有疏漏那次同一類問題，這輪一併補上。
+        .eq("order_status", "submitted")
         .order("created_at", { ascending: false })
         .limit(FETCH_LIMIT),
       supabase
@@ -130,8 +140,11 @@ export async function GET(request: NextRequest) {
     const photoUrlById = new Map(photoUrlEntries);
 
     function buildOrderSummary(order: OrderRow): OrderSummary {
-      const quantity = Number(order.quantity || 1);
-      const unitPrice = order.unit_price === null || order.unit_price === undefined ? null : Number(order.unit_price);
+      // 有效單價＝賣家單價 ?? 客人單價 ?? 舊欄位；有效數量＝買到幾個
+      // （還沒採買就用訂購數量）——跟後台訂單列表/依客人統計/會員中心/
+      // 匯款流程同一套算法。
+      const quantity = effectiveLivestreamQuantity(order.purchased_quantity, order.quantity);
+      const unitPrice = effectiveLivestreamUnitPrice(order.seller_unit_price, order.customer_unit_price, order.unit_price);
       return {
         id: String(order.id),
         productName: order.product_name ? String(order.product_name) : "",
@@ -144,8 +157,9 @@ export async function GET(request: NextRequest) {
 
     function sumOrders(relatedOrders: OrderRow[]): number {
       return relatedOrders.reduce((sum, order) => {
-        const unitPrice = order.unit_price === null || order.unit_price === undefined ? 0 : Number(order.unit_price);
-        return sum + unitPrice * Number(order.quantity || 1);
+        const unitPrice = effectiveLivestreamUnitPrice(order.seller_unit_price, order.customer_unit_price, order.unit_price) ?? 0;
+        const quantity = effectiveLivestreamQuantity(order.purchased_quantity, order.quantity);
+        return sum + unitPrice * quantity;
       }, 0);
     }
 
@@ -259,11 +273,12 @@ type ManualRemittanceBody = {
   amount?: unknown;
 };
 
-// 後台手動新增匯款紀錄——給客人一直沒辦法透過 LINE 自助送出匯款格式
-// 的情況補登。跟 LINE 那條路徑（handleRemittanceLast5Submission）的
-// 欄位語意保持一致：nickname 存這個客人目前的 line_display_name 快照、
-// 寫完紀錄後把涵蓋的訂單都改成 confirming，不然這筆手動補登的紀錄會
-// 跟訂單實際狀態對不起來。
+// 後台手動新增匯款紀錄——給客人一直沒辦法透過 LINE 自助完成匯款流程
+// 的情況補登。跟 LINE 那條路徑（livestream-orders.ts 的
+// handleRemitLast5Submission）的欄位語意保持一致：nickname 存這個客人
+// 目前的 line_display_name 快照、寫完紀錄後把涵蓋的訂單都改成
+// confirming 並連上 remittance_id，不然這筆手動補登的紀錄會跟訂單
+// 實際狀態對不起來。
 export async function POST(request: NextRequest) {
   const guard = await guardBackendRequest(request, true);
   if (guard) return guard;
@@ -312,14 +327,17 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = createSupabaseServiceClient();
 
-    // 驗證每筆 orderId 都真的屬於這個客人、而且目前還是 unpaid——避免
-    // 前端被竄改或資料過期而選到不相干、或已經處理過的訂單。用「符合
-    // 條件的筆數剛好等於請求的筆數」確認全部都通過，不是只檢查第一筆。
+    // 驗證每筆 orderId 都真的屬於這個客人、而且目前還是 unpaid 且還沒
+    // 連到任何一筆匯款紀錄——避免前端被竄改或資料過期而選到不相干、或
+    // 已經處理過的訂單。用「符合條件的筆數剛好等於請求的筆數」確認
+    // 全部都通過，不是只檢查第一筆。
     const { data: matchedOrders, error: orderError } = await supabase
       .from("community_livestream_orders")
       .select("id, line_display_name")
       .eq("line_user_id", lineUserId)
+      .eq("order_status", "submitted")
       .eq("payment_status", "unpaid")
+      .is("remittance_id", null)
       .in("id", orderIds);
     if (orderError) throw orderError;
 
@@ -347,9 +365,12 @@ export async function POST(request: NextRequest) {
       .single();
     if (insertError) throw insertError;
 
+    // 把涵蓋的訂單連到這筆新匯款紀錄——第三階段起 remittance_id 開始
+    // 真正被寫入，/live/orders 等地方的鎖定判斷都靠這個欄位，手動補登
+    // 這條路徑也要跟 LINE 自動流程一樣寫，不然會被誤判成還沒匯款。
     const { error: updateError } = await supabase
       .from("community_livestream_orders")
-      .update({ payment_status: "confirming" })
+      .update({ payment_status: "confirming", remittance_id: inserted.id })
       .in("id", orderIds);
     if (updateError) throw updateError;
 
