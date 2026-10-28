@@ -1,13 +1,7 @@
 import type { Metadata } from "next";
 import { Noto_Sans_TC } from "next/font/google";
 import "./globals.css";
-import { CartProvider } from "@/components/cart-provider";
-import { PreorderListProvider } from "@/components/preorder-list-provider";
-import { SiteFooter } from "@/components/site-footer";
-import { SiteHeader } from "@/components/site-header";
-import { StagingBadge } from "@/components/staging-badge";
 import { getAppearanceSettings } from "@/lib/appearance-settings";
-import { getPreorderAccess } from "@/lib/member/preorder-access";
 
 export const dynamic = "force-dynamic";
 
@@ -45,35 +39,21 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+// 客人專用頁面（/live/*，LIFF 開啟）改用自己的獨立版面（src/app/live/
+// layout.tsx）——不渲染這裡定義的網站殼層（CartProvider/
+// PreorderListProvider/SiteHeader/SiteFooter/STAGING 徽章/浮動 LINE
+// 按鈕）。這支根版面現在只保留 <html>/<body>、字型、全站 metadata
+// 這些每個路由都需要的最外層設定；網站本體的殼層搬到
+// src/app/(site)/layout.tsx，用 Next.js route group 跟 /live 完全分開
+// （route group 的括號資料夾不影響網址，/、/category 等既有網址都不變）。
 export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // PreorderListProvider 要靠這個決定要不要在客戶端打請求（見「不必要的
-  // 請求」那一輪）——用的是 cache() 包過的 getPreorderAccess()，跟
-  // site-header.tsx/首頁/分類頁/商品詳情頁各自呼叫的是同一份快取結果，
-  // 不會變成這個請求多一次重複的驗證/查詢。
-  const preorderAccess = await getPreorderAccess();
-
   return (
     <html lang="zh-Hant" className={notoSansTc.variable}>
-      <body className="font-sans antialiased">
-        <PreorderListProvider initialAccess={preorderAccess}>
-          <CartProvider>
-            <StagingBadge />
-            <SiteHeader />
-            {children}
-            <SiteFooter />
-            <a
-              href="https://line.me/R/ti/p/@pinkkkuin"
-              className="fixed bottom-4 left-4 z-40 rounded-full border-2 border-white bg-[#06C755] px-4 py-2.5 text-xs font-black text-white shadow-lg transition hover:scale-105 sm:text-sm"
-            >
-              LINE 小企鵝
-            </a>
-          </CartProvider>
-        </PreorderListProvider>
-      </body>
+      <body className="font-sans antialiased">{children}</body>
     </html>
   );
 }

@@ -2,6 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { useLiff } from "@/lib/line/use-liff";
+import { LiveIdentityRow } from "@/components/live-identity-row";
+import type { LiveCustomerIdentity } from "@/lib/line/live-customer-identity";
+
+export type LiveOrderStatusChipTone = "pending" | "done" | "out" | "partial" | "paid";
+export type LiveOrderStatusChip = { label: string; tone: LiveOrderStatusChipTone };
 
 export type LiveOrderItem = {
   id: string;
@@ -11,8 +16,7 @@ export type LiveOrderItem = {
   unitPrice: number | null;
   purchasedQuantity: number | null;
   lockReason: "remitted" | "purchased" | null;
-  purchaseStatus: string;
-  paymentStatus: string;
+  statusChip: LiveOrderStatusChip;
 };
 
 type DraftItem = LiveOrderItem & {
@@ -27,14 +31,32 @@ type LiveOrdersViewProps = {
   unpaidTotal: number;
   initialItems: LiveOrderItem[];
   orderQueryKeyword: string;
+  identity: LiveCustomerIdentity;
 };
 
-const PURCHASE_LABELS: Record<string, string> = { not_bought: "未採買", bought: "已採買" };
-const PAYMENT_LABELS: Record<string, string> = { unpaid: "未付款", confirming: "確認中", paid: "已付款" };
+const CHIP_TONE_STYLE: Record<LiveOrderStatusChipTone, { background: string; borderColor: string; color: string }> = {
+  pending: { background: "#eef0f4", borderColor: "#d7dbe3", color: "#6b7280" },
+  done: { background: "#e9f8ef", borderColor: "#8fd3ae", color: "#2f6b48" },
+  out: { background: "#ffe9e9", borderColor: "#f0a5a5", color: "#b3443f" },
+  partial: { background: "#fff9df", borderColor: "#f0dc8f", color: "#8a6d1f" },
+  paid: { background: "#ffebf1", borderColor: "#ff8fb3", color: "#a84b6c" },
+};
+
+function StatusChipBadge({ chip }: { chip: LiveOrderStatusChip }) {
+  const style = CHIP_TONE_STYLE[chip.tone];
+  return (
+    <span
+      className="inline-block rounded-full border px-2.5 py-0.5 text-xs font-bold"
+      style={{ backgroundColor: style.background, borderColor: style.borderColor, color: style.color }}
+    >
+      {chip.label}
+    </span>
+  );
+}
 
 // 純 React 局部 state 處理調數量/取消（跟 live-confirm-form.tsx 同一套
 // 寫法），只有按「儲存修改」才打一次 API；已採買/已匯款的項目一律唯讀。
-export function LiveOrdersView({ token, sessionName, unpaidTotal, initialItems, orderQueryKeyword }: LiveOrdersViewProps) {
+export function LiveOrdersView({ token, sessionName, unpaidTotal, initialItems, orderQueryKeyword, identity }: LiveOrdersViewProps) {
   const [items, setItems] = useState<DraftItem[]>(
     initialItems.map((item) => ({ ...item, originalQuantity: item.quantity, removed: false, cancelled: false })),
   );
@@ -121,14 +143,15 @@ export function LiveOrdersView({ token, sessionName, unpaidTotal, initialItems, 
   }
 
   return (
-    <main className="min-h-screen bg-penguin-cream pb-32">
-      <div className="mx-auto max-w-md px-4 py-6">
-        <h1 className="text-xl font-black text-penguin-gray">{sessionName ? `${sessionName}` : "目前訂單"}</h1>
-        <p className="mt-1 text-sm text-penguin-gray">已採買或已在匯款流程中的商品無法修改/取消。</p>
+    <main className="bg-white pb-28">
+      <div className="mx-auto max-w-md px-4">
+        <LiveIdentityRow lineName={identity.lineName} binding={identity.binding} />
+        <h1 className="mt-2 text-center text-[17px] font-black text-penguin-gray">{sessionName ? sessionName : "目前訂單"}</h1>
+        <p className="mt-1 text-center text-xs text-penguin-gray">已採買或已在匯款流程中的商品無法修改/取消。</p>
 
         {unpaidTotal > 0 ? (
           <div
-            className="mt-4 rounded-2xl border-2 px-4 py-3 text-sm leading-6 text-penguin-gray"
+            className="mt-3 rounded-xl border px-3 py-2 text-xs leading-6 text-penguin-gray"
             style={{ backgroundColor: "#fff9df", borderColor: "#f0dc8f" }}
           >
             尚未匯款金額：NT${unpaidTotal.toLocaleString("zh-TW")}
@@ -146,11 +169,11 @@ export function LiveOrdersView({ token, sessionName, unpaidTotal, initialItems, 
           </p>
         ) : null}
 
-        <div className="mt-4 space-y-3">
+        <div className="mt-1">
           {visibleItems.length ? (
             visibleItems.map((item) => (
-              <div key={item.id} className="flex items-center gap-3 rounded-2xl border border-penguin-peach bg-white p-3">
-                <div className="grid h-[68px] w-[68px] shrink-0 place-items-center overflow-hidden rounded-xl bg-penguin-cream text-xl text-penguin-gray">
+              <div key={item.id} className="flex items-center gap-2.5 border-t border-[#f0f0f3] py-2.5 first:border-t-0">
+                <div className="grid h-[62px] w-[62px] shrink-0 place-items-center overflow-hidden rounded-[10px] bg-penguin-cream text-xl text-penguin-gray">
                   {item.photoUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={item.photoUrl} alt={item.productName || "商品"} className="h-full w-full object-cover" />
@@ -158,48 +181,38 @@ export function LiveOrdersView({ token, sessionName, unpaidTotal, initialItems, 
                     "P"
                   )}
                 </div>
-                <div className="min-w-0 flex-1 space-y-1">
+                <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-black text-penguin-gray">{item.productName || "商品"}</p>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="rounded-full bg-penguin-cream px-2 py-0.5 text-xs font-bold text-penguin-gray">
-                      {PURCHASE_LABELS[item.purchaseStatus] || item.purchaseStatus}
-                    </span>
-                    <span className="rounded-full bg-penguin-cream px-2 py-0.5 text-xs font-bold text-penguin-gray">
-                      {PAYMENT_LABELS[item.paymentStatus] || item.paymentStatus}
-                    </span>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                    <StatusChipBadge chip={item.statusChip} />
+                    {item.unitPrice !== null ? (
+                      <span className="text-xs text-penguin-gray">單價 NT${item.unitPrice.toLocaleString("zh-TW")}</span>
+                    ) : null}
                   </div>
-                  {item.unitPrice !== null ? (
-                    <p className="text-xs text-penguin-gray">
-                      單價 NT${item.unitPrice.toLocaleString("zh-TW")}
-                      {item.purchasedQuantity !== null ? `・買到 ${item.purchasedQuantity} 個` : ""}
-                    </p>
-                  ) : null}
 
                   {item.lockReason ? (
-                    <p className="text-xs font-bold text-gray-400">
-                      {item.lockReason === "remitted" ? "已在匯款流程中，無法修改/取消" : "已採買，無法修改/取消"}（訂購數量 {item.quantity}）
-                    </p>
+                    <p className="mt-1 text-xs font-bold text-gray-400">訂購數量 {item.quantity}</p>
                   ) : (
-                    <div className="flex items-center gap-2 pt-1">
-                      <div className="inline-flex h-9 items-center overflow-hidden rounded-full border-2 border-penguin-pink bg-white">
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <div className="inline-flex h-[30px] items-center overflow-hidden rounded-full border-[1.5px] border-penguin-pink-dark bg-white">
                         <button
                           type="button"
                           aria-label="減少數量"
                           disabled={item.quantity <= 1 || item.removed}
                           onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1))}
-                          className="grid h-full w-8 place-items-center font-black text-penguin-gray disabled:cursor-not-allowed disabled:text-gray-300"
+                          className="grid h-full w-[30px] place-items-center bg-penguin-pink-light font-black text-penguin-gray disabled:cursor-not-allowed disabled:text-gray-300"
                         >
-                          -
+                          −
                         </button>
-                        <span className="min-w-7 text-center text-sm font-black text-penguin-gray">{item.quantity}</span>
+                        <span className="min-w-[30px] text-center text-sm font-black text-penguin-gray">{item.quantity}</span>
                         <button
                           type="button"
                           aria-label="增加數量"
                           disabled={item.quantity >= 99 || item.removed}
                           onClick={() => updateQuantity(item.id, Math.min(99, item.quantity + 1))}
-                          className="grid h-full w-8 place-items-center font-black text-penguin-gray disabled:cursor-not-allowed disabled:text-gray-300"
+                          className="grid h-full w-[30px] place-items-center bg-penguin-pink-light font-black text-penguin-gray disabled:cursor-not-allowed disabled:text-gray-300"
                         >
-                          +
+                          ＋
                         </button>
                       </div>
                       <button
@@ -215,7 +228,7 @@ export function LiveOrdersView({ token, sessionName, unpaidTotal, initialItems, 
               </div>
             ))
           ) : (
-            <div className="rounded-2xl border-2 border-dashed border-penguin-peach bg-white px-4 py-10 text-center text-sm text-penguin-gray">
+            <div className="rounded-xl border border-dashed border-penguin-peach bg-penguin-cream/40 px-4 py-10 text-center text-sm text-penguin-gray">
               目前沒有訂單。
             </div>
           )}
@@ -223,7 +236,7 @@ export function LiveOrdersView({ token, sessionName, unpaidTotal, initialItems, 
       </div>
 
       <div
-        className="fixed inset-x-0 bottom-0 z-50 border-t-2 border-penguin-peach bg-white px-4 py-3"
+        className="fixed inset-x-0 bottom-0 z-50 border-t border-[#eee] bg-white px-4 py-2.5"
         style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
       >
         <div className="mx-auto flex max-w-md items-center justify-between gap-3">
@@ -234,7 +247,7 @@ export function LiveOrdersView({ token, sessionName, unpaidTotal, initialItems, 
             type="button"
             onClick={handleSave}
             disabled={!canSave}
-            className="shrink-0 rounded-full bg-penguin-pink-dark px-5 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+            className="shrink-0 rounded-full border-2 border-penguin-pink-dark bg-penguin-pink-light px-5 py-2.5 text-sm font-black text-penguin-gray disabled:cursor-not-allowed disabled:border-gray-300 disabled:bg-gray-100 disabled:text-gray-400"
           >
             {saving ? "儲存中..." : "儲存修改"}
           </button>

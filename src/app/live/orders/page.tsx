@@ -1,28 +1,20 @@
+import type { Metadata } from "next";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { createSignedUrl } from "@/lib/supabase/storage";
 import { verifyLivestreamMagicLink } from "@/lib/line/livestream-magic-link";
 import { getCurrentOrMostRecentSession } from "@/lib/line/livestream-sessions";
 import { effectiveLivestreamUnitPrice } from "@/lib/line/livestream-pricing";
 import { getLivestreamKeywordSettings } from "@/lib/line/livestream-keywords";
-import { LiveOrdersView, type LiveOrderItem } from "@/components/live-orders-view";
+import { getLiveCustomerIdentity } from "@/lib/line/live-customer-identity";
+import { LiveOrdersView, type LiveOrderItem, type LiveOrderStatusChip } from "@/components/live-orders-view";
+import { LiveErrorScreen } from "@/components/live-error-screen";
 
 export const dynamic = "force-dynamic";
 
+export const metadata: Metadata = { title: "我的訂單" };
+
 const PHOTO_BUCKET = "community-livestream-photos";
 const SIGNED_URL_TTL_SECONDS = 60 * 60; // 跟連結本身的 60 分鐘有效期一致
-
-function ExpiredNotice() {
-  return (
-    <main className="flex min-h-[60vh] items-center justify-center bg-penguin-cream px-4 py-12">
-      <div className="w-full max-w-sm rounded-3xl border-2 border-penguin-peach bg-white p-6 text-center shadow-sm">
-        <p className="text-base font-black text-penguin-gray">連結已過期</p>
-        <p className="mt-3 text-sm leading-6 text-penguin-gray">
-          請回到 LINE 重新按「查詢訂單」或「取消訂單」。
-        </p>
-      </div>
-    </main>
-  );
-}
 
 type OrderRow = {
   id: string;
@@ -38,6 +30,22 @@ type OrderRow = {
   payment_status: string | null;
 };
 
+// 客人專用頁面改成單一狀態標籤（取代原本「採買狀態」+「付款狀態」兩個
+// 分開的小標籤）：已匯款優先於其他任何狀態（進了匯款流程就鎖定，不管
+// 採買結果如何）；其餘依 purchased_quantity 判斷——null 是還沒採買、
+// 0 是缺貨、等於訂購數量是已買到、其餘是買到一部分。
+function computeStatusChip(
+  remittanceId: string | null,
+  purchasedQuantity: number | null,
+  quantity: number,
+): LiveOrderStatusChip {
+  if (remittanceId !== null) return { label: "已匯款", tone: "paid" };
+  if (purchasedQuantity === null) return { label: "待採買", tone: "pending" };
+  if (purchasedQuantity === 0) return { label: "缺貨", tone: "out" };
+  if (purchasedQuantity >= quantity) return { label: "已買到", tone: "done" };
+  return { label: `買到 ${purchasedQuantity}・缺 ${quantity - purchasedQuantity}`, tone: "partial" };
+}
+
 export default async function LiveOrdersPage({
   searchParams,
 }: {
@@ -47,7 +55,7 @@ export default async function LiveOrdersPage({
   const token = params?.token || "";
   const payload = verifyLivestreamMagicLink(token, "order-edit");
   if (!payload) {
-    return <ExpiredNotice />;
+    return <LiveErrorScreen title="連結已過期" message="請回到 LINE 重新按「查詢訂單」或「取消訂單」。" />;
   }
 
   const supabase = createSupabaseServiceClient();
@@ -101,14 +109,15 @@ export default async function LiveOrdersPage({
         unitPrice: effectiveUnitPrice,
         purchasedQuantity: row.purchased_quantity,
         lockReason,
-        purchaseStatus: row.purchase_status || "not_bought",
-        paymentStatus: row.payment_status || "unpaid",
+        statusChip: computeStatusChip(row.remittance_id, row.purchased_quantity, row.quantity),
       };
     }),
   );
 
   const { keywords } = await getLivestreamKeywordSettings();
   const orderQueryKeyword = keywords.order_query[0];
+
+  const identity = await getLiveCustomerIdentity(payload.lineUserId);
 
   return (
     <LiveOrdersView
@@ -117,6 +126,7 @@ export default async function LiveOrdersPage({
       unpaidTotal={unpaidTotal}
       initialItems={items}
       orderQueryKeyword={orderQueryKeyword}
+      identity={identity}
     />
   );
 }

@@ -1,27 +1,21 @@
+import type { Metadata } from "next";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { createSignedUrl } from "@/lib/supabase/storage";
 import { verifyLivestreamMagicLink } from "@/lib/line/livestream-magic-link";
 import { getCurrentSession } from "@/lib/line/livestream-sessions";
 import { getLivestreamKeywordSettings } from "@/lib/line/livestream-keywords";
+import { getLiveCustomerIdentity } from "@/lib/line/live-customer-identity";
 import { LiveConfirmForm, type LiveConfirmItem } from "@/components/live-confirm-form";
+import { LiveErrorScreen } from "@/components/live-error-screen";
 
 export const dynamic = "force-dynamic";
 
+// 中性標題，不出現網站名稱或「購物」之類字眼——客人不該在這個頁面
+// 感覺到背後有個網站。
+export const metadata: Metadata = { title: "連線下單" };
+
 const PHOTO_BUCKET = "community-livestream-photos";
 const SIGNED_URL_TTL_SECONDS = 60 * 60; // 跟連結本身的 60 分鐘有效期一致
-
-function ExpiredNotice() {
-  return (
-    <main className="flex min-h-[60vh] items-center justify-center bg-penguin-cream px-4 py-12">
-      <div className="w-full max-w-sm rounded-3xl border-2 border-penguin-peach bg-white p-6 text-center shadow-sm">
-        <p className="text-base font-black text-penguin-gray">連結已過期</p>
-        <p className="mt-3 text-sm leading-6 text-penguin-gray">
-          請回到 LINE 重新按「傳好了」或「查詢訂單」。
-        </p>
-      </div>
-    </main>
-  );
-}
 
 export default async function LiveConfirmPage({
   searchParams,
@@ -32,7 +26,7 @@ export default async function LiveConfirmPage({
   const token = params?.token || "";
   const payload = verifyLivestreamMagicLink(token, "order-confirm");
   if (!payload) {
-    return <ExpiredNotice />;
+    return <LiveErrorScreen title="連結已過期" message="請回到 LINE 重新按「傳好了」或「查詢訂單」。" />;
   }
 
   const supabase = createSupabaseServiceClient();
@@ -65,12 +59,15 @@ export default async function LiveConfirmPage({
   const { keywords } = await getLivestreamKeywordSettings();
   const orderQueryKeyword = keywords.order_query[0];
 
+  const identity = await getLiveCustomerIdentity(payload.lineUserId);
+
   return (
     <LiveConfirmForm
       token={token}
       sessionName={session?.name || null}
       initialItems={items}
       orderQueryKeyword={orderQueryKeyword}
+      identity={identity}
     />
   );
 }
