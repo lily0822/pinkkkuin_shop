@@ -3,7 +3,7 @@
 ## Current baseline
 
 - Branch: `official-next`.
-- Feature commit: `e89abb2`（連線代購 LINE 下單改版 第三階段：匯款流程全面改版＋買到幾個上限 — see "LINE 圖片下單 + 社群連線訂單" below）、後台子模組 `9e69abf`（買到幾個上限的前端 clamp，detached HEAD on `04af446`，見下方「Backend submodule safety」）。Builds on `e27c4cd`（第二階段：後台採買「買到幾個」＋查詢/修改/取消訂單網頁）、後台子模組 `04af446`；`07521c6`（第一階段：移除自動辨識、改成連線場次＋客人網頁自填數量單價）、後台子模組 `0279be3`（連線場次頁籤，detached HEAD on `d741839`）。Prior feature commit: `5c27528` (關鍵字設定每組新增啟用/停用開關 — see "Configurable trigger keywords" below). Builds on `53f1865` (修正匯款格式誤判＋後台手動新增匯款紀錄＋匯款紀錄匯出 Excel — see 功能五/八 below), `ec430d7` (社群連線訂單新增「依客人統計」檢視＋匯款紀錄頁籤改成「人名→匯款紀錄」雙層結構 — see 功能三/九 below), `914b4a7` (社群連線訂單卡片重新排版，修正手機版按鈕超框問題 — see 功能三 below), `716517c` (新增「已購買」快速打勾按鈕＋狀態變更改成免刷新局部更新 — see 功能三 below), `5dc8223` (數量改成常駐輸入框免刷新＋新增批次編輯模式＋修正商品編號競態條件 — see 功能三/功能二 below), `eb982b9` (後台新增「匯款紀錄」頁籤 — see 功能八 below), `66fffe8` (拆分獨立「查詢訂單」功能＋取消訂單排版改直向 — see 功能六/七 below), `1b78922` (「傳好了」改回純文字確認＋新增「查詢訂單」關鍵字 — see 功能二/六 below), `229861e` (匯款等待格式時優先辨識其他指令＋新增「取消匯款」逃生指令 — see 功能五 below), `e6d7750` (共用清單圖片改回舊版 60px 小圖＋橫向排列 — see 功能二/五 below), `fb5ff58` (統一「傳好了」確認與匯款清單的圖片+商品名稱樣式), `6e66c20` (新增「傳好了」確認信號——先查有沒有收到照片再回覆), `11e68b7` (匯款流程全面調整：純圖片清單＋三顆銀行複製按鈕＋固定格式回報 — see 功能三/五 below), `3b69c0b` (移除形同虛設的「價格異常」篩選按鈕與紅色提示), `80e1b81` (拿掉客人端數量/價格互動，匯款/取消訂單改成純展示 — see 功能二/五/六 below), `1f85eda` (移除暱稱綁定/審核機制 — see 功能一 below), `2a54dcc` (batch-delete button), `e276e2f` (customer self-delete for pending items + card photo aspect-ratio/height fix), `5ca7e2b` (price-dispute reporting, 7th pending migration), `32af0ee` (card image/layout round), and `32f8a08` (tesseract.js worker-thread Vercel crash fix — tesseract.js/sharp and the OCR feature it backed were removed entirely in `07521c6` above, so this fix is now moot history).
+- Feature commit: `ce13afc`（連線代購 LINE 下單改版 第三階段審查修正：金額可回報＋送出匯款改單一交易 RPC＋匯款紀錄記場次 — see "第三階段審查修正" below）、後台子模組 `dbd3a45`（匯款紀錄新增場次篩選＋文案設定補 4 個新 key，detached HEAD on `9e69abf`，見下方「Backend submodule safety」）。Builds on `e89abb2`（連線代購 LINE 下單改版 第三階段：匯款流程全面改版＋買到幾個上限 — see "LINE 圖片下單 + 社群連線訂單" below）、後台子模組 `9e69abf`（買到幾個上限的前端 clamp）。Builds on `e27c4cd`（第二階段：後台採買「買到幾個」＋查詢/修改/取消訂單網頁）、後台子模組 `04af446`；`07521c6`（第一階段：移除自動辨識、改成連線場次＋客人網頁自填數量單價）、後台子模組 `0279be3`（連線場次頁籤，detached HEAD on `d741839`）。Prior feature commit: `5c27528` (關鍵字設定每組新增啟用/停用開關 — see "Configurable trigger keywords" below). Builds on `53f1865` (修正匯款格式誤判＋後台手動新增匯款紀錄＋匯款紀錄匯出 Excel — see 功能五/八 below), `ec430d7` (社群連線訂單新增「依客人統計」檢視＋匯款紀錄頁籤改成「人名→匯款紀錄」雙層結構 — see 功能三/九 below), `914b4a7` (社群連線訂單卡片重新排版，修正手機版按鈕超框問題 — see 功能三 below), `716517c` (新增「已購買」快速打勾按鈕＋狀態變更改成免刷新局部更新 — see 功能三 below), `5dc8223` (數量改成常駐輸入框免刷新＋新增批次編輯模式＋修正商品編號競態條件 — see 功能三/功能二 below), `eb982b9` (後台新增「匯款紀錄」頁籤 — see 功能八 below), `66fffe8` (拆分獨立「查詢訂單」功能＋取消訂單排版改直向 — see 功能六/七 below), `1b78922` (「傳好了」改回純文字確認＋新增「查詢訂單」關鍵字 — see 功能二/六 below), `229861e` (匯款等待格式時優先辨識其他指令＋新增「取消匯款」逃生指令 — see 功能五 below), `e6d7750` (共用清單圖片改回舊版 60px 小圖＋橫向排列 — see 功能二/五 below), `fb5ff58` (統一「傳好了」確認與匯款清單的圖片+商品名稱樣式), `6e66c20` (新增「傳好了」確認信號——先查有沒有收到照片再回覆), `11e68b7` (匯款流程全面調整：純圖片清單＋三顆銀行複製按鈕＋固定格式回報 — see 功能三/五 below), `3b69c0b` (移除形同虛設的「價格異常」篩選按鈕與紅色提示), `80e1b81` (拿掉客人端數量/價格互動，匯款/取消訂單改成純展示 — see 功能二/五/六 below), `1f85eda` (移除暱稱綁定/審核機制 — see 功能一 below), `2a54dcc` (batch-delete button), `e276e2f` (customer self-delete for pending items + card photo aspect-ratio/height fix), `5ca7e2b` (price-dispute reporting, 7th pending migration), `32af0ee` (card image/layout round), and `32f8a08` (tesseract.js worker-thread Vercel crash fix — tesseract.js/sharp and the OCR feature it backed were removed entirely in `07521c6` above, so this fix is now moot history).
 - Storefront/shared backend Staging: `https://pinkkkuin-staging.vercel.app` → `dpl_4wwxV77kzk2xiPSSZfPVgbHxJFLZ`.
 - **Production (2026-10-27 更版)**: `https://pinkkkuin-shop.vercel.app` → `dpl` 對應網址 `https://pinkkkuin-shop-98otza38b-lilys-projects-2a8e834c.vercel.app`，程式碼為 commit `19b4bfe`（預購獨立流程 + 懸浮面板等，共 63 個提交）、後台子模組 `fd36923`。更版前已在正式 Supabase 套用 migration 202610140001～202610190002（共 7 個，驗證查詢 15 項全部通過），Vercel Production 已補 `LINE_OA_BASIC_ID`，LINE webhook 確認指向正式站。上一版（可一行指令切回）：`https://pinkkkuin-shop-1eon64c9h-lilys-projects-2a8e834c.vercel.app`（用 `vercel alias set <網址> pinkkkuin-shop.vercel.app`）。
   - **部署注意**：不要從 `git worktree` 資料夾部署，Vercel 會一直卡在 Building（狀態 UNKNOWN），實測三次都卡；要部署「只含已提交內容」的版本時，用 `git archive <commit>` 匯出到沒有 `.git` 的資料夾（後台子模組也要用 `git -C .backend-product-publish -c core.autocrlf=false archive <commit>` 匯出並逐檔比對 hash），複製 `.vercel/project.json` 進去再 `vercel deploy --prod --yes`，約 45 秒完成。主資料夾若有他人未提交的修改（例如 Codex 的手機後台），不要直接從主資料夾部署正式環境。
@@ -80,11 +80,11 @@
 7. 「買到幾個」~~不特別跟 `quantity` 比上限~~ **第三階段修正**：改成限制在 0～訂購數量之間（使用者這輪明確要求，避免缺貨數出現負數）。
 8. ~~「未匯款金額」定義：只算已採買但還沒匯款的項目，用實際買到的數量×單價~~ **第三階段修正**：定義沿用「已採買（含買到 0 個）但還沒匯款」為基礎，但現在**排除缺貨（`purchased_quantity=0`）**的項目（跟第三階段匯款清單同一套規則），其餘不變。
 
-**第三階段：**
-9. 「確認金額」這步驟實際做成一顆明確的「我已經完成轉帳」postback 按鈕（`remit_step` 進到 `confirm_amount` 才顯示），不是選完銀行就直接跳去問末五碼——理由是金額是系統算的，給客人一個明確的「我看過金額、我轉帳了」確認動作，跟原始規格「選銀行→確認金額→輸入末五碼」三個步驟的語意對應。
-10. 「缺貨」的判斷嚴格等於 `purchased_quantity === 0`（賣家明確填過 0，不是「還沒填」的 `null`）——`null` 一律當成「還沒採買」，用訂購數量估算金額納入清單，不是當成缺貨排除。
-11. `community_livestream_remittances.session_id` 這次「連線」匯款一律留 `null`——因為匯款清單本身就「隨時開放、不限場次」，涵蓋的訂單可能橫跨好幾場連線，沒有單一場次可以歸屬。
-12. 匯款送出時對 `remit_order_ids` 快照做 guarded update，不是包一個新 RPC 做成單一交易——insert 匯款紀錄跟 update 訂單狀態是兩個分開的陳述式；萬一中間失敗（insert 成功但 update 失敗，機率極低），不會自動回滾已經寫入的匯款紀錄，留給管理員在「匯款紀錄」頁籤手動核對。跟 `submit_livestream_order` 需要包 RPC 的理由不同（那邊是因為要跨列配商品編號，這裡每筆訂單互相獨立）。
+**第三階段（審查後已修正，見下方「第三階段審查修正」小節）：**
+9. 「確認金額」這步驟實際做成一顆明確的「我已經完成轉帳」postback 按鈕，不是選完銀行就直接跳去問末五碼——這點審查後**維持**，只是流程拉長成獨立一步（見下方審查修正）。
+10. 「缺貨」的判斷嚴格等於 `purchased_quantity === 0`（賣家明確填過 0，不是「還沒填」的 `null`）——`null` 一律當成「還沒採買」，用訂購數量估算金額納入清單，不是當成缺貨排除。（維持不變）
+11. ~~`community_livestream_remittances.session_id` 這次「連線」匯款一律留 `null`~~ **審查後否決並修正**：改填「這批訂單所屬的場次」，見下方審查修正小節。
+12. ~~匯款送出時對 `remit_order_ids` 快照做 guarded update，不是包一個新 RPC 做成單一交易~~ **審查後否決並修正**：改成單一交易 RPC，見下方審查修正小節。
 
 ### 已知限制：Staging 資料庫殘留的少量測試資料
 
@@ -111,25 +111,45 @@ delete from public.community_livestream_sessions where name like 'Utest%';
 - 全部排除後若清單是空的：還有缺貨筆數就回「都缺貨，不用匯款」（`remittance_all_shortage`），否則回一般的「沒有待匯款訂單」（`remittance_empty`）。
 - **只能整批一起匯款，沒有單筆挑選**——查到的全部 id 直接存進 `remit_order_ids` 快照。
 
-**匯款流程全面改版：文字固定格式回報整個拿掉，改成按鈕/Quick Reply 引導。** 新狀態機用 `community_line_bot_states` 的 `remit_step`（`select_bank`/`confirm_amount`/`await_last5`）/`remit_kind`（`live`/`preorder`）/`remit_bank`/`remit_expected_amount`/`remit_order_ids`（第一階段就建好、這輪第一次真的讀寫，取代舊的 `awaiting_remittance_last5`/`remittance_order_ids`，這兩個舊欄位已經整個不讀不寫但不刪，留著不影響）：
+**匯款流程全面改版：文字固定格式回報整個拿掉，改成按鈕/Quick Reply 引導。** 新狀態機用 `community_line_bot_states` 的 `remit_step`/`remit_kind`（`live`/`preorder`）/`remit_bank`/`remit_expected_amount`/`remit_order_ids`（第一階段就建好欄位、這輪第一次真的讀寫，取代舊的 `awaiting_remittance_last5`/`remittance_order_ids`，這兩個舊欄位已經整個不讀不寫但不刪，留著不影響）：
 1. 「我要匯款」→ 回一張「連線」「預購」兩顆 postback 按鈕的 Flex 卡片（不再是直接列清單）。
 2. 「預購」→ 回「尚未開放」文字，不異動任何狀態（**已跟使用者確認這輪只做「連線」**，預購的資料來源——網站 `orders` 表 × `member_line_accounts` 綁定——還沒設計）。
-3. 「連線」→ `handleRemitStartLive`（見上方補強 2），有內容就算好金額快照存進 `remit_expected_amount`，回商品清單 + 缺貨提示 + 銀行 Quick Reply（只列有填帳號的銀行，`action=remit_bank&bank=<key>`）。
-4. 選銀行（postback，只有 `remit_step==='select_bank'` 時生效）→ 回收款帳號複製按鈕（只顯示選中那家）+ 金額文字 + 「我已經完成轉帳」postback 按鈕，`remit_step` 進到 `confirm_amount`。
-5. 「我已經完成轉帳」（postback，只有 `confirm_amount` 時生效）→ `remit_step` 進到 `await_last5`，回文字請客人輸入末五碼。
-6. 末五碼（純文字訊息，`await_last5` 時觸發，`handleRemitLast5Submission`）：不是 5 碼數字就回格式錯誤、留在這一步重試；驗證通過才真的寫入——**先 insert `community_livestream_remittances`**（`amount` 用 `remit_expected_amount` 這個系統算好的快照，不是客人自己打的數字，`kind='live'`），拿到新 id 後**對 `remit_order_ids` 做 guarded update**（`.eq('order_status','submitted').is('remittance_id', null)`，跟 `/api/live/orders/update` 同一套手法）寫入 `remittance_id`/`payment_status='confirming'`，清空 `remit_*` 狀態，回 Flex 完成卡片。
-7. `remittance_cancel`（預設「取消匯款」）在 `remit_step` 不是 `null` 的任何一步都能直接清空狀態逃生；已知指令（`order`/`remittance`/`cancel`/`order_query`/`photo_confirm`）在 `await_last5` 步驟一樣能自動逃生改走別的分派，在 `select_bank`/`confirm_amount` 這兩個按鈕導向的步驟也能逃生，其餘文字直接忽略不回覆。
-8. **postback 處理重新引入**：第二階段把取消訂單改成網頁操作後，`handlePostback` 整支函式被刪掉了；這輪匯款改用按鈕，重新加回 `handlePostback`，目前只分派 `remit_start`/`remit_bank`/`remit_confirm` 三種 action。
+3. 「連線」→ `handleRemitStartLive`（見上方補強 2），有內容就算好系統金額存進 `remit_expected_amount`、`remit_step='select_bank'`，回商品清單 + 缺貨提示 + 銀行 Quick Reply（只列有填帳號的銀行，`action=remit_bank&bank=<key>`）。
+4. 選銀行（postback，只有 `remit_step==='select_bank'` 時生效）→ 回收款帳號複製按鈕（只顯示選中那家）+「我已經完成轉帳」postback 按鈕，`remit_step` 進到 `confirm_transfer`。**這一步不再顯示金額**，金額確認是獨立的下一步。
+5. 「我已經完成轉帳」（postback，只有 `confirm_transfer` 時生效，`handleRemitTransferConfirm`）→ `remit_step` 進到 `confirm_amount`，回「應匯金額 NT$X，你匯的金額是這個嗎？」+「金額正確」/「我匯的不一樣」兩顆按鈕。
+6. 「金額正確」（postback，只有 `confirm_amount` 時生效）→ `remit_step` 進到 `await_last5`，`remit_expected_amount` 維持系統算的值。
+7. 「我匯的不一樣」（postback，只有 `confirm_amount` 時生效）→ `remit_step` 進到 `await_custom_amount`，回文字請客人輸入實際匯款金額。
+8. 自訂金額（純文字訊息，`await_custom_amount` 時觸發，`handleRemitCustomAmountSubmission`）：只收正整數（`/^\d+$/` 且 `>0`，0/負數/小數/文字都會被擋、留在原步驟請客人重新輸入）；驗證通過覆蓋 `remit_expected_amount` 成客人輸入的值、`remit_step` 進到 `await_last5`。
+9. 末五碼（純文字訊息，`await_last5` 時觸發，`handleRemitLast5Submission`）：不是 5 碼數字就回格式錯誤、留在這一步重試；驗證通過才呼叫 RPC `submit_livestream_remittance`（見下方「審查修正」）真的寫入，`p_reported_amount` 用當下 `remit_expected_amount`（可能是系統算的，也可能是客人改過的）。成功清空 `remit_*` 狀態、回 Flex 完成卡片；RPC 回傳 `already_remitted` 時回覆「這批商品已經申報過匯款了，請按「查詢訂單」查看。」。
+10. `remittance_cancel`（預設「取消匯款」）在 `remit_step` 不是 `null` 的任何一步都能直接清空狀態逃生；已知指令（`order`/`remittance`/`cancel`/`order_query`/`photo_confirm`）在 `await_last5`/`await_custom_amount` 兩個文字輸入步驟一樣能自動逃生改走別的分派，在 `select_bank`/`confirm_transfer`/`confirm_amount` 這三個按鈕導向的步驟也能逃生，其餘文字直接忽略不回覆。
+11. **postback 處理重新引入**：第二階段把取消訂單改成網頁操作後，`handlePostback` 整支函式被刪掉了；這輪匯款改用按鈕，重新加回 `handlePostback`，目前分派 `remit_start`/`remit_bank`/`remit_confirm`/`remit_amount_correct`/`remit_amount_different` 五種 action。
 
 **連帶修正的既有 bug（這輪第一次讓 `remittance_id` 真的被寫入才發現）：**
 - `community_livestream_orders.remittance_id` 有外鍵指向 `community_livestream_remittances`（預設 `NO ACTION`，不是 `ON DELETE SET NULL`）——後台「匯款紀錄」頁籤的 **DELETE** 路由原本直接刪除紀錄本身，只要有訂單真的連到那筆紀錄就會因為外鍵限制失敗。已修正：刪除前先把關聯訂單的 `remittance_id` 清回 `null`、`payment_status` 退回 `unpaid`。已用真實資料測試過（刪除前確認會失敗的情境模式、刪除後確認關聯訂單正確解鎖）。
 - 後台手動新增匯款紀錄（**POST**）原本只改 `payment_status`，沒有寫 `remittance_id`——這輪補上，跟 LINE 自動流程的寫入方式一致；查詢條件也補上 `order_status='submitted'`/`remittance_id is null`。
 - 後台匯款紀錄 **GET** 路由原本沒有 `order_status='submitted'` 過濾（`staged`/`cancelled` 會混進去）、單價/數量也還在用舊欄位——都已修正成跟其他地方一致的公式。
-- 已刪除確認無用的死碼：舊版文字格式解析（`parseRemittanceReport`/`extractReportFieldValue`/`RemittanceReport` type/`handleRemittanceLast5Submission`）、`normalizeLivestreamBankName`（銀行名稱自由文字正規化，新流程改用固定 Quick Reply 選銀行，不再需要）。
+- 已刪除確認無用的死碼：舊版文字格式解析（`parseRemittanceReport`/`extractReportFieldValue`/`RemittanceReport` type/`handleRemittanceLast5Submission` 的舊版本）、`normalizeLivestreamBankName`（銀行名稱自由文字正規化，新流程改用固定 Quick Reply 選銀行，不再需要）。
 
-**已用本機模擬 webhook 完整測試過**：連線匯款全流程（4 種訂單狀態混合：未採買、部分採買、缺貨、未採買，驗證金額/清單/缺貨提示都正確）、預購按鈕回尚未開放、完全沒有訂單時觸發不開始流程、全部缺貨時回對應文案、取消匯款在 `select_bank` 步驟正確逃生且不影響非流程中的誤觸發、API 層直接驗證鎖定項目無法修改/取消（沿用第二階段的 guarded update 機制）、後台刪除匯款紀錄正確解鎖關聯訂單、後台手動新增正確連結 `remittance_id`。
+### 第三階段審查修正（2026-10-28，使用者審過第一版後要求的 3 項必改）
 
-**還沒驗證到的部分**：「預購」匯款的實際資料來源/流程完全還沒設計（這輪範圍明確排除）；本機沒有真實 LINE 憑證，Staging 也還沒綁定真實 LINE OA，真實 LINE App 上 Quick Reply/postback 按鈕的實際顯示效果沒有驗證過，只確認了程式邏輯跟訊息格式正確。
+審查後指出第一版有三個問題：(1) 金額永遠用系統算的快照存成 `amount`，後台的「金額不符」標示永遠不會觸發，等於失效；(2) 送出匯款是 insert 匯款紀錄 + guarded update 兩個分開的陳述式，不是單一交易，LINE webhook 重送或客人連點可能產生兩筆匯款紀錄；(3) `session_id` 一律留 `null`，後台沒辦法依場次篩選匯款紀錄。三項都已修正：
+
+**新 migration `202610280002`**（已套用到 Staging 與正式環境）：
+- `community_livestream_remittances` 新增 `expected_amount_at_submit numeric(12,2)`——送出匯款當下系統即時重算出來的應收金額，純供參考對照，跟客人實際回報的 `amount` 分開存。
+- 新 RPC `submit_livestream_remittance(p_line_user_id, p_nickname, p_order_ids, p_bank_name, p_account_last5, p_reported_amount)`（`security definer`，只開放 `service_role`）：在同一個交易裡，先用子查詢 `SELECT 1 ... FOR UPDATE` 鎖定「這批 id 裡現在仍然符合資格（`order_status='submitted' AND remittance_id is null` 且屬於這個客人）」的訂單列，外層再 `count(*)` 比對是否等於請求筆數——不相等就 `raise exception 'already_remitted'`，整批拒絕；通過才即時重算 `expected_amount_at_submit`、取涵蓋訂單所屬場次中 `starts_at` 最晚的一場當 `session_id`、insert 匯款紀錄、更新訂單 `remittance_id`/`payment_status='confirming'`，全部在同一個交易裡完成。
+- **這支 RPC 的第一版有一個語法 bug**：`SELECT count(*) ... FOR UPDATE` 在 Postgres 裡不合法（`FOR UPDATE` 不能跟聚合函式放在同一個 SELECT，會丟 `0A000` 語法錯誤），導致第一次套用後**所有匯款送出都會失敗**——這是本機用簽章 webhook 實際跑過一輪才抓到的，光看 SQL 文字看不出來。已修正成子查詢先鎖定、外層再數筆數的寫法，鎖定/防重複的保證不變，使用者已重新套用修正版到兩個環境並經過完整測試確認正常。
+
+**Fix 1（金額可回報）：** 詳見上方「匯款流程全面改版」第 4～9 點——選銀行後不再直接顯示金額，改成「我已經完成轉帳」→「應匯金額 NT$X，你匯的金額是這個嗎？」+「金額正確」/「我匯的不一樣」→（選不一樣）輸入實際金額（只收正整數）→末五碼。`remittances.amount` 存客人最終確認/回報的金額，`expected_amount_at_submit` 存送出當下系統即時重算的參考金額；後台「匯款紀錄」頁籤的金額不符比對（`mismatch`）**維持用即時重算**（`GET` 路由當下的 `systemCalculatedTotal`，賣家事後改價格/採買結果都會反映），不是讀 `expected_amount_at_submit`。已用測試證明：客人選「我匯的不一樣」輸入 150（系統算的是 120）後，後台該筆 `amount=150`、`systemCalculatedTotal=120`、`mismatch=true`，Flex 截圖確認 UI 上有 ⚠ 標示。
+
+**Fix 2（單一交易防重複）：** 已用兩種方式證明同一批 `order_ids`重複送出只會產生一筆匯款紀錄——(a) 同一個末五碼文字訊息連續呼叫兩次（模擬 webhook 重送）；(b) 同一批 10 個完全並行的 fetch 請求同時打進 webhook（模擬極端連點），兩種情境 `community_livestream_remittances` 最後都只有 1 筆，其餘呼叫都收到 `already_remitted` 被擋下、不影響已經成功的那一筆。
+
+**Fix 3（匯款紀錄記場次）：** `submit_livestream_remittance` RPC 寫入 `session_id`（橫跨多場時取 `starts_at` 最晚的一場，訂單都沒有場次歸屬時是 `null`）；後台手動新增匯款紀錄（POST 路由）比照同一套邏輯自行計算 `session_id`/`expected_amount_at_submit`（沒有共用 RPC，因為 POST 路由的資格檢查條件跟 RPC 不完全一樣，見下方「已知設計取捨」）。後台 `GET /api/backend/community/livestream-remittances` 新增 `sessionId` query 參數（空字串＝不篩選、`unassigned`＝沒有場次歸屬、其餘當作場次 id），回應也多帶每筆 `sessionId`/`expectedAmountAtSubmit`；`lily-backend.html` 「匯款紀錄」頁籤新增場次篩選下拉選單（跟「社群連線訂單」頁籤共用同一支場次列表 API，但預設是「全部場次」不是自動判斷目前連線——匯款本身隨時開放、不限場次），每筆匯款紀錄也顯示場次標籤。已用三種情境證明篩選正確：篩「橫跨兩場、取最晚那場」的場次 id → 顯示；篩另一場（較早那場）→ 不顯示（因為 RPC 取的是最晚那場）；篩「未分場次」→ 只顯示訂單完全沒有場次歸屬的那筆。
+
+**已知設計取捨：** 後台手動新增匯款紀錄（POST）這次**沒有**改成呼叫 `submit_livestream_remittance` RPC，維持自己的 insert+update——RPC 的資格條件是 `order_status='submitted' AND remittance_id is null`（給 LINE 自助流程用），但 POST 路由多檢查一條 `payment_status='unpaid'`（容許管理員事後手動把某筆訂單標成 `paid`，例如客人現場付現，即使 `remittance_id` 還是 `null`）——這條防呆如果換成呼叫共用 RPC 會遺失，因此選擇讓 POST 路由自己算 `session_id`/`expected_amount_at_submit`（邏輯跟 RPC 一致，只是沒有共用程式碼）。這個路徑原本就只有後台管理員會點，不像 LINE webhook 會被重送，重複送出的風險本來就低很多，沒有這支 RPC 的原子鎖定保護。
+
+**已用本機模擬 webhook 完整測試過**：連線匯款全流程（4 種訂單狀態混合：未採買、部分採買、缺貨、未採買，驗證金額/清單/缺貨提示都正確）、預購按鈕回尚未開放、完全沒有訂單時觸發不開始流程、全部缺貨時回對應文案、取消匯款在 `select_bank` 步驟正確逃生且不影響非流程中的誤觸發、API 層直接驗證鎖定項目無法修改/取消（沿用第二階段的 guarded update 機制）、後台刪除匯款紀錄正確解鎖關聯訂單、後台手動新增正確連結 `remittance_id`/`session_id`/`expected_amount_at_submit`、自訂金額輸入的 6 種不合法格式（0/負數/小數/文字/空字串/純空白）全部被擋且合法值仍可正常往下走、10 個完全並行的末五碼送出只產生 1 筆匯款紀錄、後台場次篩選的 3 種情境（取最晚場次/較早場次不顯示/未分場次）。
+
+**還沒驗證到的部分**：「預購」匯款的實際資料來源/流程完全還沒設計（這輪範圍明確排除）；本機沒有真實 LINE 憑證，Staging 也還沒綁定真實 LINE OA，真實 LINE App 上 Quick Reply/postback 按鈕的實際顯示效果（包含這次新增的「金額正確」/「我匯的不一樣」兩顆按鈕）沒有驗證過，只確認了程式邏輯跟訊息格式正確。
 
 ### ⚠️ Rich Menu — 不要對全部好友發布
 
