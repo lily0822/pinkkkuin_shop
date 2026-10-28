@@ -162,6 +162,74 @@ function matchesOrderGroupExcludingBindWords(
   return matchesAny(text, orderWordsExcludingBind);
 }
 
+// ---------------------------------------------------------------------------
+// 卡片按鈕改版：原本用 Flex 原生 button 元件（style primary/secondary），
+// 顏色是 LINE 內建的綠色/灰色、文字顏色由 LINE 自己決定、無法保證黑色。
+// 改成自己組一個可點擊的 box（粉紅底 #ffebf1、粉紅邊 #ff8fb3、圓角膠囊、
+// 裡面一個黑字 text）取代，原本的 action（message/postback/uri/clipboard）
+// 不變，只是放到 box 的 action 上而不是 button 元件上。
+//
+// BUTTON_ICONS 是集中設定表——這輪使用者選的是純文字款（A 款，不加任何
+// 圖示），所以每一項都是空字串；之後如果想幫特定按鈕加圖示（例如
+// emoji），只需要改這裡對應的值，不用動下面任何一張卡片的程式碼。key
+// 是按鈕的「語意角色」，不是顯示文字本身——同一顆按鈕换了文案不會讓
+// 圖示跟著不見。
+// ---------------------------------------------------------------------------
+
+const BUTTON_ICONS: Record<string, string> = {
+  confirm_quantity: "",
+  view_orders: "",
+  adjust_orders: "",
+  remit_live: "",
+  remit_preorder: "",
+  copy_bank_account: "",
+  transfer_done: "",
+  amount_correct: "",
+  amount_different: "",
+  bind: "",
+  edit: "",
+};
+
+type CuteButtonSpec = { key: string; label: string; action: Record<string, unknown> };
+
+function buildCuteButton(spec: CuteButtonSpec, flex?: number): object {
+  const icon = BUTTON_ICONS[spec.key] || "";
+  const text = icon ? `${icon} ${spec.label}` : spec.label;
+  const box: Record<string, unknown> = {
+    type: "box",
+    layout: "horizontal",
+    backgroundColor: "#ffebf1",
+    borderColor: "#ff8fb3",
+    borderWidth: "2px",
+    cornerRadius: "xxl",
+    paddingTop: "12px",
+    paddingBottom: "12px",
+    paddingStart: "4px",
+    paddingEnd: "4px",
+    justifyContent: "center",
+    alignItems: "center",
+    action: spec.action,
+    contents: [{ type: "text", text, color: "#111111", weight: "bold", size: "sm", align: "center", wrap: false }],
+  };
+  if (flex !== undefined) box.flex = flex;
+  return box;
+}
+
+// 卡片 footer 的共用容器——1 顆按鈕置中滿版；2 顆（含）以上同一行排
+// 列、各自 flex:1 平分寬度，超過 2 顆才換行（每行最多 2 顆），符合這輪
+// 「多個按鈕排在同一行」的要求。
+function buildCuteButtonFooter(buttons: CuteButtonSpec[]): object {
+  if (buttons.length === 1) {
+    return { type: "box", layout: "vertical", contents: [buildCuteButton(buttons[0])] };
+  }
+  const rows: object[] = [];
+  for (let i = 0; i < buttons.length; i += 2) {
+    const rowButtons = buttons.slice(i, i + 2).map((spec) => buildCuteButton(spec, 1));
+    rows.push({ type: "box", layout: "horizontal", spacing: "sm", contents: rowButtons });
+  }
+  return { type: "box", layout: "vertical", spacing: "sm", contents: rows };
+}
+
 
 async function reply(replyToken: string | undefined, text: string) {
   if (!replyToken) return;
@@ -310,6 +378,7 @@ async function resolveOrderingGate(
   replyToken: string | undefined,
   templates: LivestreamReplyTemplates,
   state: BotState,
+  keywords: LivestreamKeywords,
 ): Promise<boolean> {
   if (state.order_mode !== "ordering") return true;
 
@@ -355,7 +424,15 @@ async function resolveOrderingGate(
       // 攔截，這樣「暫存照片保留，客人隨時按「傳好了」都能進確認頁」
       // 才會成立。
       await setBotState(supabase, userId, { order_mode: null });
-      await replyTemplate(replyToken, templates, "order_idle_closed", { 數量: String(count || 0) });
+      const idleText = renderLivestreamReplyTemplate(templates.order_idle_closed, { 數量: String(count || 0) });
+      // 還有暫存照片時附上「傳好了」快速按鈕，客人不用自己打字——跟
+      // 「我要下單」「收到照片」那兩則提醒同一套 photoConfirmQuickReply。
+      // 0 張時維持純文字，沒有東西可以確認、按了也只會撲空。
+      if (replyToken && count) {
+        await sendLineReply(replyToken, [{ type: "text", text: idleText, quickReply: photoConfirmQuickReply(keywords) }]);
+      } else {
+        await reply(replyToken, idleText);
+      }
       return false;
     }
   }
@@ -425,7 +502,7 @@ async function handleImageMessage(
   const { keywords } = await getLivestreamKeywordSettings();
   const state = await getBotState(supabase, userId);
 
-  const shouldProceed = await resolveOrderingGate(supabase, userId, replyToken, templates, state);
+  const shouldProceed = await resolveOrderingGate(supabase, userId, replyToken, templates, state, keywords);
   if (!shouldProceed) return;
 
   // 沒有在下單模式（沒按過「我要下單」，或已經被上面的惰性判斷清掉）：
@@ -576,18 +653,9 @@ async function handlePhotoConfirmTrigger(
         },
       ],
     },
-    footer: {
-      type: "box",
-      layout: "vertical",
-      contents: [
-        {
-          type: "button",
-          style: "primary",
-          height: "sm",
-          action: { type: "uri", label: "確認數量", uri: confirmUrl },
-        },
-      ],
-    },
+    footer: buildCuteButtonFooter([
+      { key: "confirm_quantity", label: "確認數量", action: { type: "uri", label: "確認數量", uri: confirmUrl } },
+    ]),
   };
 
   if (replyToken) {
@@ -617,14 +685,101 @@ function buildOrderListBubble(itemBlocks: object[]) {
 }
 
 // ---------------------------------------------------------------------------
-// 功能六/七：查詢訂單／取消訂單 — 第二階段整個重寫，兩個關鍵字組現在
-// 共用同一個觸發函式。只查「目前這一波連線」（getCurrentOrMostRecentSession）
-// 的 submitted 訂單，0 筆回 order_query_empty，有筆數就回一張簽章連結
-// Flex 卡片，連去 /live/orders——實際的查看/修改數量/取消互動都在那個
-// 網頁上完成，不再像舊版那樣把整份清單塞進 LINE 聊天室（舊版沒有場次
-// 範圍、沒有採買/付款狀態顯示，而且 >10 筆會被 chunk+slice 靜默截斷，
-// 這些問題這次順便一起解決，不用在聊天室裡維護分頁）。
+// 功能六/七：查詢訂單／取消訂單 — 第三版改版：不再只回一張「查看訂單」
+// 按鈕的卡片，直接把「目前這一波連線」（跟 /live/orders 網頁同一個
+// getCurrentOrMostRecentSession 定義）的全部 submitted 訂單用 Flex
+// carousel 列在聊天室裡——縮圖/單價/數量/採買結果客人不用點進網頁就看
+// 得到。最下面統一放一顆「取消／調整數量」按鈕開 /live/orders，只有在
+// 還有「未採買且未匯款」（在那個網頁上真的能改）的商品時才顯示。
+// order_manage_card 這個文案 key 這版開始不再被使用（新卡片是直接列
+// 商品，沒有一句「請點下方按鈕查看與管理您的訂單」的說明文字可以放）—
+// 刻意保留 key 本身不刪，避免後台已存的設定/畫面跟著報錯，只是沒有任何
+// 程式碼再讀它，是否要從後台文案設定畫面移除交給使用者決定。
 // ---------------------------------------------------------------------------
+
+type OrderManageRow = {
+  id: string;
+  product_name: string | null;
+  photo_storage_path: string | null;
+  quantity: number;
+  customer_unit_price: number | null;
+  seller_unit_price: number | null;
+  unit_price: number | null;
+  purchased_quantity: number | null;
+  remittance_id: string | null;
+};
+
+type OrderManageStatusChip = { label: string; bg: string };
+
+// 跟 /live/orders 網頁（src/app/live/orders/page.tsx::computeStatusChip）
+// 同一套五種狀態判斷——已匯款優先於其他任何狀態；其餘依 purchased_
+// quantity：null 是待採買、0 是缺貨、等於訂購數量是已買到、其餘是買到
+// 一部分。顏色沿用示意稿的灰/淡綠/淡黃/淡紅/淡粉，文字一律黑色。
+function computeOrderManageStatusChip(
+  remittanceId: string | null,
+  purchasedQuantity: number | null,
+  quantity: number,
+): OrderManageStatusChip {
+  if (remittanceId !== null) return { label: "已匯款", bg: "#ffebf1" };
+  if (purchasedQuantity === null) return { label: "待採買", bg: "#eef0f4" };
+  if (purchasedQuantity === 0) return { label: "缺貨", bg: "#ffe9e9" };
+  if (purchasedQuantity >= quantity) return { label: "已買到", bg: "#e9f8ef" };
+  return { label: `買到 ${purchasedQuantity}・缺 ${quantity - purchasedQuantity}`, bg: "#fff9df" };
+}
+
+function buildOrderManageStatusChipBox(chip: OrderManageStatusChip): object {
+  return {
+    type: "box",
+    layout: "vertical",
+    backgroundColor: chip.bg,
+    cornerRadius: "xxl",
+    paddingTop: "3px",
+    paddingBottom: "3px",
+    paddingStart: "10px",
+    paddingEnd: "10px",
+    flex: 0,
+    contents: [{ type: "text", text: chip.label, size: "xxs", color: "#111111", weight: "bold", align: "center", wrap: false }],
+  };
+}
+
+// 每一項商品一列：縮圖＋商品名稱／單價 × 數量＋狀態標籤。單價公式跟
+// 其他地方統一用共用函式 effectiveLivestreamUnitPrice（賣家單價 ?? 客人
+// 單價 ?? 舊欄位）。數量顯示規則比照使用者提供的示意稿：還沒採買／已經
+// 全部買到／缺貨（買到 0）都只顯示訂購數量，只有「買到一部分」才特別
+// 標註「買到 N（訂 M）」——缺貨已經被狀態標籤說明了，不需要再顯示
+// 「買到 0」讓人誤會商品本身的意思。
+async function buildOrderManageItemRow(row: OrderManageRow): Promise<object> {
+  const imageUrl = row.photo_storage_path
+    ? await createSignedUrl(PHOTO_BUCKET, row.photo_storage_path, CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS)
+    : null;
+  const unitPrice = effectiveLivestreamUnitPrice(row.seller_unit_price, row.customer_unit_price, row.unit_price);
+  const isPartial = row.purchased_quantity !== null && row.purchased_quantity > 0 && row.purchased_quantity < row.quantity;
+  const quantityText = isPartial ? `買到 ${row.purchased_quantity}（訂 ${row.quantity}）` : String(row.quantity);
+  const priceText = unitPrice === null ? `單價未定 × ${quantityText}` : `NT$${unitPrice} × ${quantityText}`;
+
+  const rowContents: object[] = [];
+  if (imageUrl) {
+    rowContents.push({ type: "image", url: imageUrl, size: "52px", aspectMode: "cover", aspectRatio: "1:1", flex: 0 });
+  }
+  rowContents.push({
+    type: "box",
+    layout: "vertical",
+    flex: 1,
+    justifyContent: "center",
+    contents: [
+      { type: "text", text: row.product_name || "商品", weight: "bold", size: "sm", wrap: true },
+      { type: "text", text: priceText, size: "xs", color: "#6b7280", wrap: true },
+    ],
+  });
+  rowContents.push(
+    buildOrderManageStatusChipBox(computeOrderManageStatusChip(row.remittance_id, row.purchased_quantity, row.quantity)),
+  );
+
+  return { type: "box", layout: "horizontal", spacing: "sm", alignItems: "center", contents: rowContents };
+}
+
+const ORDER_MANAGE_ITEMS_PER_BUBBLE = 8;
+const ORDER_MANAGE_MAX_BUBBLES = 10;
 
 async function handleOrderManageTrigger(
   supabase: SupabaseService,
@@ -634,60 +789,121 @@ async function handleOrderManageTrigger(
 ) {
   const session = await getCurrentOrMostRecentSession(supabase);
 
-  let countQuery = supabase
+  let query = supabase
     .from("community_livestream_orders")
-    .select("id", { count: "exact", head: true })
+    .select(
+      "id, product_name, photo_storage_path, quantity, customer_unit_price, seller_unit_price, unit_price, purchased_quantity, remittance_id",
+    )
     .eq("line_user_id", userId)
-    .eq("order_status", "submitted");
-  countQuery = session ? countQuery.eq("session_id", session.id) : countQuery;
+    .eq("order_status", "submitted")
+    .order("created_at", { ascending: true });
+  query = session ? query.eq("session_id", session.id) : query;
 
-  const { count, error } = await countQuery;
+  const { data, error } = await query;
   if (error) {
     await reply(replyToken, "查詢訂單失敗，請稍後再試一次。");
     return;
   }
 
-  if (!count) {
+  const rows = (data as OrderManageRow[] | null) || [];
+  if (!rows.length) {
     await replyTemplate(replyToken, templates, "order_query_empty");
     return;
   }
 
-  const token = createLivestreamMagicLink(userId, "order-edit");
-  const ordersUrl = buildLiveLiffUrl("orders", token);
+  // 跟 /live/orders 網頁同一套「還沒匯款」金額公式：還沒匯款的項目裡，
+  // 缺貨（買到 0 個）不計入，其餘用「買到幾個（還沒採買就用訂購數量）
+  // × 有效單價」加總，單價還沒填的項目視為 0。全部項目都已經匯款才
+  // 顯示「已經全部匯款」，不是只看金額是否剛好等於 0（避免「全部缺貨/
+  // 全部還沒定價」被誤顯示成已經匯完款）。
+  const allRemitted = rows.every((row) => row.remittance_id !== null);
+  const unpaidTotal = rows.reduce((sum, row) => {
+    if (row.remittance_id !== null) return sum;
+    if (row.purchased_quantity === 0) return sum;
+    const unitPrice = effectiveLivestreamUnitPrice(row.seller_unit_price, row.customer_unit_price, row.unit_price) ?? 0;
+    const qty = effectiveLivestreamQuantity(row.purchased_quantity, row.quantity);
+    return sum + qty * unitPrice;
+  }, 0);
 
-  const bubble = {
-    type: "bubble",
-    body: {
-      type: "box",
-      layout: "vertical",
-      spacing: "md",
-      contents: [
-        { type: "text", text: `目前有 ${count} 項訂單`, weight: "bold", size: "lg" },
-        {
-          type: "text",
-          text: renderLivestreamReplyTemplate(templates.order_manage_card),
-          wrap: true,
-          size: "sm",
-          color: "#6b7280",
-        },
-      ],
-    },
-    footer: {
-      type: "box",
-      layout: "vertical",
-      contents: [
-        {
-          type: "button",
-          style: "primary",
-          height: "sm",
-          action: { type: "uri", label: "查看訂單", uri: ordersUrl },
-        },
-      ],
-    },
-  };
+  // 「取消／調整數量」按鈕只在還有「未採買且未匯款」（在 /live/orders
+  // 上真的能改）的商品時才顯示——跟那個網頁的 lockReason===null 定義
+  // 完全一致，沒有可改的東西就不需要這顆按鈕。
+  const canAdjust = rows.some((row) => row.purchased_quantity === null && row.remittance_id === null);
+  const adjustButton = canAdjust
+    ? (() => {
+        const token = createLivestreamMagicLink(userId, "order-edit");
+        const ordersUrl = buildLiveLiffUrl("orders", token);
+        return buildCuteButtonFooter([
+          { key: "adjust_orders", label: "取消／調整數量", action: { type: "uri", label: "取消／調整數量", uri: ordersUrl } },
+        ]);
+      })()
+    : null;
 
+  const sessionName = session?.name || "連線訂單";
+  const totalLine = allRemitted
+    ? { type: "text", text: "已經全部匯款", size: "sm", weight: "bold", color: "#16a34a" }
+    : {
+        type: "box",
+        layout: "horizontal",
+        contents: [
+          { type: "text", text: "還沒匯款", size: "sm", weight: "bold", flex: 1 },
+          { type: "text", text: `NT$${unpaidTotal}`, size: "sm", weight: "bold", align: "end" },
+        ],
+      };
+
+  const chunks: OrderManageRow[][] = [];
+  for (let i = 0; i < rows.length; i += ORDER_MANAGE_ITEMS_PER_BUBBLE) {
+    chunks.push(rows.slice(i, i + ORDER_MANAGE_ITEMS_PER_BUBBLE));
+  }
+
+  // 理論上限 80 筆（10 張 × 8 筆）——超過的話前 9 張正常列商品，第 10 張
+  // 換成純提示的「還有 N 樣」卡片，不嘗試把剩下的全部塞進 carousel
+  // （LINE carousel 最多 12 張 bubble，這裡刻意留在 10 張以內，不去頂
+  // 上限）。
+  const maxItemChunks = ORDER_MANAGE_MAX_BUBBLES - 1;
+  const overflow = chunks.length > ORDER_MANAGE_MAX_BUBBLES;
+  const visibleChunks = overflow ? chunks.slice(0, maxItemChunks) : chunks;
+  const overflowCount = overflow ? rows.length - maxItemChunks * ORDER_MANAGE_ITEMS_PER_BUBBLE : 0;
+
+  const bubbles: Record<string, unknown>[] = await Promise.all(
+    visibleChunks.map(async (chunk) => {
+      const itemBlocks = await Promise.all(chunk.map((row) => buildOrderManageItemRow(row)));
+      const bodyContents: object[] = [
+        { type: "text", text: sessionName, weight: "bold", size: "md", wrap: true },
+        { type: "text", text: `共 ${rows.length} 樣商品`, size: "xs", color: "#6b7280" },
+        { type: "separator", margin: "md" },
+      ];
+      itemBlocks.forEach((block, index) => {
+        if (index > 0) bodyContents.push({ type: "separator", margin: "md" });
+        bodyContents.push(block);
+      });
+      bodyContents.push({ type: "separator", margin: "lg" });
+      bodyContents.push(totalLine);
+      return {
+        type: "bubble",
+        body: { type: "box", layout: "vertical", spacing: "md", contents: bodyContents },
+        ...(adjustButton ? { footer: adjustButton } : {}),
+      };
+    }),
+  );
+
+  if (overflow) {
+    bubbles.push({
+      type: "bubble",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        contents: [{ type: "text", text: `還有 ${overflowCount} 樣，請按下面的按鈕查看全部`, wrap: true, size: "sm" }],
+      },
+      ...(adjustButton ? { footer: adjustButton } : {}),
+    });
+  }
+
+  const contents: Record<string, unknown> =
+    bubbles.length === 1 ? bubbles[0] : { type: "carousel", contents: bubbles };
   if (replyToken) {
-    await sendLineReply(replyToken, [{ type: "flex", altText: `目前有 ${count} 項訂單`, contents: bubble }]);
+    await sendLineReply(replyToken, [{ type: "flex", altText: "你的訂單", contents }]);
   }
 }
 
@@ -718,12 +934,11 @@ async function handleOrderManageTrigger(
 // 不給時列出全部已填帳號的銀行。
 function buildBankAccountButtonsBubble(accounts: LivestreamBankAccounts, onlyKey?: LivestreamBankAccountKey) {
   const keys = onlyKey ? [onlyKey] : LIVESTREAM_BANK_ACCOUNT_KEYS;
-  const buttons = keys
+  const buttons: CuteButtonSpec[] = keys
     .filter((key) => accounts[key])
     .map((key) => ({
-      type: "button",
-      style: "secondary",
-      height: "sm",
+      key: "copy_bank_account",
+      label: `複製${LIVESTREAM_BANK_ACCOUNT_LABELS[key]}帳號`,
       action: {
         type: "clipboard",
         label: `複製${LIVESTREAM_BANK_ACCOUNT_LABELS[key]}帳號`,
@@ -734,12 +949,7 @@ function buildBankAccountButtonsBubble(accounts: LivestreamBankAccounts, onlyKey
 
   return {
     type: "bubble",
-    body: {
-      type: "box",
-      layout: "vertical",
-      spacing: "sm",
-      contents: buttons,
-    },
+    body: buildCuteButtonFooter(buttons),
   };
 }
 
@@ -799,25 +1009,10 @@ async function handleRemittanceTrigger(
       spacing: "md",
       contents: [{ type: "text", text: renderLivestreamReplyTemplate(templates.remittance_choose_kind), wrap: true, size: "sm" }],
     },
-    footer: {
-      type: "box",
-      layout: "vertical",
-      spacing: "sm",
-      contents: [
-        {
-          type: "button",
-          style: "primary",
-          height: "sm",
-          action: { type: "postback", label: "連線", data: "action=remit_start&kind=live", displayText: "連線" },
-        },
-        {
-          type: "button",
-          style: "secondary",
-          height: "sm",
-          action: { type: "postback", label: "預購", data: "action=remit_start&kind=preorder", displayText: "預購" },
-        },
-      ],
-    },
+    footer: buildCuteButtonFooter([
+      { key: "remit_live", label: "連線", action: { type: "postback", label: "連線", data: "action=remit_start&kind=live", displayText: "連線" } },
+      { key: "remit_preorder", label: "預購", action: { type: "postback", label: "預購", data: "action=remit_start&kind=preorder", displayText: "預購" } },
+    ]),
   };
   if (replyToken) await sendLineReply(replyToken, [{ type: "flex", altText: "請選擇要匯款的類型", contents: bubble }]);
 }
@@ -953,18 +1148,13 @@ async function handleRemitBankSelect(
           { type: "text", text: renderLivestreamReplyTemplate(templates.remittance_transfer_instruction), wrap: true, size: "sm" },
         ],
       },
-      footer: {
-        type: "box",
-        layout: "vertical",
-        contents: [
-          {
-            type: "button",
-            style: "primary",
-            height: "sm",
-            action: { type: "postback", label: "我已經完成轉帳", data: "action=remit_confirm", displayText: "我已經完成轉帳" },
-          },
-        ],
-      },
+      footer: buildCuteButtonFooter([
+        {
+          key: "transfer_done",
+          label: "我已經完成轉帳",
+          action: { type: "postback", label: "我已經完成轉帳", data: "action=remit_confirm", displayText: "我已經完成轉帳" },
+        },
+      ]),
     },
   });
   if (replyToken) await sendLineReply(replyToken, messages);
@@ -994,25 +1184,10 @@ async function handleRemitTransferConfirm(
       spacing: "sm",
       contents: [{ type: "text", text: amountText, wrap: true, size: "sm" }],
     },
-    footer: {
-      type: "box",
-      layout: "vertical",
-      spacing: "sm",
-      contents: [
-        {
-          type: "button",
-          style: "primary",
-          height: "sm",
-          action: { type: "postback", label: "金額正確", data: "action=remit_amount_correct", displayText: "金額正確" },
-        },
-        {
-          type: "button",
-          style: "secondary",
-          height: "sm",
-          action: { type: "postback", label: "我匯的不一樣", data: "action=remit_amount_different", displayText: "我匯的不一樣" },
-        },
-      ],
-    },
+    footer: buildCuteButtonFooter([
+      { key: "amount_correct", label: "金額正確", action: { type: "postback", label: "金額正確", data: "action=remit_amount_correct", displayText: "金額正確" } },
+      { key: "amount_different", label: "我匯的不一樣", action: { type: "postback", label: "我匯的不一樣", data: "action=remit_amount_different", displayText: "我匯的不一樣" } },
+    ]),
   };
   if (replyToken) await sendLineReply(replyToken, [{ type: "flex", altText: "請確認金額", contents: bubble }]);
 }
@@ -1183,25 +1358,18 @@ async function handleBindTrigger(
         { type: "text", text: bodyText, wrap: true, size: "sm", color: "#6b7280" },
       ],
     },
-    footer: {
-      type: "box",
-      layout: "horizontal",
-      spacing: "sm",
-      contents: [
-        {
-          type: "button",
-          style: "primary",
-          height: "sm",
-          action: { type: "uri", label: renderLivestreamReplyTemplate(templates.bind_button_bind), uri: bindUrl },
-        },
-        {
-          type: "button",
-          style: "secondary",
-          height: "sm",
-          action: { type: "uri", label: renderLivestreamReplyTemplate(templates.bind_button_edit), uri: editUrl },
-        },
-      ],
-    },
+    footer: buildCuteButtonFooter([
+      {
+        key: "bind",
+        label: renderLivestreamReplyTemplate(templates.bind_button_bind),
+        action: { type: "uri", label: renderLivestreamReplyTemplate(templates.bind_button_bind), uri: bindUrl },
+      },
+      {
+        key: "edit",
+        label: renderLivestreamReplyTemplate(templates.bind_button_edit),
+        action: { type: "uri", label: renderLivestreamReplyTemplate(templates.bind_button_edit), uri: editUrl },
+      },
+    ]),
   };
 
   if (replyToken) {
@@ -1225,7 +1393,7 @@ async function handleTextMessage(
   // 連線代購下單改版：閒置／場次結束的惰性判斷放在最前面，只有
   // order_mode==="ordering" 才會真的做事，其餘情況直接通過，對下面的
   // 查詢/取消/匯款/一般關鍵字完全沒有行為改變。
-  const shouldProceed = await resolveOrderingGate(supabase, userId, replyToken, templates, state);
+  const shouldProceed = await resolveOrderingGate(supabase, userId, replyToken, templates, state, keywords);
   if (!shouldProceed) return;
 
   // 明確的「取消匯款」逃生指令——檢查順序刻意放在最前面：預設詞「取消
