@@ -779,7 +779,20 @@ async function buildOrderManageItemRow(row: OrderManageRow): Promise<object> {
 }
 
 const ORDER_MANAGE_ITEMS_PER_BUBBLE = 8;
-const ORDER_MANAGE_MAX_BUBBLES = 10;
+// 商品卡張數上限（第一道保險）：最多 5 張商品卡（40 筆）+ 1 張「還有 N
+// 樣」提示卡，共 6 張，遠低於 LINE carousel 的 12 張上限。
+const ORDER_MANAGE_MAX_ITEM_BUBBLES = 5;
+// 位元組上限（第二道保險）：LINE 規定單則 Flex 訊息 JSON 不可超過
+// 50KB——40KB 是留了安全餘裕的門檻。照片簽章網址很長，筆數上限（上面
+// 那道保險）擋不住「每筆都特別大」的情況，例如場次商品都有照片時，
+// 40 筆左右就可能逼近/超過 50KB；這道保險組好 carousel 之後實際量測
+// JSON 位元組大小，超過就從尾端減少商品卡直到低於門檻，兩道保險都要
+// 過才送出，任何一道先觸發都會把多出來的筆數併入提示卡的「還有 N 樣」。
+const ORDER_MANAGE_MAX_FLEX_BYTES = 40_000;
+
+function flexJsonByteSize(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), "utf8");
+}
 
 async function handleOrderManageTrigger(
   supabase: SupabaseService,
@@ -856,52 +869,94 @@ async function handleOrderManageTrigger(
     chunks.push(rows.slice(i, i + ORDER_MANAGE_ITEMS_PER_BUBBLE));
   }
 
-  // 理論上限 80 筆（10 張 × 8 筆）——超過的話前 9 張正常列商品，第 10 張
-  // 換成純提示的「還有 N 樣」卡片，不嘗試把剩下的全部塞進 carousel
-  // （LINE carousel 最多 12 張 bubble，這裡刻意留在 10 張以內，不去頂
-  // 上限）。
-  const maxItemChunks = ORDER_MANAGE_MAX_BUBBLES - 1;
-  const overflow = chunks.length > ORDER_MANAGE_MAX_BUBBLES;
-  const visibleChunks = overflow ? chunks.slice(0, maxItemChunks) : chunks;
-  const overflowCount = overflow ? rows.length - maxItemChunks * ORDER_MANAGE_ITEMS_PER_BUBBLE : 0;
+  async function buildItemBubble(chunk: OrderManageRow[]): Promise<Record<string, unknown>> {
+    const itemBlocks = await Promise.all(chunk.map((row) => buildOrderManageItemRow(row)));
+    const bodyContents: object[] = [
+      { type: "text", text: sessionName, weight: "bold", size: "md", wrap: true },
+      { type: "text", text: `共 ${rows.length} 樣商品`, size: "xs", color: "#6b7280" },
+      { type: "separator", margin: "md" },
+    ];
+    itemBlocks.forEach((block, index) => {
+      if (index > 0) bodyContents.push({ type: "separator", margin: "md" });
+      bodyContents.push(block);
+    });
+    bodyContents.push({ type: "separator", margin: "lg" });
+    bodyContents.push(totalLine);
+    return {
+      type: "bubble",
+      body: { type: "box", layout: "vertical", spacing: "md", contents: bodyContents },
+      ...(adjustButton ? { footer: adjustButton } : {}),
+    };
+  }
 
-  const bubbles: Record<string, unknown>[] = await Promise.all(
-    visibleChunks.map(async (chunk) => {
-      const itemBlocks = await Promise.all(chunk.map((row) => buildOrderManageItemRow(row)));
-      const bodyContents: object[] = [
-        { type: "text", text: sessionName, weight: "bold", size: "md", wrap: true },
-        { type: "text", text: `共 ${rows.length} 樣商品`, size: "xs", color: "#6b7280" },
-        { type: "separator", margin: "md" },
-      ];
-      itemBlocks.forEach((block, index) => {
-        if (index > 0) bodyContents.push({ type: "separator", margin: "md" });
-        bodyContents.push(block);
-      });
-      bodyContents.push({ type: "separator", margin: "lg" });
-      bodyContents.push(totalLine);
-      return {
-        type: "bubble",
-        body: { type: "box", layout: "vertical", spacing: "md", contents: bodyContents },
-        ...(adjustButton ? { footer: adjustButton } : {}),
-      };
-    }),
-  );
-
-  if (overflow) {
-    bubbles.push({
+  function buildOverflowBubble(count: number): Record<string, unknown> {
+    return {
       type: "bubble",
       body: {
         type: "box",
         layout: "vertical",
         spacing: "md",
-        contents: [{ type: "text", text: `還有 ${overflowCount} 樣，請按下面的按鈕查看全部`, wrap: true, size: "sm" }],
+        contents: [{ type: "text", text: `還有 ${count} 樣，請按下面的按鈕查看全部`, wrap: true, size: "sm" }],
       },
       ...(adjustButton ? { footer: adjustButton } : {}),
-    });
+    };
   }
 
-  const contents: Record<string, unknown> =
-    bubbles.length === 1 ? bubbles[0] : { type: "carousel", contents: bubbles };
+  // 第一道保險（張數上限）：最多 ORDER_MANAGE_MAX_ITEM_BUBBLES 張商品卡，
+  // 超過的併入最後一張「還有 N 樣」提示卡。
+  let itemChunkCount = Math.min(chunks.length, ORDER_MANAGE_MAX_ITEM_BUBBLES);
+  let needsOverflowBubble = chunks.length > itemChunkCount;
+  let itemBubbles = await Promise.all(chunks.slice(0, itemChunkCount).map((chunk) => buildItemBubble(chunk)));
+
+  function assembleContents(): Record<string, unknown> {
+    const bubbles = [...itemBubbles];
+    if (needsOverflowBubble) {
+      bubbles.push(buildOverflowBubble(rows.length - itemChunkCount * ORDER_MANAGE_ITEMS_PER_BUBBLE));
+    }
+    return bubbles.length === 1 ? bubbles[0] : { type: "carousel", contents: bubbles };
+  }
+
+  // 第二道保險（位元組上限）：組好之後實際量測 JSON 大小，超過
+  // ORDER_MANAGE_MAX_FLEX_BYTES 就從尾端減少商品卡，每減一張就把那張的
+  // 筆數併入「還有 N 樣」，直到低於門檻。只是從已經組好的 itemBubbles
+  // 陣列裡 slice 掉尾端，不需要重新組（頭幾張的內容不會變，省掉重複算
+  // 簽章網址的成本）。
+  while (flexJsonByteSize(assembleContents()) > ORDER_MANAGE_MAX_FLEX_BYTES && itemChunkCount > 0) {
+    itemChunkCount -= 1;
+    itemBubbles = itemBubbles.slice(0, itemChunkCount);
+    needsOverflowBubble = true;
+  }
+
+  const contents = assembleContents();
+
+  // 兩道保險都用盡（itemChunkCount 已經降到 0，只剩一張提示卡）理論上
+  // 不該再超標（提示卡本身很小），但為了絕對不讓整則回覆因為超過 LINE
+  // 50KB 限制而完全失敗（客人會什麼都收不到），這裡再加一層最終防線：
+  // 退回最精簡的純文字＋按鈕訊息。
+  if (flexJsonByteSize(contents) > ORDER_MANAGE_MAX_FLEX_BYTES) {
+    if (!replyToken) return;
+    if (adjustButton) {
+      await sendLineReply(replyToken, [
+        {
+          type: "flex",
+          altText: "你的訂單比較多，請按下面的按鈕查看全部",
+          contents: {
+            type: "bubble",
+            body: {
+              type: "box",
+              layout: "vertical",
+              contents: [{ type: "text", text: "你的訂單比較多，請按下面的按鈕查看全部", wrap: true, size: "sm" }],
+            },
+            footer: adjustButton,
+          },
+        },
+      ]);
+    } else {
+      await reply(replyToken, "你的訂單比較多，請按下面的按鈕查看全部。");
+    }
+    return;
+  }
+
   if (replyToken) {
     await sendLineReply(replyToken, [{ type: "flex", altText: "你的訂單", contents }]);
   }
