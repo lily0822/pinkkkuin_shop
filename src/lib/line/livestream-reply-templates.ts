@@ -40,7 +40,9 @@ export type LivestreamReplyTemplateKey =
   | "bind_card_body_unbound"
   | "bind_card_body_bound"
   | "bind_button_bind"
-  | "bind_button_edit";
+  | "bind_button_edit"
+  | "order_requires_bind_title"
+  | "order_requires_bind_body";
 
 export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
   "order_no_session",
@@ -72,6 +74,8 @@ export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
   "bind_card_body_bound",
   "bind_button_bind",
   "bind_button_edit",
+  "order_requires_bind_title",
+  "order_requires_bind_body",
 ];
 
 export type LivestreamReplyTemplates = Record<LivestreamReplyTemplateKey, string>;
@@ -109,6 +113,8 @@ export const DEFAULT_LIVESTREAM_REPLY_TEMPLATES: LivestreamReplyTemplates = {
   bind_card_body_bound: "你目前綁定的是「{{值}}」。",
   bind_button_bind: "綁定",
   bind_button_edit: "修改",
+  order_requires_bind_title: "先綁定一下社群帳號",
+  order_requires_bind_body: "第一次下單前，請先讓賣家知道你是社群裡的誰，只要填一次。",
 };
 
 function sanitizeTemplates(input: Partial<Record<LivestreamReplyTemplateKey, unknown>>): LivestreamReplyTemplates {

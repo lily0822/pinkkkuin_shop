@@ -3,6 +3,7 @@ import "server-only";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { sendLineUserText } from "./client";
 import { getCommunityLineTemplates, renderCommunityLineTemplate } from "./community-notification-templates";
+import { findLineUserIdByNickname } from "./live-bindings";
 
 export type CommunityLineNotificationKind = "bought" | "arrived" | "marketplace_ready";
 export const COMMUNITY_LINE_NOTIFICATION_KINDS: CommunityLineNotificationKind[] = [
@@ -38,22 +39,11 @@ function logCommunityLine(event: string, details: Record<string, unknown>) {
   );
 }
 
+// 統一綁定（2026-10-29）之後改讀新表 community_line_identities——找不到
+// 或 needs_review=true（客人自己綁定、撞到記事本既有客人名字、還沒核准）
+// 一律回空字串，不發通知，避免客人填了別人的名字就收到對方的通知。
 async function getApprovedLineUserId(nickname: string): Promise<string> {
-  const trimmed = nickname.trim();
-  if (!trimmed) return "";
-  try {
-    const supabase = createSupabaseServiceClient();
-    const { data, error } = await supabase
-      .from("community_line_bindings")
-      .select("line_user_id")
-      .ilike("nickname", trimmed)
-      .eq("review_status", "approved")
-      .maybeSingle();
-    if (error || !data) return "";
-    return typeof data.line_user_id === "string" ? data.line_user_id.trim() : "";
-  } catch {
-    return "";
-  }
+  return findLineUserIdByNickname(nickname);
 }
 
 async function recordNotification(params: {

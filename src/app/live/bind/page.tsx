@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { verifyLivestreamMagicLink } from "@/lib/line/livestream-magic-link";
 import { getLiveCustomerIdentity } from "@/lib/line/live-customer-identity";
+import { getLivestreamKeywordSettings } from "@/lib/line/livestream-keywords";
 import { LiveErrorScreen } from "@/components/live-error-screen";
 import { LiveBindForm, type LiveBindCurrent } from "@/components/live-bind-form";
 import type { LiveBindingType } from "@/lib/line/live-identity-validation";
@@ -18,7 +19,7 @@ type IdentityRow = {
 export default async function LiveBindPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ token?: string; mode?: string }>;
+  searchParams?: Promise<{ token?: string; mode?: string; next?: string }>;
 }) {
   const params = await searchParams;
   const token = params?.token || "";
@@ -28,6 +29,11 @@ export default async function LiveBindPage({
   }
 
   const mode = params?.mode === "edit" ? "edit" : "bind";
+  // 只接受 next=order 這個值，其他一律忽略——這個參數唯一的用途是
+  // 「下單前必須先綁定」那張卡片的【綁定】按鈕，綁定成功後要在 LIFF
+  // 內自動幫客人傳一次下單關鍵字，不用客人自己再打一次。
+  const next = params?.next === "order" ? "order" : null;
+  const orderKeyword = next === "order" ? (await getLivestreamKeywordSettings()).keywords.order[0] : null;
 
   // 這個頁面自己的「目前有沒有綁定」只看新表（community_line_identities）
   // ——跟 submit_community_line_identity RPC 判斷要 bind 還是 edit 的依據
@@ -49,5 +55,7 @@ export default async function LiveBindPage({
 
   const identity = await getLiveCustomerIdentity(payload.lineUserId);
 
-  return <LiveBindForm token={token} mode={mode} current={current} identity={identity} />;
+  return (
+    <LiveBindForm token={token} mode={mode} current={current} identity={identity} next={next} orderKeyword={orderKeyword} />
+  );
 }

@@ -27,10 +27,12 @@ async function guardBackendRequest(request: NextRequest) {
 
 type OrderRow = { line_user_id: string | null; line_display_name: string | null; created_at: string | null };
 
-// 「在連線訂單裡出現過，但沒有綁定資料（新表與舊表都沒有）」的名單——
-// 給後台「幫他綁定」用。純粹 JOIN 的概念，但 Supabase JS client 沒有
-// group by，改成抓一份訂單資料自己在這裡依 line_user_id 聚合成「最近
-// 一筆訂單時間」，跟 livestream-customer-summary 那支路由同一種做法。
+// 「在連線訂單裡出現過，但沒有綁定資料」的名單——給後台「幫他綁定」用。
+// 統一綁定（2026-10-29）之後 community_line_identities 是唯一的綁定
+// 資料來源（舊表已核准的資料都搬移過去了），不用再跟舊表 UNION。純粹
+// JOIN 的概念，但 Supabase JS client 沒有 group by，改成抓一份訂單資料
+// 自己在這裡依 line_user_id 聚合成「最近一筆訂單時間」，跟
+// livestream-customer-summary 那支路由同一種做法。
 export async function GET(request: NextRequest) {
   const guard = await guardBackendRequest(request);
   if (guard) return guard;
@@ -46,30 +48,21 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = createSupabaseServiceClient();
 
-    const [{ data: orderData, error: orderError }, { data: identityData, error: identityError }, { data: legacyData, error: legacyError }] =
-      await Promise.all([
-        supabase
-          .from("community_livestream_orders")
-          .select("line_user_id, line_display_name, created_at")
-          .eq("order_status", "submitted")
-          .order("created_at", { ascending: false })
-          .limit(FETCH_LIMIT),
-        supabase.from("community_line_identities").select("line_user_id").limit(FETCH_LIMIT),
-        supabase
-          .from("community_line_bindings")
-          .select("line_user_id")
-          .eq("review_status", "approved")
-          .not("nickname", "is", null)
-          .limit(FETCH_LIMIT),
-      ]);
+    const [{ data: orderData, error: orderError }, { data: identityData, error: identityError }] = await Promise.all([
+      supabase
+        .from("community_livestream_orders")
+        .select("line_user_id, line_display_name, created_at")
+        .eq("order_status", "submitted")
+        .order("created_at", { ascending: false })
+        .limit(FETCH_LIMIT),
+      supabase.from("community_line_identities").select("line_user_id").limit(FETCH_LIMIT),
+    ]);
     if (orderError) throw orderError;
     if (identityError) throw identityError;
-    if (legacyError) throw legacyError;
 
-    const boundIds = new Set<string>([
-      ...((identityData as { line_user_id: string }[] | null) || []).map((row) => row.line_user_id),
-      ...((legacyData as { line_user_id: string }[] | null) || []).map((row) => row.line_user_id),
-    ]);
+    const boundIds = new Set<string>(
+      ((identityData as { line_user_id: string }[] | null) || []).map((row) => row.line_user_id),
+    );
 
     const latestByUser = new Map<string, { lineDisplayName: string; lastOrderAt: string }>();
     ((orderData as OrderRow[] | null) || []).forEach((row) => {

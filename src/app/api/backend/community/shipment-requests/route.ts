@@ -7,6 +7,7 @@ import {
   shouldRequireBackendAuth,
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
+import { findLineIdentitiesByNicknames } from "@/lib/line/live-bindings";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -71,17 +72,10 @@ export async function GET(request: NextRequest) {
     const rows = Array.isArray(data) ? data : [];
     const total = Number(rows[0]?.total_count || 0);
     const nicknames = [...new Set(rows.map((row) => String(row.nickname || "")).filter(Boolean))];
-    const lineNames = new Map<string, string>();
-    if (nicknames.length) {
-      const { data: bindings, error: bindingsError } = await supabase
-        .from("community_line_bindings")
-        .select("nickname,line_display_name")
-        .in("nickname", nicknames);
-      if (bindingsError) throw bindingsError;
-      for (const binding of bindings || []) {
-        lineNames.set(String(binding.nickname || "").trim().toLocaleLowerCase(), String(binding.line_display_name || "LINE 使用者"));
-      }
-    }
+    // 統一綁定（2026-10-29）之後改讀新表 community_line_identities；
+    // needs_review=true 的列附加「（待核准）」，讓賣家知道這個對應還沒
+    // 驗證過。
+    const identities = nicknames.length ? await findLineIdentitiesByNicknames(nicknames) : new Map();
 
     // Per-notebook item breakdown for the admin expand view. Built here with
     // plain queries (order_ids -> orders -> items) instead of changing the
@@ -169,7 +163,10 @@ export async function GET(request: NextRequest) {
       requests: rows.map((row) => ({
         id: String(row.id || ""),
         nickname: String(row.nickname || ""),
-        lineDisplayName: lineNames.get(String(row.nickname || "").trim().toLocaleLowerCase()) || "LINE 使用者",
+        lineDisplayName: (() => {
+          const identity = identities.get(String(row.nickname || "").trim().toLocaleLowerCase());
+          return identity ? `${identity.lineDisplayName}${identity.needsReview ? "（待核准）" : ""}` : "LINE 使用者";
+        })(),
         notebookNames: Array.isArray(row.notebook_names) ? row.notebook_names.map(String) : [],
         notebookGroups: notebookGroupsForRequest(String(row.id || "")),
         items: (Array.isArray(row.items) ? row.items : []).map((item: ShipmentItem) => ({

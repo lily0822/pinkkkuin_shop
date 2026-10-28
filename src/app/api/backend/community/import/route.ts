@@ -92,6 +92,17 @@ export async function POST(request: NextRequest) {
     });
     if (error) throw error;
 
+    // 統一綁定（2026-10-29）：記事本匯入新資料後，客人名單可能多了一些
+    // 新名字——重新比對「客人自己綁定、目前還沒核准過」的綁定是否撞到
+    // 這批新資料，撞到的話改成待核准（見 202610290001 migration 的
+    // rescan_community_line_identities_needs_review）。最佳努力，失敗
+    // 不影響匯入本身已經成功這件事。
+    try {
+      await supabase.rpc("rescan_community_line_identities_needs_review");
+    } catch {
+      // ignore — 重新比對失敗不應該讓賣家以為匯入本身失敗了
+    }
+
     return NextResponse.json({ ok: true, result: data });
   } catch {
     return NextResponse.json({ ok: false, error: "匯入失敗，請稍後再試。" }, { status: 500 });

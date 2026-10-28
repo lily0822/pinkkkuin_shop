@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getLineUserProfile, sendLineReply, type LineReplyMessage } from "@/lib/line/client";
+import { buildCuteButton, buildCuteButtonFooter } from "@/lib/line/flex-buttons";
 import type { LineWebhookEvent } from "@/lib/line/livestream-orders";
 import { findOrCreateMemberForLineUser } from "@/lib/line/member-binding";
 import { createPreorderMagicLink } from "@/lib/line/preorder-magic-link";
@@ -110,14 +111,10 @@ function buildPreorderListFlex(
           { type: "text", text: formatDeadlineText(product.deadline), size: "xs", color: "#999999" },
         ],
       },
-      {
-        type: "button",
-        style: "primary",
-        height: "sm",
-        flex: 3,
-        color: "#ec4899",
-        action: { type: "uri", label: "進入", uri: productLink(product.legacy_id || product.id) },
-      },
+      buildCuteButton(
+        { key: "preorder_enter", label: "進入", action: { type: "uri", label: "進入", uri: productLink(product.legacy_id || product.id) } },
+        3,
+      ),
     ],
   }));
 
@@ -134,11 +131,9 @@ function buildPreorderListFlex(
       spacing: "lg",
       contents: rows,
     },
-    footer: {
-      type: "box",
-      layout: "vertical",
-      contents: [{ type: "button", style: "secondary", action: { type: "uri", label: "開啟全部預購", uri: allLink } }],
-    },
+    footer: buildCuteButtonFooter([
+      { key: "preorder_open_all", label: "開啟全部預購", action: { type: "uri", label: "開啟全部預購", uri: allLink } },
+    ]),
   };
 }
 

@@ -37,7 +37,29 @@ type IdentityRow = {
   binding_value: string;
   created_at: string;
   updated_at: string;
+  needs_review: boolean;
 };
+
+// 核准前讓賣家看一眼「這個暱稱在記事本裡對應到哪筆客人紀錄」，方便
+// 判斷是不是同一個人——只給 needs_review=true 的客人查，用寬鬆的
+// ilike 比對（跟資料庫端 RPC 的嚴謹正規化比對不同，這裡純粹是給賣家
+// 參考用的輔助資訊，不是用來做任何授權/通知判斷，鬆一點沒關係）。
+async function findNotebookMatch(
+  supabase: ReturnType<typeof createSupabaseServiceClient>,
+  value: string,
+): Promise<{ notebookName: string; lastOrderAt: string } | null> {
+  const normalized = value.trim().replace(/^@+/, "");
+  if (!normalized) return null;
+  const { data } = await supabase
+    .from("community_orders")
+    .select("notebook_name, created_at")
+    .ilike("nickname", normalized)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!data) return null;
+  return { notebookName: String(data.notebook_name || "未命名記事本"), lastOrderAt: String(data.created_at || "") };
+}
 
 export async function GET(request: NextRequest) {
   const guard = await guardBackendRequest(request);
@@ -60,7 +82,7 @@ export async function GET(request: NextRequest) {
     const [{ data: identityData, error: identityError }, { data: logData, error: logError }] = await Promise.all([
       supabase
         .from("community_line_identities")
-        .select("id, line_user_id, line_display_name, binding_type, binding_value, created_at, updated_at")
+        .select("id, line_user_id, line_display_name, binding_type, binding_value, created_at, updated_at, needs_review")
         .order("created_at", { ascending: false })
         .limit(FETCH_LIMIT),
       supabase
@@ -86,6 +108,7 @@ export async function GET(request: NextRequest) {
       boundAt: row.created_at,
       updatedAt: row.updated_at,
       editCount: editCounts.get(row.line_user_id) || 0,
+      needsReview: Boolean(row.needs_review),
     }));
 
     if (q) {
@@ -94,13 +117,24 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // 核准前的輔助資訊——只給待核准的客人查記事本對應紀錄，數量通常很
+    // 小，平行查詢不會是效能問題。
+    const needsReviewCustomers = customers.filter((c) => c.needsReview);
+    const notebookMatches = await Promise.all(needsReviewCustomers.map((c) => findNotebookMatch(supabase, c.value)));
+    const notebookMatchByLineUserId = new Map(needsReviewCustomers.map((c, i) => [c.lineUserId, notebookMatches[i]]));
+    const customersWithMatch = customers.map((c) => ({
+      ...c,
+      notebookMatch: c.needsReview ? notebookMatchByLineUserId.get(c.lineUserId) || null : null,
+    }));
+
     const stats = {
       total: identities.length,
       nickname: identities.filter((row) => row.binding_type === "nickname").length,
       ig: identities.filter((row) => row.binding_type === "ig").length,
+      needsReview: identities.filter((row) => row.needs_review).length,
     };
 
-    return NextResponse.json({ ok: true, stats, customers });
+    return NextResponse.json({ ok: true, stats, customers: customersWithMatch });
   } catch {
     return NextResponse.json({ ok: false, error: "社群綁定資料讀取失敗，請稍後再試。" }, { status: 500 });
   }

@@ -107,7 +107,13 @@ export function LiveConfirmForm({ token, sessionName, initialItems, orderQueryKe
       });
       const result = await response.json().catch(() => null);
       if (!response.ok || !result?.ok) {
-        setSubmitError(result?.error === "session_not_active" ? "這場連線已經結束，沒辦法再送出訂單了。" : "送出失敗，請稍後再試一次。");
+        if (result?.error === "session_not_active") {
+          setSubmitError("這場連線已經結束，沒辦法再送出訂單了。");
+        } else if (result?.error === "requires_bind") {
+          setSubmitError("請先綁定社群帳號，才能送出訂單。請回到 LINE 輸入「綁定」");
+        } else {
+          setSubmitError("送出失敗，請稍後再試一次。");
+        }
         return;
       }
       setSubmitted({ items: result.items || [], sessionName: result.sessionName || sessionName || "" });

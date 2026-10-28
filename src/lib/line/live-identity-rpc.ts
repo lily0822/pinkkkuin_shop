@@ -10,6 +10,7 @@ export type LiveIdentityRecord = {
   lineUserId: string;
   bindingType: LiveBindingType;
   bindingValue: string;
+  needsReview: boolean;
 };
 
 export type SubmitLiveIdentityResult =
@@ -21,6 +22,7 @@ type RpcIdentityRow = {
   line_user_id: string;
   binding_type: string;
   binding_value: string;
+  needs_review: boolean;
 };
 
 // 這支 RPC 回傳 jsonb（不是 RAISE EXCEPTION）來表達 'conflict'/'unchanged'
@@ -75,6 +77,7 @@ export async function submitLiveIdentity(params: {
       lineUserId: row.line_user_id,
       bindingType: row.binding_type as LiveBindingType,
       bindingValue: row.binding_value,
+      needsReview: Boolean(row.needs_review),
     },
   };
 }
@@ -88,4 +91,34 @@ export async function unbindLiveIdentity(lineUserId: string): Promise<UnbindLive
     return { ok: false, error: error.message?.includes("not_bound") ? "not_bound" : "unknown" };
   }
   return { ok: true };
+}
+
+export type ApproveLiveIdentityResult =
+  | { ok: true; identity: LiveIdentityRecord }
+  | { ok: false; error: "not_bound" | "unknown" };
+
+// 後台「核准」按鈕用——把 needs_review=true 的綁定標成已核准。冪等：
+// 已經是核准狀態時直接回傳目前狀態，不重複寫紀錄（見 migration 裡的
+// approve_community_line_identity）。
+export async function approveLiveIdentity(lineUserId: string): Promise<ApproveLiveIdentityResult> {
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase.rpc("approve_community_line_identity", { p_line_user_id: lineUserId });
+  if (error || !data) {
+    return { ok: false, error: "unknown" };
+  }
+  const result = data as RpcResult;
+  if (!result.ok) {
+    return { ok: false, error: result.error === "not_bound" ? "not_bound" : "unknown" };
+  }
+  const row = result.identity;
+  return {
+    ok: true,
+    identity: {
+      id: row.id,
+      lineUserId: row.line_user_id,
+      bindingType: row.binding_type as LiveBindingType,
+      bindingValue: row.binding_value,
+      needsReview: Boolean(row.needs_review),
+    },
+  };
 }

@@ -23,24 +23,22 @@ export default async function LiveLayout({
 }>) {
   const brand = await getBrandSettings();
   const logoUrl = brand.logoUrl ? cloudinaryTransform(brand.logoUrl, "f_auto,q_auto,w_240,c_limit") : "";
-  const logoScale = Math.min(3, Math.max(1, Number(brand.logoScale) || 1));
-  const logoPositionX = Math.min(100, Math.max(-100, Number(brand.logoPositionX) || 0));
-  const logoPositionY = Math.min(100, Math.max(-100, Number(brand.logoPositionY) || 0));
 
   return (
     <div className="min-h-screen bg-white">
       {/* LOGO 區高度刻意壓在 56px 以內——LIFF Tall 半屏可用高度有限，
           商品列表至少要能一次看到 3 筆，不能被頭部擠壓太多。不可點擊、
-          不連到網站首頁，客人不該發現背後有個網站。 */}
-      <div className="flex items-center justify-center pt-3 pb-1" style={{ height: 56 }} aria-hidden={!logoUrl}>
+          不連到網站首頁，客人不該發現背後有個網站。
+
+          刻意忽略網站標頭用的 logoScale/logoPositionX/logoPositionY——
+          那組設定是為了網站標頭「固定裁切框」設計的放大/位移，這裡沒有
+          裁切框可以配合，套用同一組設定反而會把圖片推出可視範圍、頂端
+          被切掉。客人頁面固定用 object-contain 完整顯示整張圖，不做任何
+          縮放/位移。 */}
+      <div className="flex items-center justify-center" style={{ height: 56 }} aria-hidden={!logoUrl}>
         {logoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={logoUrl}
-            alt={`${brand.storeName} LOGO`}
-            className="h-11 w-auto object-contain"
-            style={{ transform: `translate(${logoPositionX}%, ${logoPositionY}%) scale(${logoScale})`, transformOrigin: "center" }}
-          />
+          <img src={logoUrl} alt={`${brand.storeName} LOGO`} className="h-12 max-h-full w-auto object-contain" />
         ) : null}
       </div>
       {children}

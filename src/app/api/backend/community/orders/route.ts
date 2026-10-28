@@ -9,6 +9,7 @@ import {
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
 import { enrichCommunityOrderRows } from "@/lib/community-order-items";
+import { findLineIdentitiesByNicknames } from "@/lib/line/live-bindings";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -103,21 +104,15 @@ export async function GET(request: NextRequest) {
     const total = Number(rows[0]?.total_count || 0);
     const mappedRows = rows.map((row) => mapRow(row as Record<string, unknown>));
     const nicknames = [...new Set(mappedRows.map((row) => row.nickname).filter(Boolean))];
-    const lineNames = new Map<string, string>();
-    if (nicknames.length) {
-      const { data: bindings, error: bindingsError } = await supabase
-        .from("community_line_bindings")
-        .select("nickname,line_display_name")
-        .in("nickname", nicknames);
-      if (bindingsError) throw bindingsError;
-      for (const binding of bindings || []) {
-        lineNames.set(String(binding.nickname || "").trim().toLocaleLowerCase(), String(binding.line_display_name || "LINE 使用者"));
-      }
-    }
-    const enrichedRows = (await enrichCommunityOrderRows(supabase, mappedRows)).map((row) => ({
-      ...row,
-      lineDisplayName: lineNames.get(row.nickname.trim().toLocaleLowerCase()) || "LINE 使用者",
-    }));
+    // 統一綁定（2026-10-29）之後改讀新表 community_line_identities；
+    // needs_review=true（客人自己綁定、撞到記事本既有客人名字、還沒
+    // 核准）的列附加「（待核准）」，讓賣家知道這個對應還沒驗證過。
+    const identities = nicknames.length ? await findLineIdentitiesByNicknames(nicknames) : new Map();
+    const enrichedRows = (await enrichCommunityOrderRows(supabase, mappedRows)).map((row) => {
+      const identity = identities.get(row.nickname.trim().toLocaleLowerCase());
+      const lineDisplayName = identity ? `${identity.lineDisplayName}${identity.needsReview ? "（待核准）" : ""}` : "LINE 使用者";
+      return { ...row, lineDisplayName };
+    });
     return NextResponse.json({
       ok: true,
       rows: enrichedRows,

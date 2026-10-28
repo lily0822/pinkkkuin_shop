@@ -3,6 +3,8 @@ import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { createSignedUrl } from "@/lib/supabase/storage";
 import { verifyLivestreamMagicLink } from "@/lib/line/livestream-magic-link";
 import { getCurrentSession } from "@/lib/line/livestream-sessions";
+import { getLineUserBindingLabel } from "@/lib/line/live-bindings";
+import { getOrderRequiresBindSetting } from "@/lib/line/livestream-order-gate-settings";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -60,6 +62,16 @@ export async function POST(request: NextRequest) {
   const session = await getCurrentSession(supabase);
   if (!session) {
     return NextResponse.json({ ok: false, error: "session_not_active" }, { status: 400 });
+  }
+
+  // 伺服器端把關：前端的「下單前必須先綁定」只是體驗引導（客人正常
+  // 不會走到這裡還沒綁定），真正擋住未綁定客人送出訂單的是這裡——不
+  // 信任前端已經檢查過。只在後台開關開啟時生效。
+  if (await getOrderRequiresBindSetting()) {
+    const binding = await getLineUserBindingLabel(payload.lineUserId);
+    if (!binding) {
+      return NextResponse.json({ ok: false, error: "requires_bind" }, { status: 403 });
+    }
   }
 
   const { data, error } = await supabase.rpc("submit_livestream_order", {

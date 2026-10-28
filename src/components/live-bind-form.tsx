@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLiff } from "@/lib/line/use-liff";
 import { LiveIdentityRow } from "@/components/live-identity-row";
 import type { LiveCustomerIdentity } from "@/lib/line/live-customer-identity";
@@ -17,6 +17,8 @@ type LiveBindFormProps = {
   mode: "bind" | "edit";
   current: LiveBindCurrent | null;
   identity: LiveCustomerIdentity;
+  next: "order" | null;
+  orderKeyword: string | null;
 };
 
 type Screen = "notice" | "form" | "success";
@@ -37,7 +39,14 @@ function displayValue(binding: LiveBindCurrent) {
 //   mode=bind 且已經有綁定 → "notice"（你已經綁定過了，按【修改】進表單）
 //   mode=edit 且還沒有綁定 → "notice"（你還沒有綁定，按【綁定】進表單）
 //   其餘兩種組合 → 直接進 "form"
-export function LiveBindForm({ token, mode, current, identity }: LiveBindFormProps) {
+// LIFF sendMessages 的結果——只有 next="order" 時才會用到，"idle" 代表
+// 還沒綁定成功或還在嘗試中。"sent" 之後頁面會被 liff.closeWindow() 關掉
+// （機器人收到「我要下單」後走正常下單流程）；"skipped"/"failed" 才會
+// 留在成功畫面上，額外提示客人自己回 LINE 輸入下單關鍵字——sendMessages
+// 失敗或不在 LIFF 內，絕不能讓綁定本身跟著失敗，這一步純粹是錦上添花。
+type LiffSendOutcome = "idle" | "sent" | "skipped" | "failed";
+
+export function LiveBindForm({ token, mode, current, identity, next, orderKeyword }: LiveBindFormProps) {
   const [binding, setBinding] = useState<LiveBindCurrent | null>(current);
   const [screen, setScreen] = useState<Screen>(() => {
     if (mode === "bind" && current) return "notice";
@@ -50,7 +59,22 @@ export function LiveBindForm({ token, mode, current, identity }: LiveBindFormPro
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [successBinding, setSuccessBinding] = useState<LiveBindCurrent | null>(null);
-  const { status: liffStatus, tryClose } = useLiff();
+  const { status: liffStatus, tryClose, trySendMessageAndClose } = useLiff();
+  const [liffOutcome, setLiffOutcome] = useState<LiffSendOutcome>("idle");
+
+  // 只有 next="order"（從「先綁定一下社群帳號」那張卡片進來）才自動
+  // 傳下單關鍵字——沒有 next=order 的一般綁定行為完全不變，不自動傳
+  // 任何訊息（跟確認頁/查詢頁的「送出後自動查詢」刻意不同）。
+  useEffect(() => {
+    if (!successBinding || next !== "order" || !orderKeyword) return;
+    let cancelled = false;
+    trySendMessageAndClose(orderKeyword).then((result) => {
+      if (!cancelled) setLiffOutcome(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [successBinding, next, orderKeyword, trySendMessageAndClose]);
 
   const canSubmit = Boolean(normalizeLiveBindingValue(formType, formValue)) && !submitting;
 
@@ -126,6 +150,9 @@ export function LiveBindForm({ token, mode, current, identity }: LiveBindFormPro
             >
               {displayValue(successBinding)}
             </span>
+            {next === "order" && (liffOutcome === "skipped" || liffOutcome === "failed") ? (
+              <p className="mt-3 text-sm font-bold text-penguin-pink-dark">請回到 LINE 輸入「我要下單」開始下單</p>
+            ) : null}
             {liffStatus === "ready" ? (
               <>
                 <p className="mt-4 text-xs text-penguin-gray">可以按上面的 ✕ 或下面的按鈕，回到 LINE 了。</p>

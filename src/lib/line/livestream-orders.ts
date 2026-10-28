@@ -34,6 +34,8 @@ import { createLivestreamMagicLink } from "./livestream-magic-link";
 import { effectiveLivestreamUnitPrice, effectiveLivestreamQuantity } from "./livestream-pricing";
 import { buildLiveLiffUrl } from "./liff-url";
 import { getLineUserBindingLabel } from "./live-bindings";
+import { buildCuteButtonFooter, type CuteButtonSpec } from "./flex-buttons";
+import { getOrderRequiresBindSetting } from "./livestream-order-gate-settings";
 
 // 功能一 (下單觸發) + 功能二 (LINE 圖片下單對話流程). 社群暱稱綁定/審核機制
 // 已移除——真正區分客人身份的是 line_user_id 本身，nickname 欄位直接拿
@@ -162,74 +164,6 @@ function matchesOrderGroupExcludingBindWords(
   return matchesAny(text, orderWordsExcludingBind);
 }
 
-// ---------------------------------------------------------------------------
-// 卡片按鈕改版：原本用 Flex 原生 button 元件（style primary/secondary），
-// 顏色是 LINE 內建的綠色/灰色、文字顏色由 LINE 自己決定、無法保證黑色。
-// 改成自己組一個可點擊的 box（粉紅底 #ffebf1、粉紅邊 #ff8fb3、圓角膠囊、
-// 裡面一個黑字 text）取代，原本的 action（message/postback/uri/clipboard）
-// 不變，只是放到 box 的 action 上而不是 button 元件上。
-//
-// BUTTON_ICONS 是集中設定表——這輪使用者選的是純文字款（A 款，不加任何
-// 圖示），所以每一項都是空字串；之後如果想幫特定按鈕加圖示（例如
-// emoji），只需要改這裡對應的值，不用動下面任何一張卡片的程式碼。key
-// 是按鈕的「語意角色」，不是顯示文字本身——同一顆按鈕换了文案不會讓
-// 圖示跟著不見。
-// ---------------------------------------------------------------------------
-
-const BUTTON_ICONS: Record<string, string> = {
-  confirm_quantity: "",
-  view_orders: "",
-  adjust_orders: "",
-  remit_live: "",
-  remit_preorder: "",
-  copy_bank_account: "",
-  transfer_done: "",
-  amount_correct: "",
-  amount_different: "",
-  bind: "",
-  edit: "",
-};
-
-type CuteButtonSpec = { key: string; label: string; action: Record<string, unknown> };
-
-function buildCuteButton(spec: CuteButtonSpec, flex?: number): object {
-  const icon = BUTTON_ICONS[spec.key] || "";
-  const text = icon ? `${icon} ${spec.label}` : spec.label;
-  const box: Record<string, unknown> = {
-    type: "box",
-    layout: "horizontal",
-    backgroundColor: "#ffebf1",
-    borderColor: "#ff8fb3",
-    borderWidth: "2px",
-    cornerRadius: "xxl",
-    paddingTop: "12px",
-    paddingBottom: "12px",
-    paddingStart: "4px",
-    paddingEnd: "4px",
-    justifyContent: "center",
-    alignItems: "center",
-    action: spec.action,
-    contents: [{ type: "text", text, color: "#111111", weight: "bold", size: "sm", align: "center", wrap: false }],
-  };
-  if (flex !== undefined) box.flex = flex;
-  return box;
-}
-
-// 卡片 footer 的共用容器——1 顆按鈕置中滿版；2 顆（含）以上同一行排
-// 列、各自 flex:1 平分寬度，超過 2 顆才換行（每行最多 2 顆），符合這輪
-// 「多個按鈕排在同一行」的要求。
-function buildCuteButtonFooter(buttons: CuteButtonSpec[]): object {
-  if (buttons.length === 1) {
-    return { type: "box", layout: "vertical", contents: [buildCuteButton(buttons[0])] };
-  }
-  const rows: object[] = [];
-  for (let i = 0; i < buttons.length; i += 2) {
-    const rowButtons = buttons.slice(i, i + 2).map((spec) => buildCuteButton(spec, 1));
-    rows.push({ type: "box", layout: "horizontal", spacing: "sm", contents: rowButtons });
-  }
-  return { type: "box", layout: "vertical", spacing: "sm", contents: rows };
-}
-
 
 async function reply(replyToken: string | undefined, text: string) {
   if (!replyToken) return;
@@ -265,9 +199,10 @@ export async function deleteLivestreamOrder(supabase: SupabaseService, orderId: 
 
 // 不再有「社群暱稱審核」這道關卡——真正區分客人身份的是 line_user_id
 // 本身（LINE 帳號的唯一識別碼，沒辦法偽造），暱稱只是疊加上去給人看的
-// 標籤。community_line_bindings/社群名單審核頁面是另一套舊的記事本/
-// 社群訂單系統在用，這裡完全不碰那張表——nickname 欄位直接拿客人當下
-// 的 LINE 顯示名稱寫入即可。
+// 標籤。community_line_bindings 是另一套舊的記事本/社群訂單系統在用
+// （統一綁定之後資料已搬移到 community_line_identities，舊表保留但不再
+// 讀寫），這裡完全不碰那張表——nickname 欄位直接拿客人當下的 LINE
+// 顯示名稱寫入即可。
 async function getLineDisplayName(userId: string): Promise<string> {
   const profile = await getLineUserProfile(userId);
   return profile?.displayName || "客人";
@@ -466,6 +401,17 @@ async function handleOrderTrigger(
     return;
   }
 
+  // 下單前必須先綁定（後台「社群綁定」頁可關閉，預設開啟）——沒有進行
+  // 中場次時完全不檢查綁定，維持既有「目前沒有進行中的連線」回覆優先
+  // （沒有場次本來就沒辦法下單，不用讓客人先去綁定）。
+  if (await getOrderRequiresBindSetting()) {
+    const binding = await getLineUserBindingLabel(userId);
+    if (!binding) {
+      await handleOrderRequiresBindTrigger(userId, replyToken, templates);
+      return;
+    }
+  }
+
   await setBotState(supabase, userId, {
     order_mode: "ordering",
     order_session_id: session.id,
@@ -480,6 +426,52 @@ async function handleOrderTrigger(
         text: renderLivestreamReplyTemplate(templates.order_welcome),
         quickReply: photoConfirmQuickReply(keywords),
       },
+    ]);
+  }
+}
+
+// 未綁定時擋下下單——不寫入任何 order_mode/暫存狀態，純粹回一張「先
+// 綁定」卡片，跟 handleBindTrigger 的卡片不同：這裡只有一顆按鈕
+// 【綁定】（一定是未綁定狀態，沒有「修改」可選），而且連結帶
+// next=order，讓 /live/bind 頁面綁定成功後能自動幫客人傳「我要下單」，
+// 不用客人自己再做一次（見 live-bind-form.tsx）。
+async function handleOrderRequiresBindTrigger(
+  userId: string,
+  replyToken: string | undefined,
+  templates: LivestreamReplyTemplates,
+) {
+  const bindToken = createLivestreamMagicLink(userId, "bind");
+  const bindUrl = buildLiveLiffUrl("bind", bindToken, { mode: "bind", next: "order" });
+
+  const bubble = {
+    type: "bubble",
+    body: {
+      type: "box",
+      layout: "vertical",
+      spacing: "md",
+      contents: [
+        { type: "text", text: renderLivestreamReplyTemplate(templates.order_requires_bind_title), weight: "bold", size: "lg" },
+        {
+          type: "text",
+          text: renderLivestreamReplyTemplate(templates.order_requires_bind_body),
+          wrap: true,
+          size: "sm",
+          color: "#6b7280",
+        },
+      ],
+    },
+    footer: buildCuteButtonFooter([
+      {
+        key: "bind",
+        label: renderLivestreamReplyTemplate(templates.bind_button_bind),
+        action: { type: "uri", label: renderLivestreamReplyTemplate(templates.bind_button_bind), uri: bindUrl },
+      },
+    ]),
+  };
+
+  if (replyToken) {
+    await sendLineReply(replyToken, [
+      { type: "flex", altText: renderLivestreamReplyTemplate(templates.order_requires_bind_title), contents: bubble },
     ]);
   }
 }
