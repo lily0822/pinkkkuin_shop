@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useLiff } from "@/lib/line/use-liff";
 
 export type LiveOrderItem = {
   id: string;
@@ -25,6 +26,7 @@ type LiveOrdersViewProps = {
   sessionName: string | null;
   unpaidTotal: number;
   initialItems: LiveOrderItem[];
+  orderQueryKeyword: string;
 };
 
 const PURCHASE_LABELS: Record<string, string> = { not_bought: "未採買", bought: "已採買" };
@@ -32,13 +34,14 @@ const PAYMENT_LABELS: Record<string, string> = { unpaid: "未付款", confirming
 
 // 純 React 局部 state 處理調數量/取消（跟 live-confirm-form.tsx 同一套
 // 寫法），只有按「儲存修改」才打一次 API；已採買/已匯款的項目一律唯讀。
-export function LiveOrdersView({ token, sessionName, unpaidTotal, initialItems }: LiveOrdersViewProps) {
+export function LiveOrdersView({ token, sessionName, unpaidTotal, initialItems, orderQueryKeyword }: LiveOrdersViewProps) {
   const [items, setItems] = useState<DraftItem[]>(
     initialItems.map((item) => ({ ...item, originalQuantity: item.quantity, removed: false, cancelled: false })),
   );
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [saveNotice, setSaveNotice] = useState("");
+  const { trySendMessageAndClose } = useLiff();
 
   const visibleItems = useMemo(() => items.filter((item) => !item.cancelled), [items]);
   const dirtyItems = useMemo(
@@ -96,10 +99,19 @@ export function LiveOrdersView({ token, sessionName, unpaidTotal, initialItems }
         }),
       );
 
-      if (failedIds.size > 0) {
-        setSaveNotice(`有 ${failedIds.size} 項剛好已經被標記採買或進入匯款流程，無法修改，已經為您還原。`);
+      const baseNotice =
+        failedIds.size > 0
+          ? `有 ${failedIds.size} 項剛好已經被標記採買或進入匯款流程，無法修改，已經為您還原。`
+          : "已儲存修改。";
+
+      // 儲存修改這個 API 呼叫本身成功後，同樣用 LIFF sendMessages 幫客人
+      // 送出「查詢訂單」讓機器人回最新清單——跟確認頁同一套邏輯，失敗/
+      // 跳過都不影響儲存已經成功這件事，只是不會自動關閉視窗。
+      const outcome = await trySendMessageAndClose(orderQueryKeyword);
+      if (outcome === "sent") {
+        setSaveNotice(baseNotice);
       } else {
-        setSaveNotice("已儲存修改。");
+        setSaveNotice(`${baseNotice}請回到 LINE 輸入「${orderQueryKeyword}」查看最新訂單。`);
       }
     } catch {
       setSaveError("儲存失敗，請稍後再試一次。");

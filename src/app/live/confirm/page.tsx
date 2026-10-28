@@ -2,6 +2,7 @@ import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { createSignedUrl } from "@/lib/supabase/storage";
 import { verifyLivestreamMagicLink } from "@/lib/line/livestream-magic-link";
 import { getCurrentSession } from "@/lib/line/livestream-sessions";
+import { getLivestreamKeywordSettings } from "@/lib/line/livestream-keywords";
 import { LiveConfirmForm, type LiveConfirmItem } from "@/components/live-confirm-form";
 
 export const dynamic = "force-dynamic";
@@ -58,5 +59,18 @@ export default async function LiveConfirmPage({
   // 頁面當下的結果：客人填單價可能花超過場次剩餘的時間。
   const session = await getCurrentSession(supabase);
 
-  return <LiveConfirmForm token={token} sessionName={session?.name || null} initialItems={items} />;
+  // 送出成功後用 LIFF sendMessages 幫客人送出「查詢訂單」關鍵字——用
+  // 後台目前設定的第一個詞（可能被改過），不寫死「查詢訂單」三個字，
+  // 保證一定會命中 handleTextMessage 的比對（見 livestream-keywords.ts）。
+  const { keywords } = await getLivestreamKeywordSettings();
+  const orderQueryKeyword = keywords.order_query[0];
+
+  return (
+    <LiveConfirmForm
+      token={token}
+      sessionName={session?.name || null}
+      initialItems={items}
+      orderQueryKeyword={orderQueryKeyword}
+    />
+  );
 }

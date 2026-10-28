@@ -3,6 +3,7 @@ import { createSignedUrl } from "@/lib/supabase/storage";
 import { verifyLivestreamMagicLink } from "@/lib/line/livestream-magic-link";
 import { getCurrentOrMostRecentSession } from "@/lib/line/livestream-sessions";
 import { effectiveLivestreamUnitPrice } from "@/lib/line/livestream-pricing";
+import { getLivestreamKeywordSettings } from "@/lib/line/livestream-keywords";
 import { LiveOrdersView, type LiveOrderItem } from "@/components/live-orders-view";
 
 export const dynamic = "force-dynamic";
@@ -106,7 +107,16 @@ export default async function LiveOrdersPage({
     }),
   );
 
+  const { keywords } = await getLivestreamKeywordSettings();
+  const orderQueryKeyword = keywords.order_query[0];
+
   return (
-    <LiveOrdersView token={token} sessionName={session?.name || null} unpaidTotal={unpaidTotal} initialItems={items} />
+    <LiveOrdersView
+      token={token}
+      sessionName={session?.name || null}
+      unpaidTotal={unpaidTotal}
+      initialItems={items}
+      orderQueryKeyword={orderQueryKeyword}
+    />
   );
 }

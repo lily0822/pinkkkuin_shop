@@ -28,6 +28,7 @@ export type LivestreamReplyTemplateKey =
   | "remittance_confirm_amount_question"
   | "remittance_ask_custom_amount"
   | "remittance_custom_amount_invalid"
+  | "remittance_custom_amount_too_large"
   | "remittance_ask_last5"
   | "remittance_last5_invalid"
   | "remittance_cancelled"
@@ -53,6 +54,7 @@ export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
   "remittance_confirm_amount_question",
   "remittance_ask_custom_amount",
   "remittance_custom_amount_invalid",
+  "remittance_custom_amount_too_large",
   "remittance_ask_last5",
   "remittance_last5_invalid",
   "remittance_cancelled",
@@ -84,6 +86,7 @@ export const DEFAULT_LIVESTREAM_REPLY_TEMPLATES: LivestreamReplyTemplates = {
   remittance_confirm_amount_question: "應匯金額 NT${{金額}}，您匯的金額是這個嗎？",
   remittance_ask_custom_amount: "請輸入您實際匯款的金額（請輸入正整數數字）：",
   remittance_custom_amount_invalid: "金額格式錯誤，請輸入正整數數字（例如：1250）。",
+  remittance_custom_amount_too_large: "金額太大了，請確認後重新輸入。",
   remittance_ask_last5: "請完成轉帳後，輸入轉帳帳號的末五碼：",
   remittance_last5_invalid: "末五碼需為 5 碼數字，請重新輸入。如需取消匯款請輸入「取消匯款」。",
   remittance_cancelled: "已取消匯款申報，如需使用請重新輸入「我要匯款」。",

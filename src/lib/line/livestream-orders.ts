@@ -1,7 +1,6 @@
 import "server-only";
 
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
-import { getSiteOrigin } from "@/lib/supabase/config";
 import { createSignedUrl, deletePrivateFiles, uploadPrivateFile } from "@/lib/supabase/storage";
 import {
   downloadLineMessageContent,
@@ -33,6 +32,7 @@ import {
 import { getCurrentSession, getCurrentOrMostRecentSession } from "./livestream-sessions";
 import { createLivestreamMagicLink } from "./livestream-magic-link";
 import { effectiveLivestreamUnitPrice, effectiveLivestreamQuantity } from "./livestream-pricing";
+import { buildLiveLiffUrl } from "./liff-url";
 
 // 功能一 (下單觸發) + 功能二 (LINE 圖片下單對話流程). 社群暱稱綁定/審核機制
 // 已移除——真正區分客人身份的是 line_user_id 本身，nickname 欄位直接拿
@@ -540,7 +540,7 @@ async function handlePhotoConfirmTrigger(
   await setBotState(supabase, userId, { order_burst_replied: false });
 
   const token = createLivestreamMagicLink(userId, "order-confirm");
-  const confirmUrl = `${getSiteOrigin()}/live/confirm?token=${encodeURIComponent(token)}`;
+  const confirmUrl = buildLiveLiffUrl("confirm", token);
 
   const bubble = {
     type: "bubble",
@@ -636,7 +636,7 @@ async function handleOrderManageTrigger(
   }
 
   const token = createLivestreamMagicLink(userId, "order-edit");
-  const ordersUrl = `${getSiteOrigin()}/live/orders?token=${encodeURIComponent(token)}`;
+  const ordersUrl = buildLiveLiffUrl("orders", token);
 
   const bubble = {
     type: "bubble",
@@ -1045,6 +1045,14 @@ async function handleRemitCustomAmountSubmission(
   const amount = /^\d+$/.test(digitsOnly) ? Number(digitsOnly) : NaN;
   if (!Number.isFinite(amount) || amount <= 0) {
     await replyTemplate(replyToken, templates, "remittance_custom_amount_invalid");
+    return; // 留在 await_custom_amount，客人可以直接重新輸入
+  }
+  // 上限 1,000,000——避免手誤多打幾個零，順便擋掉 remittances.amount
+  // numeric(12,2) 實際上放不下的誇張數字（那種情況送出當下 RPC 會
+  // insert 失敗，客人只會看到不明確的「匯款申報失敗」，不如在這裡先
+  // 擋下給明確提示）。
+  if (amount > 1_000_000) {
+    await replyTemplate(replyToken, templates, "remittance_custom_amount_too_large");
     return; // 留在 await_custom_amount，客人可以直接重新輸入
   }
 

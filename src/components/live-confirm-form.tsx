@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useLiff } from "@/lib/line/use-liff";
 
 export type LiveConfirmItem = {
   id: string;
@@ -25,18 +26,40 @@ type LiveConfirmFormProps = {
   token: string;
   sessionName: string | null;
   initialItems: LiveConfirmItem[];
+  orderQueryKeyword: string;
 };
+
+// LIFF sendMessages 的結果——"idle" 代表還沒送出訂單或還在嘗試中。
+// "sent" 之後頁面會被 liff.closeWindow() 關掉，"skipped"/"failed" 才會
+// 留在完成畫面上，額外提示客人自己回 LINE 輸入查詢訂單關鍵字。
+type LiffSendOutcome = "idle" | "sent" | "skipped" | "failed";
 
 // 純 React 局部 state 管理所有互動（數量/單價/移除），完全不打任何網路
 // 請求——調數量、填單價時不會整頁重新載入、輸入框不會失焦、捲動位置
 // 不會跳走，只有按下「送出訂單」才打一次 API。
-export function LiveConfirmForm({ token, sessionName, initialItems }: LiveConfirmFormProps) {
+export function LiveConfirmForm({ token, sessionName, initialItems, orderQueryKeyword }: LiveConfirmFormProps) {
   const [items, setItems] = useState<DraftItem[]>(
     initialItems.map((item) => ({ ...item, quantity: 1, unitPrice: "", removed: false })),
   );
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [submitted, setSubmitted] = useState<{ items: SubmittedItem[]; sessionName: string } | null>(null);
+  const { trySendMessageAndClose } = useLiff();
+  const [liffOutcome, setLiffOutcome] = useState<LiffSendOutcome>("idle");
+
+  // 送出訂單成功後（submitted 從 null 變成有值）才嘗試用 LIFF 送出
+  // 「查詢訂單」——完成畫面（下面的 LiveConfirmDone）已經先渲染出來了，
+  // 這一步只是錦上添花，失敗/跳過都不影響已經送出的訂單本身。
+  useEffect(() => {
+    if (!submitted) return;
+    let cancelled = false;
+    trySendMessageAndClose(orderQueryKeyword).then((result) => {
+      if (!cancelled) setLiffOutcome(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [submitted, trySendMessageAndClose, orderQueryKeyword]);
 
   const visibleItems = useMemo(() => items.filter((item) => !item.removed), [items]);
   const missingPriceCount = useMemo(
@@ -93,7 +116,14 @@ export function LiveConfirmForm({ token, sessionName, initialItems }: LiveConfir
   }
 
   if (submitted) {
-    return <LiveConfirmDone sessionName={submitted.sessionName} items={submitted.items} />;
+    return (
+      <LiveConfirmDone
+        sessionName={submitted.sessionName}
+        items={submitted.items}
+        liffOutcome={liffOutcome}
+        orderQueryKeyword={orderQueryKeyword}
+      />
+    );
   }
 
   return (
@@ -212,8 +242,24 @@ function isValidPrice(value: string) {
   return Number.isInteger(num) && num > 0;
 }
 
-function LiveConfirmDone({ sessionName, items }: { sessionName: string; items: SubmittedItem[] }) {
+function LiveConfirmDone({
+  sessionName,
+  items,
+  liffOutcome,
+  orderQueryKeyword,
+}: {
+  sessionName: string;
+  items: SubmittedItem[];
+  liffOutcome: LiffSendOutcome;
+  orderQueryKeyword: string;
+}) {
   const total = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  // "sent" 的話頁面馬上會被 liff.closeWindow() 關掉，這段提示幾乎不會
+  // 被看到；"skipped"（不在 LINE 內開啟、或沒設定 LIFF）/"failed"
+  // （初始化失敗、客人拒絕授權、sendMessages 本身失敗）才需要客人自己
+  // 動手——不能讓客人以為訂單沒送出成功，所以文字要跟「訂單已經記錄」
+  // 這件事分開講。
+  const showManualQueryHint = liffOutcome === "skipped" || liffOutcome === "failed";
   return (
     <main className="min-h-screen bg-penguin-cream px-4 py-8">
       <div className="mx-auto max-w-md">
@@ -240,7 +286,11 @@ function LiveConfirmDone({ sessionName, items }: { sessionName: string; items: S
         </div>
         <div className="mt-5 rounded-2xl border-2 border-penguin-peach bg-white p-4 text-center">
           <p className="text-lg font-black text-penguin-gray">總金額 NT${total.toLocaleString("zh-TW")}</p>
-          <p className="mt-2 text-xs text-penguin-gray">採買結果和修改、取消，之後都可以從選單的「查詢訂單」查看。</p>
+          {showManualQueryHint ? (
+            <p className="mt-2 text-xs text-penguin-gray">訂單已送出，請回到 LINE 輸入「{orderQueryKeyword}」查看最新訂單。</p>
+          ) : (
+            <p className="mt-2 text-xs text-penguin-gray">採買結果和修改、取消，之後都可以從選單的「查詢訂單」查看。</p>
+          )}
         </div>
       </div>
     </main>
