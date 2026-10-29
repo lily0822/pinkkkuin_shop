@@ -165,7 +165,9 @@ export async function GET(request: NextRequest) {
         nickname: String(row.nickname || ""),
         lineDisplayName: (() => {
           const identity = identities.get(String(row.nickname || "").trim().toLocaleLowerCase());
-          return identity ? `${identity.lineDisplayName}${identity.needsReview ? "（待核准）" : ""}` : "LINE 使用者";
+          if (!identity) return "LINE 使用者";
+          if (identity.ambiguous) return "對應到多位 LINE 客人，請確認";
+          return `${identity.lineDisplayName}${identity.needsReview ? "（待核准）" : ""}`;
         })(),
         notebookNames: Array.isArray(row.notebook_names) ? row.notebook_names.map(String) : [],
         notebookGroups: notebookGroupsForRequest(String(row.id || "")),

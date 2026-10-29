@@ -116,11 +116,20 @@ export async function findLineUserIdsByNicknames(values: string[]): Promise<Map<
   }
 }
 
-export type NicknameIdentityDisplay = { lineDisplayName: string; needsReview: boolean };
+// 給「後台顯示」用的版本——跟上面兩個不同：
+// (a) 不過濾 needs_review，連「還沒核准」的綁定也要顯示出來，呼叫端
+//     （社群訂單/出貨明細列表）自己決定要不要加「（待核准）」之類的
+//     提示文字；
+// (b) 不像 findLineUserId(s)ByNickname 遇到歧義（同一個正規化後的名字
+//     同時對應到不只一個 line_user_id）就直接當「找不到」安靜略過——
+//     顯示畫面需要讓賣家自己看到、自己判斷，所以底層 SQL 函式
+//     find_line_identities_by_nicknames 仍然回傳全部符合的列，歧義判斷
+//     在這一層（TS）做：同一個 input_value 底下如果有超過一個相異的
+//     line_user_id，整組標成 ambiguous:true，不要任選其中一筆顯示。
+export type NicknameIdentityDisplay =
+  | { ambiguous: true }
+  | { ambiguous: false; lineDisplayName: string; needsReview: boolean };
 
-// 給「後台顯示」用的版本——不像上面兩個過濾 needs_review，連「還沒核准」
-// 的綁定也要顯示出來，呼叫端（社群訂單/出貨明細列表）自己決定要不要
-// 加「（待核准）」之類的提示文字。給一次要處理一整批客人的列表頁用。
 export async function findLineIdentitiesByNicknames(values: string[]): Promise<Map<string, NicknameIdentityDisplay>> {
   const uniqueValues = [...new Set(values.map((v) => v.trim()).filter(Boolean))];
   const result = new Map<string, NicknameIdentityDisplay>();
@@ -130,12 +139,28 @@ export async function findLineIdentitiesByNicknames(values: string[]): Promise<M
     const supabase = createSupabaseServiceClient();
     const { data, error } = await supabase.rpc("find_line_identities_by_nicknames", { p_values: uniqueValues });
     if (error || !data) return result;
+
+    const grouped = new Map<string, { line_user_id: string; line_display_name: string | null; needs_review: boolean }[]>();
     for (const row of data as { input_value: string; line_user_id: string; line_display_name: string | null; needs_review: boolean }[]) {
-      result.set(row.input_value.trim().toLowerCase(), {
+      const key = row.input_value.trim().toLowerCase();
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key)!.push(row);
+    }
+
+    for (const [key, rows] of grouped) {
+      const distinctUsers = new Set(rows.map((r) => r.line_user_id));
+      if (distinctUsers.size > 1) {
+        result.set(key, { ambiguous: true });
+        continue;
+      }
+      const row = rows[0];
+      result.set(key, {
+        ambiguous: false,
         lineDisplayName: row.line_display_name?.trim() || "LINE 使用者",
         needsReview: Boolean(row.needs_review),
       });
     }
+
     return result;
   } catch {
     return result;

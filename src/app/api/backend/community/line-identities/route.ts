@@ -61,6 +61,44 @@ async function findNotebookMatch(
   return { notebookName: String(data.notebook_name || "未命名記事本"), lastOrderAt: String(data.created_at || "") };
 }
 
+function normalizeForCollision(value: string): string {
+  return value.trim().replace(/^@+/, "").toLowerCase();
+}
+
+type CollisionPeer = { lineUserId: string; lineDisplayName: string; type: LiveBindingType; value: string };
+
+// 撞名偵測（跟記事本無關，純粹是「兩個不同客人目前的綁定值正規化後
+// 剛好一樣」這件事本身）——nickname 跟 ig 本來就是分開的命名空間（同一
+// 個字串可以一個人當暱稱、另一個人當 IG，見 202610280004 migration），
+// 但這會讓「依暱稱找人」沒辦法分辨兩人（find_line_user_id_by_nickname
+// 這類函式遇到歧義會直接回空，見 202610290002 migration），所以在後台
+// 主動標示出來讓賣家知道，不用等真的被查到才發現。
+function buildCollisionMap(identities: IdentityRow[]): Map<string, CollisionPeer[]> {
+  const groups = new Map<string, CollisionPeer[]>();
+  identities.forEach((row) => {
+    const key = normalizeForCollision(row.binding_value);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push({
+      lineUserId: row.line_user_id,
+      lineDisplayName: row.line_display_name || "LINE 使用者",
+      type: row.binding_type as LiveBindingType,
+      value: row.binding_value,
+    });
+  });
+
+  const result = new Map<string, CollisionPeer[]>();
+  groups.forEach((group) => {
+    if (group.length < 2) return;
+    group.forEach((entry) => {
+      result.set(
+        entry.lineUserId,
+        group.filter((peer) => peer.lineUserId !== entry.lineUserId),
+      );
+    });
+  });
+  return result;
+}
+
 export async function GET(request: NextRequest) {
   const guard = await guardBackendRequest(request);
   if (guard) return guard;
@@ -122,9 +160,15 @@ export async function GET(request: NextRequest) {
     const needsReviewCustomers = customers.filter((c) => c.needsReview);
     const notebookMatches = await Promise.all(needsReviewCustomers.map((c) => findNotebookMatch(supabase, c.value)));
     const notebookMatchByLineUserId = new Map(needsReviewCustomers.map((c, i) => [c.lineUserId, notebookMatches[i]]));
+
+    // 撞名偵測要看全部已綁定客人（不受 q 搜尋篩選影響），所以用
+    // identities（未篩選的原始清單）算，不是用已經被 q 篩過的 customers。
+    const collisionMap = buildCollisionMap(identities);
+
     const customersWithMatch = customers.map((c) => ({
       ...c,
       notebookMatch: c.needsReview ? notebookMatchByLineUserId.get(c.lineUserId) || null : null,
+      collidesWith: collisionMap.get(c.lineUserId) || null,
     }));
 
     const stats = {
@@ -132,6 +176,7 @@ export async function GET(request: NextRequest) {
       nickname: identities.filter((row) => row.binding_type === "nickname").length,
       ig: identities.filter((row) => row.binding_type === "ig").length,
       needsReview: identities.filter((row) => row.needs_review).length,
+      collision: collisionMap.size,
     };
 
     return NextResponse.json({ ok: true, stats, customers: customersWithMatch });

@@ -110,7 +110,11 @@ export async function GET(request: NextRequest) {
     const identities = nicknames.length ? await findLineIdentitiesByNicknames(nicknames) : new Map();
     const enrichedRows = (await enrichCommunityOrderRows(supabase, mappedRows)).map((row) => {
       const identity = identities.get(row.nickname.trim().toLocaleLowerCase());
-      const lineDisplayName = identity ? `${identity.lineDisplayName}${identity.needsReview ? "（待核准）" : ""}` : "LINE 使用者";
+      const lineDisplayName = !identity
+        ? "LINE 使用者"
+        : identity.ambiguous
+          ? "對應到多位 LINE 客人，請確認"
+          : `${identity.lineDisplayName}${identity.needsReview ? "（待核准）" : ""}`;
       return { ...row, lineDisplayName };
     });
     return NextResponse.json({
