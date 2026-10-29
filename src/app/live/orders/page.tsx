@@ -32,6 +32,7 @@ type OrderRow = {
   paid_amount: number;
   refunded_at: string | null;
   refunded_amount: number | null;
+  product_category: "general" | "gacha";
 };
 
 export default async function LiveOrdersPage({
@@ -57,7 +58,7 @@ export default async function LiveOrdersPage({
   let query = supabase
     .from("community_livestream_orders")
     .select(
-      "id, product_name, photo_storage_path, quantity, customer_unit_price, seller_unit_price, unit_price, purchased_quantity, paid_amount, refunded_at, refunded_amount",
+      "id, product_name, photo_storage_path, quantity, customer_unit_price, seller_unit_price, unit_price, purchased_quantity, paid_amount, refunded_at, refunded_amount, product_category",
     )
     .eq("line_user_id", payload.lineUserId)
     .eq("order_status", "submitted")
@@ -103,6 +104,7 @@ export default async function LiveOrdersPage({
         owed: settlement.owed,
         refundDue: settlement.refundDue,
         paidAmount: row.paid_amount,
+        category: row.product_category,
       };
     }),
   );

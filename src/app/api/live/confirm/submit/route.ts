@@ -12,11 +12,16 @@ export const runtime = "nodejs";
 const PHOTO_BUCKET = "community-livestream-photos";
 const SIGNED_URL_TTL_SECONDS = 60 * 60 * 24; // 完成畫面當下就渲染，不需要像 LINE Flex 那樣留 7 天
 
-type SubmitItemInput = { id?: unknown; quantity?: unknown; unitPrice?: unknown };
+type SubmitItemInput = { id?: unknown; quantity?: unknown; unitPrice?: unknown; category?: unknown };
 
-function sanitizeItems(input: unknown): { id: string; quantity: number; unit_price: number }[] {
+// 分類值只能是 general/gacha，其他一律當 general——不讓整筆送出失敗。
+function sanitizeCategory(value: unknown): "general" | "gacha" {
+  return value === "gacha" ? "gacha" : "general";
+}
+
+function sanitizeItems(input: unknown): { id: string; quantity: number; unit_price: number; category: "general" | "gacha" }[] {
   if (!Array.isArray(input)) return [];
-  const result: { id: string; quantity: number; unit_price: number }[] = [];
+  const result: { id: string; quantity: number; unit_price: number; category: "general" | "gacha" }[] = [];
   for (const raw of input as SubmitItemInput[]) {
     const id = typeof raw.id === "string" ? raw.id.trim() : "";
     const quantity = Math.floor(Number(raw.quantity));
@@ -25,7 +30,7 @@ function sanitizeItems(input: unknown): { id: string; quantity: number; unit_pri
     // 欄位都要重新檢查型別/範圍。
     if (!id || !Number.isFinite(quantity) || quantity < 1 || quantity > 99) continue;
     if (!Number.isFinite(unitPrice) || unitPrice <= 0) continue;
-    result.push({ id, quantity, unit_price: unitPrice });
+    result.push({ id, quantity, unit_price: unitPrice, category: sanitizeCategory(raw.category) });
   }
   return result;
 }
@@ -77,7 +82,7 @@ export async function POST(request: NextRequest) {
   const { data, error } = await supabase.rpc("submit_livestream_order", {
     p_line_user_id: payload.lineUserId,
     p_session_id: session.id,
-    p_items: items.map((item) => ({ id: item.id, quantity: item.quantity, unit_price: item.unit_price })),
+    p_items: items.map((item) => ({ id: item.id, quantity: item.quantity, unit_price: item.unit_price, category: item.category })),
     p_remove_ids: removeIds,
   });
 

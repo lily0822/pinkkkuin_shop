@@ -15,6 +15,7 @@ export const runtime = "nodejs";
 
 const PURCHASE_STATUSES = new Set(["not_bought", "bought"]);
 const PAYMENT_STATUSES = new Set(["unpaid", "confirming", "paid"]);
+const PRODUCT_CATEGORIES = new Set(["general", "gacha"]);
 
 async function guardBackendRequest(request: NextRequest) {
   if (getBackendRuntime() === "unknown") {
@@ -37,6 +38,7 @@ type LivestreamOrderPatch = {
   purchaseStatus?: unknown;
   paymentStatus?: unknown;
   notes?: unknown;
+  category?: unknown;
 };
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -104,6 +106,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (typeof body.purchaseStatus === "string" && PURCHASE_STATUSES.has(body.purchaseStatus)) patch.purchase_status = body.purchaseStatus;
   if (typeof body.paymentStatus === "string" && PAYMENT_STATUSES.has(body.paymentStatus)) patch.payment_status = body.paymentStatus;
   if (typeof body.notes === "string") patch.notes = body.notes.trim().slice(0, 2000) || null;
+  // 賣家事後改分類（一般商品 ⇄ 扭蛋）；不合法的值直接忽略這個欄位，不讓
+  // 整次 PATCH 失敗（跟其他欄位的驗證方式一致）。
+  if (typeof body.category === "string" && PRODUCT_CATEGORIES.has(body.category)) patch.product_category = body.category;
 
   if (!Object.keys(patch).length) {
     return NextResponse.json({ ok: false, error: "沒有可更新的欄位。" }, { status: 400 });

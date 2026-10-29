@@ -5,17 +5,26 @@ import { verifyLivestreamMagicLink } from "@/lib/line/livestream-magic-link";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-type ItemInput = { id?: unknown; quantity?: unknown };
+type ItemInput = { id?: unknown; quantity?: unknown; category?: unknown };
 
-function sanitizeQuantityItems(input: unknown): { id: string; quantity: number }[] {
+// 分類值只能是 general/gacha；沒帶這個欄位就回 undefined，代表「維持原值，
+// 不要動 product_category」——舊版頁面快取沒有這個欄位時，不能把它洗成
+// general，否則會把客人已經勾選好的「扭蛋」蓋回去。有帶但不合法（例如
+// 空字串）才當 general。
+function sanitizeCategory(value: unknown): "general" | "gacha" | undefined {
+  if (value === undefined) return undefined;
+  return value === "gacha" ? "gacha" : "general";
+}
+
+function sanitizeQuantityItems(input: unknown): { id: string; quantity: number; category: "general" | "gacha" | undefined }[] {
   if (!Array.isArray(input)) return [];
-  const result: { id: string; quantity: number }[] = [];
+  const result: { id: string; quantity: number; category: "general" | "gacha" | undefined }[] = [];
   for (const raw of input as ItemInput[]) {
     const item = raw as ItemInput;
     const id = typeof item.id === "string" ? item.id.trim() : "";
     const quantity = Math.floor(Number(item.quantity));
     if (!id || !Number.isFinite(quantity) || quantity < 1 || quantity > 99) continue;
-    result.push({ id, quantity });
+    result.push({ id, quantity, category: sanitizeCategory(item.category) });
   }
   return result;
 }
@@ -60,9 +69,11 @@ export async function POST(request: NextRequest) {
   const results: { id: string; action: "quantity" | "cancel"; success: boolean }[] = [];
 
   for (const change of quantityChanges) {
+    const patch: Record<string, unknown> = { quantity: change.quantity };
+    if (change.category !== undefined) patch.product_category = change.category;
     const { data } = await supabase
       .from("community_livestream_orders")
-      .update({ quantity: change.quantity })
+      .update(patch)
       .eq("id", change.id)
       .eq("line_user_id", payload.lineUserId)
       .eq("order_status", "submitted")

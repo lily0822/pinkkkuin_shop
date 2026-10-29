@@ -14,6 +14,7 @@ type DraftItem = LiveConfirmItem & {
   quantity: number;
   unitPrice: string; // 保持字串，讓輸入框可以是空值/半輸入狀態，不強制轉數字
   removed: boolean;
+  gacha: boolean; // 勾選＝扭蛋，預設沒勾＝一般商品
 };
 
 type SubmittedItem = {
@@ -42,7 +43,7 @@ type LiffSendOutcome = "idle" | "sent" | "skipped" | "failed";
 // 不會跳走，只有按下「送出訂單」才打一次 API。
 export function LiveConfirmForm({ token, sessionName, initialItems, orderQueryKeyword, identity }: LiveConfirmFormProps) {
   const [items, setItems] = useState<DraftItem[]>(
-    initialItems.map((item) => ({ ...item, quantity: 1, unitPrice: "", removed: false })),
+    initialItems.map((item) => ({ ...item, quantity: 1, unitPrice: "", removed: false, gacha: false })),
   );
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
@@ -99,6 +100,7 @@ export function LiveConfirmForm({ token, sessionName, initialItems, orderQueryKe
         id: item.id,
         quantity: item.quantity,
         unitPrice: Number(item.unitPrice),
+        category: item.gacha ? "gacha" : "general",
       }));
       const response = await fetch("/api/live/confirm/submit", {
         method: "POST",
@@ -205,6 +207,15 @@ export function LiveConfirmForm({ token, sessionName, initialItems, orderQueryKe
                         isValidPrice(item.unitPrice) ? "border-penguin-peach" : "border-red-300 bg-red-50 text-gray-400"
                       }`}
                     />
+                    <label className="inline-flex h-[30px] items-center gap-1 text-xs font-bold text-penguin-gray">
+                      <input
+                        type="checkbox"
+                        checked={item.gacha}
+                        onChange={(event) => updateItem(item.id, { gacha: event.target.checked })}
+                        className="h-4 w-4 rounded border-penguin-pink-dark accent-penguin-pink-dark"
+                      />
+                      扭蛋
+                    </label>
                   </div>
                 </div>
                 <button

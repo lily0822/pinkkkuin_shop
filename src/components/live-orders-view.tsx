@@ -23,10 +23,12 @@ export type LiveOrderItem = {
   owed: number;
   refundDue: number;
   paidAmount: number;
+  category: "general" | "gacha";
 };
 
 type DraftItem = LiveOrderItem & {
   originalQuantity: number;
+  originalCategory: "general" | "gacha";
   removed: boolean;
   cancelled: boolean;
 };
@@ -85,7 +87,13 @@ export function LiveOrdersView({
 }: LiveOrdersViewProps) {
   const initialItems = [...unpaidItems, ...paidItems];
   const [items, setItems] = useState<DraftItem[]>(
-    initialItems.map((item) => ({ ...item, originalQuantity: item.quantity, removed: false, cancelled: false })),
+    initialItems.map((item) => ({
+      ...item,
+      originalQuantity: item.quantity,
+      originalCategory: item.category,
+      removed: false,
+      cancelled: false,
+    })),
   );
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -96,7 +104,12 @@ export function LiveOrdersView({
   const visibleUnpaidItems = useMemo(() => visibleItems.filter((item) => item.group === "unpaid"), [visibleItems]);
   const visiblePaidItems = useMemo(() => visibleItems.filter((item) => item.group === "paid"), [visibleItems]);
   const dirtyItems = useMemo(
-    () => visibleItems.filter((item) => !item.lockReason && (item.removed || item.quantity !== item.originalQuantity)),
+    () =>
+      visibleItems.filter(
+        (item) =>
+          !item.lockReason &&
+          (item.removed || item.quantity !== item.originalQuantity || item.category !== item.originalCategory),
+      ),
     [visibleItems],
   );
   const canSave = dirtyItems.length > 0 && !saving;
@@ -109,13 +122,21 @@ export function LiveOrdersView({
     setItems((current) => current.map((item) => (item.id === id ? { ...item, removed: !item.removed } : item)));
   }
 
+  function updateCategory(id: string, gacha: boolean) {
+    setItems((current) =>
+      current.map((item) => (item.id === id ? { ...item, category: gacha ? "gacha" : "general" } : item)),
+    );
+  }
+
   async function handleSave() {
     if (!canSave) return;
     setSaving(true);
     setSaveError("");
     setSaveNotice("");
     try {
-      const quantityChanges = dirtyItems.filter((item) => !item.removed).map((item) => ({ id: item.id, quantity: item.quantity }));
+      const quantityChanges = dirtyItems
+        .filter((item) => !item.removed)
+        .map((item) => ({ id: item.id, quantity: item.quantity, category: item.category }));
       const cancelIds = dirtyItems.filter((item) => item.removed).map((item) => item.id);
       const response = await fetch("/api/live/orders/update", {
         method: "POST",
@@ -140,7 +161,8 @@ export function LiveOrdersView({
       setItems((current) =>
         current.map((item) => {
           if (succeededCancelIds.has(item.id)) return { ...item, cancelled: true };
-          if (succeededQuantityIds.has(item.id)) return { ...item, originalQuantity: item.quantity, removed: false };
+          if (succeededQuantityIds.has(item.id))
+            return { ...item, originalQuantity: item.quantity, originalCategory: item.category, removed: false };
           if (failedIds.has(item.id)) {
             // 送出時才發現這筆已經被標記採買/進入匯款流程，不能靜默失敗——
             // 把這筆鎖起來、復原成送出前的數量，明確告知客人。
@@ -186,7 +208,12 @@ export function LiveOrdersView({
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-black text-penguin-gray">{item.productName || "商品"}</p>
+          <p className="truncate text-sm font-black text-penguin-gray">
+            {item.productName || "商品"}
+            {item.lockReason && item.category === "gacha" ? (
+              <span className="ml-1 text-xs font-bold text-penguin-pink-dark">扭蛋</span>
+            ) : null}
+          </p>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             <StatusChipBadge chip={item.purchaseChip} />
             <StatusChipBadge chip={item.paymentChip} />
@@ -198,7 +225,7 @@ export function LiveOrdersView({
           {item.lockReason ? (
             <p className="mt-1 text-xs font-bold text-gray-400">訂購數量 {item.quantity}</p>
           ) : (
-            <div className="mt-1.5 flex items-center gap-2">
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
               <div className="inline-flex h-[30px] items-center overflow-hidden rounded-full border-[1.5px] border-penguin-pink-dark bg-white">
                 <button
                   type="button"
@@ -220,6 +247,16 @@ export function LiveOrdersView({
                   ＋
                 </button>
               </div>
+              <label className="inline-flex h-[30px] items-center gap-1 text-xs font-bold text-penguin-gray">
+                <input
+                  type="checkbox"
+                  checked={item.category === "gacha"}
+                  disabled={item.removed}
+                  onChange={(event) => updateCategory(item.id, event.target.checked)}
+                  className="h-4 w-4 rounded border-penguin-pink-dark accent-penguin-pink-dark"
+                />
+                扭蛋
+              </label>
               <button
                 type="button"
                 onClick={() => toggleRemoved(item.id)}

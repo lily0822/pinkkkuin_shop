@@ -23,6 +23,7 @@ const PHOTO_BUCKET = "community-livestream-photos";
 const SIGNED_URL_TTL_SECONDS = 60 * 10; // admin-view thumbnail only, short-lived
 const PURCHASE_STATUSES = new Set(["not_bought", "bought"]);
 const PAYMENT_STATUSES = new Set(["unpaid", "confirming", "paid"]);
+const PRODUCT_CATEGORIES = new Set(["general", "gacha"]);
 
 async function guardBackendRequest(request: NextRequest) {
   if (getBackendRuntime() === "unknown") {
@@ -52,6 +53,7 @@ export async function GET(request: NextRequest) {
   const q = (incoming.searchParams.get("q") || "").trim().toLocaleLowerCase().slice(0, 120);
   const purchaseStatus = (incoming.searchParams.get("purchaseStatus") || "").trim();
   const paymentStatus = (incoming.searchParams.get("paymentStatus") || "").trim();
+  const productCategory = (incoming.searchParams.get("productCategory") || "").trim();
   const unrecognizedOnly = incoming.searchParams.get("unrecognizedOnly") === "1";
   const priceDisputedOnly = incoming.searchParams.get("priceDisputedOnly") === "1";
   // 階段二（結算模型）新增的兩個快篩，跟 unrecognizedOnly 一樣在記憶體裡
@@ -83,7 +85,7 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from("community_livestream_orders")
       .select(
-        "id, line_user_id, line_display_name, nickname, product_name, unit_price, customer_unit_price, seller_unit_price, purchased_quantity, remittance_id, total_price, quantity, recognized_confidence, purchase_status, payment_status, notes, photo_storage_path, price_disputed_at, price_dispute_suggested_price, paid_amount, refunded_at, refunded_amount, created_at, updated_at",
+        "id, line_user_id, line_display_name, nickname, product_name, unit_price, customer_unit_price, seller_unit_price, purchased_quantity, remittance_id, total_price, quantity, recognized_confidence, purchase_status, payment_status, notes, photo_storage_path, price_disputed_at, price_dispute_suggested_price, paid_amount, refunded_at, refunded_amount, product_category, created_at, updated_at",
       )
       // staged（客人還沒送出的暫存照片）跟 cancelled 永遠不出現在任何
       // 後台列表——這次改版新增的中間狀態，既有的訂單管理畫面本來就不
@@ -100,6 +102,7 @@ export async function GET(request: NextRequest) {
 
     if (PURCHASE_STATUSES.has(purchaseStatus)) query = query.eq("purchase_status", purchaseStatus);
     if (PAYMENT_STATUSES.has(paymentStatus)) query = query.eq("payment_status", paymentStatus);
+    if (PRODUCT_CATEGORIES.has(productCategory)) query = query.eq("product_category", productCategory);
     // 連線代購下單改版 第二階段：新流程的訂單一律有 customer_unit_price
     // （確認頁必填），unit_price 永遠是 null——這個「無法辨識價格」快篩
     // 現在只該命中三個欄位都是 null 的真正舊資料，不能只看 unit_price。
@@ -232,6 +235,7 @@ export async function GET(request: NextRequest) {
             row.price_dispute_suggested_price === null || row.price_dispute_suggested_price === undefined
               ? null
               : Number(row.price_dispute_suggested_price),
+          category: PRODUCT_CATEGORIES.has(String(row.product_category)) ? String(row.product_category) : "general",
           paidAmount: Number(row.paid_amount || 0),
           owed: settlement.owed,
           refundDue: settlement.refundDue,

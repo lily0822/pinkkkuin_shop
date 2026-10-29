@@ -1227,30 +1227,13 @@ async function buildRemitItemBlock(row: RemitEligibleRow, notYetPurchased: boole
   return { type: "box", layout: "horizontal", spacing: "md", contents: rowContents };
 }
 
-// 功能五：「我要匯款」觸發——不再直接列清單，改回一張「連線／預購」
-// 兩顆按鈕的卡片：兩種匯款的資料來源完全不同（連線訂單 vs 網站預購
-// 訂單），選了哪種才知道要查哪張表。
-async function handleRemittanceTrigger(
-  supabase: SupabaseService,
-  userId: string,
-  replyToken: string | undefined,
-  templates: LivestreamReplyTemplates,
-) {
-  const bubble = {
-    type: "bubble",
-    body: {
-      type: "box",
-      layout: "vertical",
-      spacing: "md",
-      contents: [{ type: "text", text: renderLivestreamReplyTemplate(templates.remittance_choose_kind), wrap: true, size: "sm" }],
-    },
-    footer: buildCuteButtonFooter([
-      { key: "remit_live", label: "連線", action: { type: "postback", label: "連線", data: "action=remit_start&kind=live", displayText: "連線" } },
-      { key: "remit_preorder", label: "預購", action: { type: "postback", label: "預購", data: "action=remit_start&kind=preorder", displayText: "預購" } },
-    ]),
-  };
-  if (replyToken) await sendLineReply(replyToken, [{ type: "flex", altText: "請選擇要匯款的類型", contents: bubble }]);
-}
+// 功能五：「我要匯款」觸發——【一般商品／扭蛋 分類 v2】這輪起，兩種都
+// 是連線商品、匯款不分類，不再問「連線／預購」，直接進連線匯款流程
+// （等同查詢訂單卡片上的【我要匯款】按鈕，見下面 handleRemitStartLive）。
+// 「連線／預購」選擇卡片（原 handleRemittanceTrigger）、
+// remittance_choose_kind 範本、handleRemitStartPreorder、postback
+// remit_start&kind=preorder 的處理全部保留不刪，只是畫面上不再觸發，
+// 保留以後要重新開放「預購」匯款時可以直接接回來。
 
 // postback action=remit_start&kind=preorder — 這輪只做「連線」，預購
 // 清單的資料來源（網站 orders 表 × member_line_accounts 綁定）還沒
@@ -1730,7 +1713,7 @@ async function handleTextMessage(
   }
 
   if (matchesEnabledGroup(text, keywords, enabled, "remittance")) {
-    await handleRemittanceTrigger(supabase, userId, replyToken, templates);
+    await handleRemitStartLive(supabase, userId, replyToken, templates);
     return;
   }
 
