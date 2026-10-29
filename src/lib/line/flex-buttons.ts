@@ -21,6 +21,8 @@ export const BUTTON_ICONS: Record<string, string> = {
   remit_live: "",
   remit_preorder: "",
   remit_quickstart: "",
+  photo_confirm: "",
+  select_bank: "",
   copy_bank_account: "",
   transfer_done: "",
   amount_correct: "",

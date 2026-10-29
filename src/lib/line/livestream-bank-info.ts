@@ -18,6 +18,14 @@ export const LIVESTREAM_BANK_ACCOUNT_LABELS: Record<LivestreamBankAccountKey, st
   cathay: "國泰",
 };
 
+// 複製帳號按鈕用——銀行代號，複製出去的文字要變成「代號 帳號」。只在
+// 複製時附加，後台存的帳號文字本身不變。
+export const LIVESTREAM_BANK_ACCOUNT_CODES: Record<LivestreamBankAccountKey, string> = {
+  zhongxin: "822",
+  fubon: "012",
+  cathay: "013",
+};
+
 export type LivestreamBankAccounts = Record<LivestreamBankAccountKey, string>;
 
 const SETTINGS_TYPE = "community-livestream-bank-info";

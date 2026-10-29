@@ -7,11 +7,11 @@ import {
   getLineUserProfile,
   sendLineReply,
   sendLineReplyText,
-  type LineQuickReply,
   type LineReplyMessage,
 } from "./client";
 import {
   getLivestreamBankAccounts,
+  LIVESTREAM_BANK_ACCOUNT_CODES,
   LIVESTREAM_BANK_ACCOUNT_KEYS,
   LIVESTREAM_BANK_ACCOUNT_LABELS,
   type LivestreamBankAccountKey,
@@ -365,11 +365,13 @@ async function resolveOrderingGate(
       // 才會成立。
       await setBotState(supabase, userId, { order_mode: null });
       const idleText = renderLivestreamReplyTemplate(templates.order_idle_closed, { 數量: String(count || 0) });
-      // 還有暫存照片時附上「傳好了」快速按鈕，客人不用自己打字——跟
-      // 「我要下單」「收到照片」那兩則提醒同一套 photoConfirmQuickReply。
+      // 還有暫存照片時附上「傳好了」卡片按鈕，客人不用自己打字——跟
+      // 「我要下單」「收到照片」那兩則提醒同一套 buildPhotoConfirmBubble。
       // 0 張時維持純文字，沒有東西可以確認、按了也只會撲空。
       if (replyToken && count) {
-        await sendLineReply(replyToken, [{ type: "text", text: idleText, quickReply: photoConfirmQuickReply(keywords) }]);
+        await sendLineReply(replyToken, [
+          { type: "flex", altText: idleText, contents: buildPhotoConfirmBubble(idleText, keywords) },
+        ]);
       } else {
         await reply(replyToken, idleText);
       }
@@ -380,12 +382,28 @@ async function resolveOrderingGate(
   return true;
 }
 
-// 「傳好了」快速按鈕——用後台可設定的 photo_confirm 關鍵字組的第一個詞
-// 當按鈕送出的文字，不寫死「傳好了」三個字，這樣即使管理員改了關鍵字
-// 設定，按鈕送出的文字還是會命中對應的指令。
-function photoConfirmQuickReply(keywords: LivestreamKeywords): LineQuickReply {
+// 「傳好了」卡片按鈕——原本是 Quick Reply，這輪改成跟其他卡片一樣的
+// 一般 Flex 按鈕（buildCuteButtonFooter），三個會用到的地方（下單歡迎、
+// 收到照片、閒置關閉提醒）共用同一個 bubble 產生器。用後台可設定的
+// photo_confirm 關鍵字組的第一個詞當按鈕送出的文字，不寫死「傳好了」
+// 三個字，這樣即使管理員改了關鍵字設定，按鈕送出的文字還是會命中對應
+// 的指令。
+function photoConfirmButtonSpec(keywords: LivestreamKeywords): CuteButtonSpec {
   const text = keywords.photo_confirm[0] || "傳好了";
-  return { items: [{ type: "action", action: { type: "message", label: "傳好了", text } }] };
+  return { key: "photo_confirm", label: "傳好了", action: { type: "message", label: "傳好了", text } };
+}
+
+function buildPhotoConfirmBubble(text: string, keywords: LivestreamKeywords): Record<string, unknown> {
+  return {
+    type: "bubble",
+    body: {
+      type: "box",
+      layout: "vertical",
+      spacing: "md",
+      contents: [{ type: "text", text, wrap: true, size: "sm" }],
+    },
+    footer: buildCuteButtonFooter([photoConfirmButtonSpec(keywords)]),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -425,12 +443,9 @@ async function handleOrderTrigger(
   });
 
   if (replyToken) {
+    const welcomeText = renderLivestreamReplyTemplate(templates.order_welcome);
     await sendLineReply(replyToken, [
-      {
-        type: "text",
-        text: renderLivestreamReplyTemplate(templates.order_welcome),
-        quickReply: photoConfirmQuickReply(keywords),
-      },
+      { type: "flex", altText: welcomeText, contents: buildPhotoConfirmBubble(welcomeText, keywords) },
     ]);
   }
 }
@@ -554,12 +569,9 @@ async function handleImageMessage(
     .select("line_user_id");
 
   if (claimed && claimed.length > 0 && replyToken) {
+    const photoFirstText = renderLivestreamReplyTemplate(templates.order_photo_first);
     await sendLineReply(replyToken, [
-      {
-        type: "text",
-        text: renderLivestreamReplyTemplate(templates.order_photo_first),
-        quickReply: photoConfirmQuickReply(keywords),
-      },
+      { type: "flex", altText: photoFirstText, contents: buildPhotoConfirmBubble(photoFirstText, keywords) },
     ]);
   }
 }
@@ -1158,6 +1170,14 @@ async function handleOrderManageTrigger(
 // 系統，跟這裡完全是兩回事）。
 // ---------------------------------------------------------------------------
 
+// 複製出去的文字補上銀行代號（代號 空格 帳號），方便客人轉帳時直接貼；
+// 帳號本來就以代號開頭時不重複加一次。
+function withBankCode(key: LivestreamBankAccountKey, account: string): string {
+  const code = LIVESTREAM_BANK_ACCOUNT_CODES[key];
+  if (!code || account.startsWith(code)) return account;
+  return `${code} ${account}`;
+}
+
 // 收款帳號複製按鈕——LINE Flex 原生 clipboard 按鈕，點了直接把帳號文字
 // 複製到客人剪貼簿。onlyKey 給定時只顯示那一家（客人選完銀行之後），
 // 不給時列出全部已填帳號的銀行。
@@ -1171,7 +1191,7 @@ function buildBankAccountButtonsBubble(accounts: LivestreamBankAccounts, onlyKey
       action: {
         type: "clipboard",
         label: `複製${LIVESTREAM_BANK_ACCOUNT_LABELS[key]}帳號`,
-        clipboardText: accounts[key],
+        clipboardText: withBankCode(key, accounts[key]),
       },
     }));
   if (!buttons.length) return null;
@@ -1195,12 +1215,12 @@ type RemitEligibleRow = {
 };
 
 // 匯款清單項目：圖片+商品名稱（跟 buildPhotoNameItemBlock 同一套排版）
-// 再加一行「數量 N」，還沒採買的項目額外補一句「（還沒採買，用訂購
-// 數量估算）」文字提醒；owed>0 且 paid_amount>0（補差額：之前已經匯過
-// 一部分，這次只是補差額）再多補一句「補差額 NT$owed」。這三種清單項目
-// 長得很像但內容不同，不跟 buildPhotoNameItemBlock 合併，避免把「傳好
-// 了」確認清單跟匯款清單的排版耦合在一起。
-async function buildRemitItemBlock(row: RemitEligibleRow, notYetPurchased: boolean, owed: number): Promise<object> {
+// 再加一行「NT$單價 × 數量 = NT$小計」（不管有沒有採買都用同一種顯示，
+// 不再額外標「還沒採買，用訂購數量估算」）；owed>0 且 paid_amount>0
+// （補差額：之前已經匯過一部分，這次只是補差額）再多補一句「補差額
+// NT$owed」。這三種清單項目長得很像但內容不同，不跟 buildPhotoNameItemBlock
+// 合併，避免把「傳好了」確認清單跟匯款清單的排版耦合在一起。
+async function buildRemitItemBlock(row: RemitEligibleRow, effectiveUnitPrice: number | null, owed: number): Promise<object> {
   const imageUrl = row.photo_storage_path
     ? await createSignedUrl(PHOTO_BUCKET, row.photo_storage_path, CAROUSEL_IMAGE_SIGNED_URL_TTL_SECONDS)
     : null;
@@ -1212,9 +1232,13 @@ async function buildRemitItemBlock(row: RemitEligibleRow, notYetPurchased: boole
     rowContents.push({ type: "image", url: imageUrl, size: "60px", aspectMode: "cover", aspectRatio: "1:1", flex: 0 });
   }
   const textContents: object[] = [{ type: "text", text: row.product_name || "商品", weight: "bold", wrap: true, size: "sm" }];
+  const quantityText =
+    effectiveUnitPrice === null
+      ? `數量 ${quantity}`
+      : `NT$${Math.round(effectiveUnitPrice)} × ${quantity} = NT$${Math.round(effectiveUnitPrice * quantity)}`;
   textContents.push({
     type: "text",
-    text: notYetPurchased ? `數量 ${quantity}（還沒採買，用訂購數量估算）` : `數量 ${quantity}`,
+    text: quantityText,
     size: "xs",
     color: "#6b7280",
     wrap: true,
@@ -1284,7 +1308,7 @@ async function handleRemitStartLive(
       refundedAt: row.refunded_at,
       refundedAmount: row.refunded_amount,
     });
-    return { row, settlement };
+    return { row, settlement, effectiveUnitPrice };
   });
   const shortageCount = enriched.filter((e) => e.settlement.paymentChip.label === "不需匯款").length;
   const eligible = enriched.filter((e) => e.settlement.owed > 0);
@@ -1311,7 +1335,7 @@ async function handleRemitStartLive(
   const itemBlocks = await Promise.all(
     eligible.map(async (e) => {
       expectedAmount += e.settlement.owed;
-      return buildRemitItemBlock(e.row, e.row.purchased_quantity === null, e.settlement.owed);
+      return buildRemitItemBlock(e.row, e.effectiveUnitPrice, e.settlement.owed);
     }),
   );
 
@@ -1323,8 +1347,9 @@ async function handleRemitStartLive(
     remit_order_ids: eligible.map((e) => e.row.id),
   });
 
-  const bankQuickReplyItems = availableBankKeys.map((key) => ({
-    type: "action" as const,
+  const bankButtons: CuteButtonSpec[] = availableBankKeys.map((key) => ({
+    key: "select_bank",
+    label: LIVESTREAM_BANK_ACCOUNT_LABELS[key],
     action: {
       type: "postback",
       label: LIVESTREAM_BANK_ACCOUNT_LABELS[key],
@@ -1337,9 +1362,20 @@ async function handleRemitStartLive(
     renderLivestreamReplyTemplate(templates.remittance_items_intro, { 金額: String(expectedAmount) }) +
     (shortageCount ? renderLivestreamReplyTemplate(templates.remittance_shortage_note, { 數量: String(shortageCount) }) : "");
 
+  // 選銀行這輪改成跟其他卡片一樣的一般 Flex 按鈕（原本是 Quick Reply），
+  // 放在獨立的一則訊息裡（說明文字在上、按鈕在下），跟商品清單那則
+  // bubble 完全分開——這樣商品清單再長也不會擠掉選銀行的按鈕。
   const messages: LineReplyMessage[] = [
     { type: "flex", altText: "本次要匯款的商品", contents: buildOrderListBubble(itemBlocks) },
-    { type: "text", text: introText, quickReply: { items: bankQuickReplyItems } },
+    {
+      type: "flex",
+      altText: introText,
+      contents: {
+        type: "bubble",
+        body: { type: "box", layout: "vertical", spacing: "md", contents: [{ type: "text", text: introText, wrap: true, size: "sm" }] },
+        footer: buildCuteButtonFooter(bankButtons),
+      },
+    },
   ];
   if (replyToken) await sendLineReply(replyToken, messages);
 }
