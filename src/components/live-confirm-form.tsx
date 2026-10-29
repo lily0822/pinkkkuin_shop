@@ -142,17 +142,8 @@ export function LiveConfirmForm({ token, sessionName, initialItems, orderQueryKe
     <main className="bg-white pb-28">
       <div className="mx-auto max-w-md px-4">
         <LiveIdentityRow lineName={identity.lineName} binding={identity.binding} />
-        <h1 className="mt-2 text-center text-[17px] font-black text-penguin-gray">確認訂單</h1>
-        <p className="mt-1 text-center text-xs text-penguin-gray">
-          {sessionName ? `${sessionName}・` : ""}預設每個商品 1 個，不是商品的照片請按移除
-        </p>
-
-        <div
-          className="mt-3 rounded-xl border px-3 py-2 text-xs leading-6 text-penguin-gray"
-          style={{ backgroundColor: "#fff9df", borderColor: "#f0dc8f" }}
-        >
-          每張都要填單價，請照照片上的價格填。賣家會再核對，如果有出入，會以賣家確認的價格為準。
-        </div>
+        <h1 className="mt-2 text-center text-[17px] font-black text-penguin-gray">{sessionName || "確認訂單"}</h1>
+        <p className="mt-1 text-center text-xs text-penguin-gray">請調整商品數量，扭蛋商品請打勾</p>
 
         {submitError ? (
           <p role="status" className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm font-bold text-red-500">
