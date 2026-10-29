@@ -136,7 +136,7 @@ export function MemberLivestreamOrders({ theme }: { theme: LivestreamOrdersTheme
                     type="button"
                     onClick={() => cancelOrder(order.id)}
                     disabled={cancellingId === order.id}
-                    className="flex-shrink-0 rounded-full border-2 border-red-100 bg-white px-4 py-2 text-xs font-black text-red-500 disabled:opacity-60"
+                    className="flex-shrink-0 rounded-full bg-red-100 px-3 py-1.5 text-xs font-bold text-[#111] disabled:opacity-60"
                   >
                     {cancellingId === order.id ? "取消中..." : "取消這項"}
                   </button>

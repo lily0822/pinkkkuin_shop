@@ -751,7 +751,7 @@ async function buildQueryItemRow(row: OrderManageRow, hasPhoto: boolean): Promis
       : null;
   const effectiveUnitPrice = effectiveLivestreamUnitPrice(row.seller_unit_price, row.customer_unit_price, row.unit_price);
   const isPartial = row.purchased_quantity !== null && row.purchased_quantity > 0 && row.purchased_quantity < row.quantity;
-  const quantityText = isPartial ? `買到 ${row.purchased_quantity}（訂 ${row.quantity}）` : String(row.quantity);
+  const quantityText = isPartial ? `買到 ${row.purchased_quantity}` : String(row.quantity);
   const priceText = effectiveUnitPrice === null ? `單價未定 × ${quantityText}` : `NT$${effectiveUnitPrice} × ${quantityText}`;
 
   const purchaseChip = computeLivestreamPurchaseChip(row.purchased_quantity, row.quantity);
@@ -775,15 +775,23 @@ async function buildQueryItemRow(row: OrderManageRow, hasPhoto: boolean): Promis
     justifyContent: "center",
     contents: [
       { type: "text", text: row.product_name || "商品", weight: "bold", size: "sm", wrap: true },
-      { type: "text", text: priceText, size: "xs", color: "#6b7280", wrap: true },
       {
         type: "box",
         layout: "horizontal",
-        spacing: "xs",
         margin: "xs",
+        alignItems: "center",
         contents: [
-          buildQueryChipBox(purchaseChip.label, purchaseChip.tone),
-          buildQueryChipBox(settlement.paymentChip.label, settlement.paymentChip.tone),
+          { type: "text", text: priceText, size: "xs", color: "#6b7280", wrap: true, flex: 1 },
+          {
+            type: "box",
+            layout: "horizontal",
+            spacing: "xs",
+            flex: 0,
+            contents: [
+              buildQueryChipBox(purchaseChip.label, purchaseChip.tone),
+              buildQueryChipBox(settlement.paymentChip.label, settlement.paymentChip.tone),
+            ],
+          },
         ],
       },
     ],

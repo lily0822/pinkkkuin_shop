@@ -201,7 +201,7 @@ export function LiveConfirmForm({ token, sessionName, initialItems, orderQueryKe
                       placeholder="單價（必填）"
                       value={item.unitPrice}
                       onChange={(event) => updateItem(item.id, { unitPrice: event.target.value.replace(/[^0-9]/g, "") })}
-                      className={`h-[30px] w-24 rounded-[9px] border-[1.5px] px-2 text-right text-sm font-black text-penguin-gray outline-none focus:border-penguin-pink-dark ${
+                      className={`h-[30px] w-24 rounded-[9px] border-[1.5px] px-2 text-right text-xs font-black text-penguin-gray outline-none focus:border-penguin-pink-dark ${
                         isValidPrice(item.unitPrice) ? "border-penguin-peach" : "border-red-300 bg-red-50 text-gray-400"
                       }`}
                     />

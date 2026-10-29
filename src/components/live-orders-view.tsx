@@ -223,7 +223,7 @@ export function LiveOrdersView({
               <button
                 type="button"
                 onClick={() => toggleRemoved(item.id)}
-                className={`text-xs font-bold ${item.removed ? "text-red-500" : "text-gray-400 hover:text-red-500"}`}
+                className={`ml-auto shrink-0 rounded-full px-3 py-1.5 text-xs font-bold text-[#111] ${item.removed ? "bg-red-300" : "bg-red-100"}`}
               >
                 {item.removed ? "已標記取消（再按一次還原）" : "取消這項"}
               </button>
