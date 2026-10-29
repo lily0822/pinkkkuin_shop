@@ -68,23 +68,29 @@ export function effectiveLivestreamRefundDue(shouldPay: number | null, paidAmoun
   return Math.max(0, paidAmount - shouldPay);
 }
 
-// 付款狀態標籤——決策順序（由上往下，符合第一條就停）：
-//   1. 已經標記退款 → 已退款 NT$refundedAmount
-//   2. 缺貨（買到 0 個）且從未付款 → 不需匯款（這組商品本來就不用付錢）
-//   3. 有效單價未定 → 價格未定（不管有沒有已付金額，都還不知道該付多
-//      少，讓賣家看了知道要先填單價）
-//   4. owed>0 且 paid=0 → 未匯款；owed>0 且 paid>0 → 需補款 NT$owed
-//      （同一個 owed>0 條件依「這是不是第一次付」分成兩種文案）
-//   5. refundDue>0 → 預計退款 NT$refundDue（賣家調低單價或缺貨退款，但
-//      還沒按「標記已退款」）
-//   6. 其餘（owed=0、refundDue=0、paid>0）→ 已匯款（已結清）
-// group 欄位決定這筆該出現在查詢訂單／網頁的「還沒匯款」還是「已匯款」
-// 分組：只有「未匯款」「不需匯款」「價格未定且還沒付款」落在 unpaid，
-// 其餘都是 paid（已匯款／需補款在這套新模型裡都代表「已經有過一次或更
-// 多次付款動作」，跟使用者規格的分組定義一致——"owed>0 的項目" 這句在
-// 規格裡其實是指聊天室匯款清單要列出的項目，不是查詢訂單的分組依據；
-// 查詢訂單分組依據是規格原文第六節 2 寫的 paid>0 vs 其餘，這支函式的
-// group 欄位依那一段實作）。
+// 付款狀態標籤——階段二審查修正（2026-10-29）：原本 refundedAt 有值時
+// 會把 owed/refundDue 直接蓋成 0、強制顯示「已退款」，不管 shouldPay/
+// paidAmount 當下算出來是多少。這個蓋寫會把「已退款後賣家又改價/補
+// 採買結果，導致又欠錢或又該退更多」的情況藏起來（客人「我要匯款」
+// 清單看不到這筆、賣家收不到補款）。修正成：owed/refundDue 永遠先照
+// 公式算、不被 refundedAt 覆蓋；refundedAt 只在 owed/refundDue 都已經
+// 是 0（真的結清了）時，才用來決定顯示「已退款」還是「已匯款」。
+//
+// 決策順序（由上往下，符合第一條就停）：
+//   1. 缺貨（買到 0 個）、從未付款、也沒被標記退款過 → 不需匯款（這組
+//      商品本來就不用付錢；若曾經付過款後來被退款，見第 4 條，不是這條）
+//   2. owed>0 且 paid=0 → 未匯款；owed>0 且 paid>0 → 需補款 NT$owed
+//      （同一個 owed>0 條件依「這是不是第一次付」分成兩種文案——曾經被
+//      標記退款過也不影響這個判斷，欠錢就是欠錢）
+//   3. refundDue>0 → 預計退款 NT$refundDue（賣家調低單價/缺貨導致多付，
+//      但還沒按「標記已退款」，或是標記退款後價格又調整，又多出新的
+//      應退款）
+//   4. 其餘（owed=0 且 refundDue=0，真的結清了）：有效單價未定 → 價格
+//      未定；已標記退款 → 已退款 NT$refundedAmount；否則 → 已匯款
+// group 欄位＝查詢訂單／網頁該分到「還沒匯款」還是「已匯款」：owed>0、
+// 「不需匯款」、「價格未定且還沒付款」都在 unpaid 組（見下面各自的
+// group 賦值），其餘（含「預計退款」「已退款」「已匯款」）都在 paid 組，
+// 這點跟修正前沒有變化，只是計算順序改了。
 export type LivestreamPaymentChipTone = "pending" | "paid" | "attention";
 export type LivestreamPaymentChip = { label: string; tone: LivestreamPaymentChipTone };
 export type LivestreamSettlement = {
@@ -109,29 +115,14 @@ export function computeLivestreamSettlement(params: {
   const owed = effectiveLivestreamOwed(shouldPay, paidAmount);
   const refundDue = effectiveLivestreamRefundDue(shouldPay, paidAmount);
 
-  if (refundedAt) {
-    return {
-      shouldPay,
-      owed: 0,
-      refundDue: 0,
-      group: "paid",
-      paymentChip: { label: `已退款 NT$${Math.round(refundedAmount || 0)}`, tone: "paid" },
-    };
-  }
-
   const purchased = purchasedQuantity === null || purchasedQuantity === undefined ? null : Number(purchasedQuantity);
-  if (purchased === 0 && paidAmount === 0) {
-    return { shouldPay, owed, refundDue, group: "unpaid", paymentChip: { label: "不需匯款", tone: "pending" } };
-  }
 
-  if (effectiveUnitPrice === null) {
-    return {
-      shouldPay,
-      owed,
-      refundDue,
-      group: paidAmount === 0 ? "unpaid" : "paid",
-      paymentChip: { label: "價格未定", tone: "pending" },
-    };
+  // 缺貨且從未付款、也從未被標記退款過——跟「owed/refundDue 剛好都是 0」
+  // 的其他情況（例如已結清）語意不同，需要先判斷排除。曾經被標記退款過
+  // 的缺貨項目（客人先付款、後來缺貨、賣家標記已退款）要走下面第 4 條
+  // 顯示「已退款」，不是這條。
+  if (purchased === 0 && paidAmount === 0 && !refundedAt) {
+    return { shouldPay, owed, refundDue, group: "unpaid", paymentChip: { label: "不需匯款", tone: "pending" } };
   }
 
   if (owed > 0) {
@@ -147,6 +138,21 @@ export function computeLivestreamSettlement(params: {
 
   if (refundDue > 0) {
     return { shouldPay, owed, refundDue, group: "paid", paymentChip: { label: `預計退款 NT$${Math.round(refundDue)}`, tone: "attention" } };
+  }
+
+  // owed === 0 且 refundDue === 0：真的結清了（或價格未定、從未產生欠款）。
+  if (effectiveUnitPrice === null) {
+    return {
+      shouldPay,
+      owed,
+      refundDue,
+      group: paidAmount === 0 ? "unpaid" : "paid",
+      paymentChip: { label: "價格未定", tone: "pending" },
+    };
+  }
+
+  if (refundedAt) {
+    return { shouldPay, owed, refundDue, group: "paid", paymentChip: { label: `已退款 NT$${Math.round(refundedAmount || 0)}`, tone: "paid" } };
   }
 
   return { shouldPay, owed, refundDue, group: "paid", paymentChip: { label: "已匯款", tone: "paid" } };

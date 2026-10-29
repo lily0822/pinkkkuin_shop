@@ -959,7 +959,11 @@ async function handleOrderManageTrigger(
   const sumPaid = paidEnriched.reduce((sum, e) => sum + e.row.paid_amount, 0);
   const sumRefundDue = paidEnriched.reduce((sum, e) => sum + e.settlement.refundDue, 0);
   const sumRefunded = paidEnriched.reduce((sum, e) => sum + Number(e.row.refunded_amount || 0), 0);
-  const allPaidRefunded = paidEnriched.length > 0 && paidEnriched.every((e) => e.row.refunded_at !== null);
+  // 用「這筆目前算出來的標籤是不是已退款」判斷，不是單看 refunded_at
+  // 是否有值——退款標記之後賣家可能又改價/補採買結果，讓這筆重新出現
+  // 需補款或預計退款（見 computeLivestreamSettlement 的審查修正），這種
+  // 情況下 refunded_at 仍然有值，但這筆已經不該算進「全部都已退款」。
+  const allPaidRefunded = paidEnriched.length > 0 && paidEnriched.every((e) => e.settlement.paymentChip.label.startsWith("已退款"));
 
   // 【調整訂單】只在還有「未採買且未付款」（在 /live/orders 上真的能改）
   // 的商品時才顯示；【我要匯款】只在還有欠款（Σowed>0）時才顯示。兩者
