@@ -3,9 +3,9 @@
 ## Current baseline
 
 - Branch: `official-next`.
-- Feature commit: `a1c5948`（連線代購 LINE 下單改版 第三版 階段一：客人頁面 LOGO 修正、預購卡片按鈕統一、下單前必須先綁定、統一綁定（移除舊社群名單）— see "第三版 階段一" below）。**這輪新增 migration `202610290001`，使用者還沒套用**（見下方「第三版 階段一」小節的完整 SQL 與套用順序提醒——沒套用前，「社群綁定」後台頁、記事本 LINE 通知、社群訂單/出貨明細的 LINE 名稱顯示這三處會暫時退化，不是程式碼錯誤）。後台子模組 `d90da6c`（移除「社群名單」頁、社群綁定頁補待核准/核准流程與「下單前必須先綁定」開關，detached HEAD on `463875e`，尚未 push 到 `backend-staging`）。Builds on `44524aa`（查詢訂單卡片：補位元組大小防護，避免超過 LINE 50KB 限制整則回覆失敗 — see "聊天室卡片改版（粉紅膠囊按鈕）" below 的「位元組大小防護」小節）。Builds on `374548b`（連線代購 LINE 下單改版：聊天室卡片改版（粉紅膠囊按鈕）＋查詢訂單直接列商品＋閒置提醒補「傳好了」按鈕 — see "聊天室卡片改版（粉紅膠囊按鈕）" below）。Builds on `da0e7b6`（連線代購 LINE 下單改版：新增社群綁定（暱稱／IG）功能 — see "社群綁定（暱稱／IG）" below）。後台子模組 `a73cb47`（social binding 管理頁 + 三處名稱顯示改用徽章，detached HEAD on `463875e`，尚未 push 到 `backend-staging`，見下方「Backend submodule safety」）。Builds on `ffbffaf`（連線代購：客人專用頁面改用獨立版面＋顯示客人身分 — see "客人專用頁面：獨立版面 + 顯示客人身分" below）。Builds on `2cf76c9`（連線代購：機器人卡片改用 LIFF 開半屏視窗＋送出後自動查詢訂單＋修兩個已知問題 — see "LIFF 整合 + 兩個已知問題修正" below）。Builds on `ce13afc`（連線代購 LINE 下單改版 第三階段審查修正：金額可回報＋送出匯款改單一交易 RPC＋匯款紀錄記場次 — see "第三階段審查修正" below）、後台子模組 `dbd3a45`（匯款紀錄新增場次篩選＋文案設定補 4 個新 key）。Builds on `e89abb2`（連線代購 LINE 下單改版 第三階段：匯款流程全面改版＋買到幾個上限 — see "LINE 圖片下單 + 社群連線訂單" below）、後台子模組 `9e69abf`（買到幾個上限的前端 clamp）。Builds on `e27c4cd`（第二階段：後台採買「買到幾個」＋查詢/修改/取消訂單網頁）、後台子模組 `04af446`；`07521c6`（第一階段：移除自動辨識、改成連線場次＋客人網頁自填數量單價）、後台子模組 `0279be3`（連線場次頁籤，detached HEAD on `d741839`）。Prior feature commit: `5c27528` (關鍵字設定每組新增啟用/停用開關 — see "Configurable trigger keywords" below). Builds on `53f1865` (修正匯款格式誤判＋後台手動新增匯款紀錄＋匯款紀錄匯出 Excel — see 功能五/八 below), `ec430d7` (社群連線訂單新增「依客人統計」檢視＋匯款紀錄頁籤改成「人名→匯款紀錄」雙層結構 — see 功能三/九 below), `914b4a7` (社群連線訂單卡片重新排版，修正手機版按鈕超框問題 — see 功能三 below), `716517c` (新增「已購買」快速打勾按鈕＋狀態變更改成免刷新局部更新 — see 功能三 below), `5dc8223` (數量改成常駐輸入框免刷新＋新增批次編輯模式＋修正商品編號競態條件 — see 功能三/功能二 below), `eb982b9` (後台新增「匯款紀錄」頁籤 — see 功能八 below), `66fffe8` (拆分獨立「查詢訂單」功能＋取消訂單排版改直向 — see 功能六/七 below), `1b78922` (「傳好了」改回純文字確認＋新增「查詢訂單」關鍵字 — see 功能二/六 below), `229861e` (匯款等待格式時優先辨識其他指令＋新增「取消匯款」逃生指令 — see 功能五 below), `e6d7750` (共用清單圖片改回舊版 60px 小圖＋橫向排列 — see 功能二/五 below), `fb5ff58` (統一「傳好了」確認與匯款清單的圖片+商品名稱樣式), `6e66c20` (新增「傳好了」確認信號——先查有沒有收到照片再回覆), `11e68b7` (匯款流程全面調整：純圖片清單＋三顆銀行複製按鈕＋固定格式回報 — see 功能三/五 below), `3b69c0b` (移除形同虛設的「價格異常」篩選按鈕與紅色提示), `80e1b81` (拿掉客人端數量/價格互動，匯款/取消訂單改成純展示 — see 功能二/五/六 below), `1f85eda` (移除暱稱綁定/審核機制 — see 功能一 below), `2a54dcc` (batch-delete button), `e276e2f` (customer self-delete for pending items + card photo aspect-ratio/height fix), `5ca7e2b` (price-dispute reporting, 7th pending migration), `32af0ee` (card image/layout round), and `32f8a08` (tesseract.js worker-thread Vercel crash fix — tesseract.js/sharp and the OCR feature it backed were removed entirely in `07521c6` above, so this fix is now moot history).
-- Storefront/shared backend Staging: `https://pinkkkuin-staging.vercel.app` → `dpl_255fHedJ6Wys392FFKyQTnbn4Qb4`（2026-10-29 更新：commit `a1c5948`，後台子模組 `d90da6c`，內容為「第三版 階段一」，見下方小節。**migration `202610290001` 還沒套用**，套用前「社群綁定」頁清單/記事本通知/社群訂單出貨明細 LINE 名稱顯示三處會暫時退化，見下方小節的部署順序提醒）。
-- **Production (2026-10-31 更版)**: `https://pinkkkuin-shop.vercel.app` → `https://pinkkkuin-shop-fz15li5ct-lilys-projects-2a8e834c.vercel.app`，程式碼為 commit `6ce0c9c`、後台子模組 `a73cb479`（內容：聊天室卡片改版（粉紅膠囊 A 款、多按鈕同一行、查詢訂單直接列商品並有位元組大小防護、閒置提醒附「傳好了」按鈕）＋連線代購 LINE 下單改版全三階段＋LIFF 半屏開啟與送出後自動傳「查詢訂單」＋`/live` 入口頁（接 LIFF 授權導回的 liff.state）＋客人專用獨立版面＋客人身分一行＋匯款金額上限 100 萬＋社群綁定（暱稱／IG：`/live/bind`、後台「社群綁定」頁、新表 `community_line_identities`／`community_line_identity_logs`）＋後台手機版 Shell v2）。正式 Supabase 已套用全部 migration：`202610140001`～`202610190002`、`202610270001`～`202610270005`、`202610280001`～`202610280003`、以及綁定的 `202610280004`～`202610280006`（正式環境用合併版 SQL：004 的表與解除綁定函式＋006 的最終 submit 函式，略過中間版 005，最終狀態與 Staging 相同）。Vercel Production 已設 `NEXT_PUBLIC_LIFF_ID`（正式那組 `2011439114-0iUOPMzM`，Preview 是測試那組 `2011439114-TRoWuo6K`），LIFF 端點分別是 `https://pinkkkuin-shop.vercel.app/live` 與 `https://pinkkkuin-staging.vercel.app/live`。上一版（可一行指令切回，`vercel alias set <網址> pinkkkuin-shop.vercel.app`）：`https://pinkkkuin-shop-rnxc2hdil-lilys-projects-2a8e834c.vercel.app`。預購匯款按鈕維持「尚未開放」。連線代購 LINE 下單改版「第三版 階段一」（客人頁面 LOGO 修正、預購卡片按鈕統一、下單前必須先綁定、統一綁定／移除舊社群名單）已完成並驗證、已部署到 **Staging**（`a1c5948`，見上方），**尚未部署到正式環境**。這輪新增 migration `202610290001`，**使用者還沒套用到任何環境**（Staging 也還沒套，見上方 Staging 那行的提醒）。待修：網站 404 頁沒有標頭（route group 搬移副作用，跟這輪無關的既有待修項目）。部署方式提醒：從 `git archive` 乾淨匯出的資料夾部署，不要用 git worktree、不要從有他人未提交修改的主資料夾部署。
+- Feature commit: `97db0bc`（統一綁定 審查修正：rescan 不再翻案已核准的綁定、歧義查找改回空不任選＋新增「撞名」偵測 — see "第三版 階段一" below 的「審查修正」小節）。**新增 migration `202610290002`，使用者還沒套用**（`202610290001` 已經套用，`202610290002` 是追加修正，不是改那個已套用的檔案）。後台子模組 `f97a7ce`（社群綁定頁新增「撞名」標籤/篩選/統計，detached HEAD on `463875e`，尚未 push 到 `backend-staging`）。Builds on `a1c5948`（連線代購 LINE 下單改版 第三版 階段一：客人頁面 LOGO 修正、預購卡片按鈕統一、下單前必須先綁定、統一綁定（移除舊社群名單）— see "第三版 階段一" below）、後台子模組 `d90da6c`。`202610290001` 已套用到 Staging 並驗證過（搬移 3/3 成功、0 撞名略過、RPC 行為 19/19 測試通過、三個原本會退化的地方全部恢復正常）。Builds on `44524aa`（查詢訂單卡片：補位元組大小防護，避免超過 LINE 50KB 限制整則回覆失敗 — see "聊天室卡片改版（粉紅膠囊按鈕）" below 的「位元組大小防護」小節）。Builds on `374548b`（連線代購 LINE 下單改版：聊天室卡片改版（粉紅膠囊按鈕）＋查詢訂單直接列商品＋閒置提醒補「傳好了」按鈕 — see "聊天室卡片改版（粉紅膠囊按鈕）" below）。Builds on `da0e7b6`（連線代購 LINE 下單改版：新增社群綁定（暱稱／IG）功能 — see "社群綁定（暱稱／IG）" below）。後台子模組 `a73cb47`（social binding 管理頁 + 三處名稱顯示改用徽章，detached HEAD on `463875e`，尚未 push 到 `backend-staging`，見下方「Backend submodule safety」）。Builds on `ffbffaf`（連線代購：客人專用頁面改用獨立版面＋顯示客人身分 — see "客人專用頁面：獨立版面 + 顯示客人身分" below）。Builds on `2cf76c9`（連線代購：機器人卡片改用 LIFF 開半屏視窗＋送出後自動查詢訂單＋修兩個已知問題 — see "LIFF 整合 + 兩個已知問題修正" below）。Builds on `ce13afc`（連線代購 LINE 下單改版 第三階段審查修正：金額可回報＋送出匯款改單一交易 RPC＋匯款紀錄記場次 — see "第三階段審查修正" below）、後台子模組 `dbd3a45`（匯款紀錄新增場次篩選＋文案設定補 4 個新 key）。Builds on `e89abb2`（連線代購 LINE 下單改版 第三階段：匯款流程全面改版＋買到幾個上限 — see "LINE 圖片下單 + 社群連線訂單" below）、後台子模組 `9e69abf`（買到幾個上限的前端 clamp）。Builds on `e27c4cd`（第二階段：後台採買「買到幾個」＋查詢/修改/取消訂單網頁）、後台子模組 `04af446`；`07521c6`（第一階段：移除自動辨識、改成連線場次＋客人網頁自填數量單價）、後台子模組 `0279be3`（連線場次頁籤，detached HEAD on `d741839`）。Prior feature commit: `5c27528` (關鍵字設定每組新增啟用/停用開關 — see "Configurable trigger keywords" below). Builds on `53f1865` (修正匯款格式誤判＋後台手動新增匯款紀錄＋匯款紀錄匯出 Excel — see 功能五/八 below), `ec430d7` (社群連線訂單新增「依客人統計」檢視＋匯款紀錄頁籤改成「人名→匯款紀錄」雙層結構 — see 功能三/九 below), `914b4a7` (社群連線訂單卡片重新排版，修正手機版按鈕超框問題 — see 功能三 below), `716517c` (新增「已購買」快速打勾按鈕＋狀態變更改成免刷新局部更新 — see 功能三 below), `5dc8223` (數量改成常駐輸入框免刷新＋新增批次編輯模式＋修正商品編號競態條件 — see 功能三/功能二 below), `eb982b9` (後台新增「匯款紀錄」頁籤 — see 功能八 below), `66fffe8` (拆分獨立「查詢訂單」功能＋取消訂單排版改直向 — see 功能六/七 below), `1b78922` (「傳好了」改回純文字確認＋新增「查詢訂單」關鍵字 — see 功能二/六 below), `229861e` (匯款等待格式時優先辨識其他指令＋新增「取消匯款」逃生指令 — see 功能五 below), `e6d7750` (共用清單圖片改回舊版 60px 小圖＋橫向排列 — see 功能二/五 below), `fb5ff58` (統一「傳好了」確認與匯款清單的圖片+商品名稱樣式), `6e66c20` (新增「傳好了」確認信號——先查有沒有收到照片再回覆), `11e68b7` (匯款流程全面調整：純圖片清單＋三顆銀行複製按鈕＋固定格式回報 — see 功能三/五 below), `3b69c0b` (移除形同虛設的「價格異常」篩選按鈕與紅色提示), `80e1b81` (拿掉客人端數量/價格互動，匯款/取消訂單改成純展示 — see 功能二/五/六 below), `1f85eda` (移除暱稱綁定/審核機制 — see 功能一 below), `2a54dcc` (batch-delete button), `e276e2f` (customer self-delete for pending items + card photo aspect-ratio/height fix), `5ca7e2b` (price-dispute reporting, 7th pending migration), `32af0ee` (card image/layout round), and `32f8a08` (tesseract.js worker-thread Vercel crash fix — tesseract.js/sharp and the OCR feature it backed were removed entirely in `07521c6` above, so this fix is now moot history).
+- Storefront/shared backend Staging: `https://pinkkkuin-staging.vercel.app` → `dpl_A9mobvWXx3QnSAsTXQ159uTQSTxu`（2026-10-29 更新：commit `97db0bc`，後台子模組 `f97a7ce`，內容為「第三版 階段一」＋「統一綁定 審查修正」，見下方小節。`202610290001` 已套用並驗證過；**`202610290002`（審查修正）還沒套用**，套用前 rescan 可能翻案已核准的綁定、找人函式遇到歧義可能任選一個，見下方小節）。
+- **Production (2026-10-31 更版)**: `https://pinkkkuin-shop.vercel.app` → `https://pinkkkuin-shop-fz15li5ct-lilys-projects-2a8e834c.vercel.app`，程式碼為 commit `6ce0c9c`、後台子模組 `a73cb479`（內容：聊天室卡片改版（粉紅膠囊 A 款、多按鈕同一行、查詢訂單直接列商品並有位元組大小防護、閒置提醒附「傳好了」按鈕）＋連線代購 LINE 下單改版全三階段＋LIFF 半屏開啟與送出後自動傳「查詢訂單」＋`/live` 入口頁（接 LIFF 授權導回的 liff.state）＋客人專用獨立版面＋客人身分一行＋匯款金額上限 100 萬＋社群綁定（暱稱／IG：`/live/bind`、後台「社群綁定」頁、新表 `community_line_identities`／`community_line_identity_logs`）＋後台手機版 Shell v2）。正式 Supabase 已套用全部 migration：`202610140001`～`202610190002`、`202610270001`～`202610270005`、`202610280001`～`202610280003`、以及綁定的 `202610280004`～`202610280006`（正式環境用合併版 SQL：004 的表與解除綁定函式＋006 的最終 submit 函式，略過中間版 005，最終狀態與 Staging 相同）。Vercel Production 已設 `NEXT_PUBLIC_LIFF_ID`（正式那組 `2011439114-0iUOPMzM`，Preview 是測試那組 `2011439114-TRoWuo6K`），LIFF 端點分別是 `https://pinkkkuin-shop.vercel.app/live` 與 `https://pinkkkuin-staging.vercel.app/live`。上一版（可一行指令切回，`vercel alias set <網址> pinkkkuin-shop.vercel.app`）：`https://pinkkkuin-shop-rnxc2hdil-lilys-projects-2a8e834c.vercel.app`。預購匯款按鈕維持「尚未開放」。連線代購 LINE 下單改版「第三版 階段一」（客人頁面 LOGO 修正、預購卡片按鈕統一、下單前必須先綁定、統一綁定／移除舊社群名單）＋「統一綁定 審查修正」（rescan 不翻案已核准綁定、歧義查找改回空、後台新增撞名偵測）已完成並驗證、已部署到 **Staging**（`97db0bc`，見上方），**尚未部署到正式環境**。`202610290001` 已套用到 Staging 並驗證；`202610290002`（審查修正）**使用者還沒套用到任何環境**。待修：網站 404 頁沒有標頭（route group 搬移副作用，跟這輪無關的既有待修項目）。部署方式提醒：從 `git archive` 乾淨匯出的資料夾部署，不要用 git worktree、不要從有他人未提交修改的主資料夾部署。
   - **部署注意**：不要從 `git worktree` 資料夾部署，Vercel 會一直卡在 Building（狀態 UNKNOWN），實測三次都卡；要部署「只含已提交內容」的版本時，用 `git archive <commit>` 匯出到沒有 `.git` 的資料夾（後台子模組也要用 `git -C .backend-product-publish -c core.autocrlf=false archive <commit>` 匯出並逐檔比對 hash），複製 `.vercel/project.json` 進去再 `vercel deploy --prod --yes`，約 45 秒完成。主資料夾若有他人未提交的修改（例如 Codex 的手機後台），不要直接從主資料夾部署正式環境。
 - Backend source commit: `491306a`, pushed to `backend-staging` and referenced by `official-next`.
 - Community frontend feature commit: `df2f453` (single outer card for the whole order-content area; payment submission moved from an always-visible form into a "我要匯款" modal with a selected-items breakdown).
@@ -268,7 +268,7 @@ delete from public.community_livestream_sessions where name like 'Utest%';
 
 這輪是使用者一次給的大型需求文字（分兩階段交付），這份記錄的是**階段一**（LOGO／預購按鈕統一／下單前必須先綁定／統一綁定）。階段二（結算模型／查詢訂單重寫／匯款配合新模型／後台）還沒開始，等使用者確認階段一沒問題再做。
 
-**⚠️ 部署順序很重要**：這輪的 migration `202610290001` 還沒套用。套用前，以下三處會暫時退化（不是程式碼壞掉，是舊表資料還沒搬過去、新欄位/新函式還不存在）：後台「社群綁定」頁的「已綁定」清單會讀取失敗（GET 路由選的 `needs_review` 欄位還不存在）；記事本 LINE 通知（付款/出貨/面交、賣貨便可下單）會完全送不出去（`getApprovedLineUserId` 改呼叫新的 SQL 函式，函式不存在時安靜回傳空字串，等於沒有任何客人會被通知到）；「社群訂單」「出貨明細」畫面上的 LINE 名稱會全部顯示成「LINE 使用者」。**請套用 migration 後再觀察這三處**，或接受這個暫時的退化視窗很短。
+**`202610290001` 已套用到 Staging（2026-10-29）並完整驗證過**：搬移結果 3/3 成功、0 筆撞名略過、0 筆 pending；新增的 5 支 RPC/SQL 函式（approve/rescan/三個找人函式）用真實記事本資料做了 19 項端對端測試全部通過（撞名→待核准→核准→反查成功、重複核准冪等、admin 代綁直接核准、rescan 正確只影響客人自己綁的且不影響 admin 代綁的）；後台「社群綁定」頁、社群訂單、出貨明細這三個原本會退化的地方都已確認恢復正常（截圖/API 直接呼叫雙重確認）。**下方「審查修正」小節的 `202610290002` 還沒套用**，套用前 rescan 跟兩支「只採用 needs_review=false」的找人函式仍然是有問題的舊版本（見下方說明），但這不影響已經核准過、沒有撞名問題的正常綁定。
 
 **第一節：客人頁面 LOGO 完整顯示**——`src/app/live/layout.tsx` 原本套用跟網站標頭同一組 `logoScale`/`logoPositionX`/`logoPositionY`，但客人頁面沒有裁切框，拿掉 transform 整段、改成固定 `object-contain`、高度 48px、置中——這次是用 Staging 真實資料驗證的（品牌設定裡實際存的是 `scale:1.5, positionY:-30`，套用網站標頭的放大位移邏輯確實會把客人頁面的 LOGO 頂端推出畫面），已用 Playwright 在 390×844、360×740 兩種尺寸 + 綁定頁 + 錯誤畫面截圖確認完整顯示、不再被切。
 
@@ -283,13 +283,120 @@ delete from public.community_livestream_sessions where name like 'Utest%';
 - 移除舊用法：`getLineUserBindingLabel` 拿掉舊表 fallback（新表現在是單一事實來源）；後台「社群名單」頁籤、`section-community-members`、相關 modal/JS 函式（`renderCommunityMembers` 等 16 支）、`/api/backend/community/members` 路由整個移除；`/api/backend/community/line-identities/unbound/route.ts` 拿掉舊表的 UNION 查詢。Grep 全 `src/` 確認 `community_line_bindings` 只剩 3 處註解提到這個名字（說明「這裡不碰這張表」），沒有任何實際查詢——`src/lib/line/live-bindings.ts`、`src/lib/line/livestream-orders.ts`（2 處）。
 - 後台「社群綁定」頁：「已綁定」清單裡 `needsReview=true` 的客人顯示橘色「待核准」標籤＋記事本對應紀錄（`notebookMatch`，用寬鬆 `ilike` 比對，純粹輔助賣家判斷是不是同一個人，不是授權判斷）＋「核准」按鈕；新增「只顯示待核准」篩選（前端 client-side 篩選，不是另外打 API）與待核准統計；新增「下單前必須先綁定」開關 UI（放在「社群綁定」頁最上方，理由：這個開關直接決定「有沒有綁定」這件事的重要性，放在綁定管理頁最顯眼的地方最直覺）。
 
-**還沒驗證到的部分（都需要 migration 套用後才能測）**：資料搬移本身的實際執行結果（筆數、撞名略過清單——需要在真正跑過 migration 後用附的驗證 SQL 核對）；`needs_review` 整個流程（客人撞名綁定成功但待核准 → 後台看到橘色標籤 → 核准 → 記事本通知恢復送出）；`approve_community_line_identity`/`rescan_...` 兩支 RPC 的實際行為；三個「用暱稱找人」地方套用新表後的真實顯示/通知行為；後台「社群綁定」頁的「已綁定」清單、`needs_review` 統計與篩選的實際畫面（這輪因為欄位還不存在，只能截圖確認頁面骨架與開關/篩選 UI 存在，清單本身顯示讀取失敗，是預期中的——見上面的部署順序提醒）。真實 LINE App 裡 LIFF 授權流程本身（`liff.sendMessages` 真正在客人手機上執行的效果）仍然跟先前所有輪次一樣沒辦法在本機驗證。
+**還沒驗證到的部分**：真實 LINE App 裡 LIFF 授權流程本身（`liff.sendMessages` 真正在客人手機上執行的效果）仍然跟先前所有輪次一樣沒辦法在本機驗證；記事本通知（付款/出貨/面交）沒有真的觸發發送過（指示明確要求不能真的推播給真實客人），但底層呼叫的函式已經在 RPC 測試裡驗證過行為正確，程式邏輯本身沒有被改動，只是換了查詢對象。
 
-**已套用但還沒驗證對記事本既有功能零影響的部分**：記事本本身的審核/出貨/面交畫面完全沒有被這輪改動碰到（只有「用暱稱找人」這一步改了資料來源），理論上不受影響，但「記事本通知（付款/出貨/面交）整條仍可正常運作」這項使用者明確要求的驗證項目，要等 migration 套用後才能真正用測試資料跑一次確認（本機已確認過舊版通知邏輯本身沒有被動到程式碼，只是換了個查詢對象）。
+#### migration 202610290001 完整 SQL（已套用到 Staging，2026-10-29）
 
-#### migration 202610290001 完整 SQL
+完整內容見 `supabase/migrations/202610290001_unify_community_line_identities.sql`（檔案較長，這裡不重複貼出，内容涵蓋：新增 `needs_review`/`reviewed_at`/`last_actor` 三欄位＋回填既有列的 `last_actor`、`community_line_identity_logs` 的 `action` CHECK 多加 `migrated`/`approved`/`flagged`、資料搬移 CTE、`submit_community_line_identity` 重寫、新增 `approve_community_line_identity`/`rescan_community_line_identities_needs_review`/`find_line_user_id_by_nickname`/`find_line_user_ids_by_nicknames`/`find_line_identities_by_nicknames`）。**還沒套用到正式環境。**
 
-套用方式：先套到 Staging，用檔案最下方附的驗證 SELECT 核對搬移結果（筆數、撞名略過清單、pending 清單）合理後，再套到正式環境。完整內容見 `supabase/migrations/202610290001_unify_community_line_identities.sql`（檔案較長，這裡不重複貼出，内容涵蓋：新增 `needs_review`/`reviewed_at`/`last_actor` 三欄位＋回填既有列的 `last_actor`、`community_line_identity_logs` 的 `action` CHECK 多加 `migrated`/`approved`/`flagged`、資料搬移 CTE、`submit_community_line_identity` 重寫、新增 `approve_community_line_identity`/`rescan_community_line_identities_needs_review`/`find_line_user_id_by_nickname`/`find_line_user_ids_by_nicknames`/`find_line_identities_by_nicknames`）。
+### 統一綁定 審查修正（2026-10-29，`202610290001` 套用後使用者審查發現）
+
+使用者審查 `202610290001` 時發現兩個問題，因為那個檔案已經套用到 Staging，**不能再改那個檔案**，改用追加的 `supabase/migrations/202610290002_fix_rescan_and_ambiguous_lookup.sql`（`create or replace function`，三支函式簽名都沒變，不用先 drop）。**這份還沒套用到任何環境。**
+
+**問題 1：`rescan_community_line_identities_needs_review` 會翻案已核准的綁定。** 原本的條件只看 `last_actor='customer' and needs_review=false`，賣家核准一筆之後（`approve_community_line_identity` 只改 `needs_review`/`reviewed_at`，不改 `last_actor`——核准後 `last_actor` 仍然是 `'customer'`，因為這筆綁定本身還是客人填的，賣家只是確認過人沒錯），只要記事本那筆撞名的客人資料還在，下次 rescan（記事本重新匯入）會把這筆核准過的綁定重新標記回待核准。修正：加上 `reviewed_at is null` 條件——核准過的綁定一定有 `reviewed_at`，永遠不會再被 rescan 碰到。**已在 Staging 用目前還沒修的版本實際重現這個 bug**（核准一筆撞名的綁定 → 呼叫 rescan → 確認真的被錯誤標記回待核准），並確認新條件（`reviewed_at is null`）能正確排除這筆（用等價查詢驗證，沒有真的改動已套用的函式本體）。
+
+**問題 2：找人函式遇到歧義會任選一個，不是回傳空。** `find_line_user_id_by_nickname`／`find_line_user_ids_by_nicknames`（只採用 `needs_review=false` 的查找函式，給記事本通知/後台找人用）原本在「同一個正規化後的名字同時對應到不只一個 `line_user_id`」時——這在設計上是允許發生的，因為 `nickname` 跟 `ig` 是分開的命名空間（一位客人的暱稱可以跟另一位客人的 IG 正規化後剛好一樣）——單筆版本用 `limit 1` 任選一筆、批次版本會回傳多列，等於通知/找人送給了一個可能選錯的人。修正：兩邊都改成「這個名字目前符合的 `line_user_id` 是否剛好只有 1 個相異值」，不是的話（0 個或 >1 個都一樣）回傳空／省略該列。`find_line_identities_by_nicknames`（後台顯示用，不過濾 `needs_review`）SQL 本身不用改，繼續回傳全部符合的列——歧義判斷交給 TS 那層（`live-bindings.ts::findLineIdentitiesByNicknames`，依 `input_value` 分組、同一組裡有超過一個相異 `line_user_id` 就標成 `ambiguous:true`），讓顯示畫面能把完整清單丟出來給賣家自己判斷，不是在資料庫層就濾掉。**已在 Staging 用目前還沒修的版本實際重現這個 bug**（刻意讓一位客人的暱稱跟另一位客人的 IG 正規化後一樣，確認單筆版本真的任選了其中一個、批次版本真的回傳了兩列），並用等價查詢驗證新的歧義判斷條件（相異 `line_user_id` 數 = 2）會被正確觸發。
+
+**連帶的 TS/畫面改動**（不需要額外 migration，這輪已經跟 `202610290002` 一起 commit）：
+- 社群訂單、出貨明細兩個畫面：`identity.ambiguous === true` 時顯示「對應到多位 LINE 客人，請確認」，不是任選一位的名字顯示——已用真實記事本客人名字（「Lian」）做過一位當暱稱、一位當 IG 的歧義情境，直接呼叫 API 確認回應正確。
+- 後台「社群綁定」頁新增「撞名」偵測（`GET /api/backend/community/line-identities` 新增 `buildCollisionMap`，看全部已綁定客人、不受搜尋篩選影響）：兩個不同客人目前的綁定值正規化後一樣的話，彼此都顯示藍紫色「撞名」標籤＋列出撞到誰（含對方的類型跟值），新增「只顯示撞名」篩選與統計——這個偵測純粹是「兩個綁定值撞在一起」這件事本身，跟記事本撞名（`needs_review`）是兩個獨立的概念，可能同時出現在同一位客人身上。已用 Playwright 截圖確認兩個互相撞名的測試客人都正確顯示彼此的資訊、篩選功能正常。
+
+**還沒驗證到的部分**：`202610290002` 套用後的真實函式行為（上面列的驗證目前都是用「重現 bug + 等價查詢驗證新條件」的方式做的，因為不能自己套用已經走過審查但還沒套用的 migration；套用後建議至少重跑一次「核准過的綁定再 rescan 一次確認不再被翻案」跟「歧義情境下通知真的不會送給任何一位」這兩項）。
+
+#### migration 202610290002 完整 SQL
+
+```sql
+-- 202610290001 已經套用到 Staging，不要再改那個檔案——這份是追加修正，
+-- 用 create or replace function 覆蓋三支函式，三支的參數/回傳型別都沒變，
+-- 不需要先 drop。修的是審查後發現的兩個問題：
+
+-- ---------------------------------------------------------------------------
+-- 問題 1：rescan_community_line_identities_needs_review 原本只看
+-- last_actor='customer' + needs_review=false，沒有排除「已經核准過」的
+-- 綁定——賣家核准一筆之後，只要記事本那筆撞名的客人資料還在，下次重新
+-- 匯入記事本時會被 rescan 重新標記回待核准，等於賣家核准的決定會被
+-- 自動翻案。approve_community_line_identity 只改 needs_review/reviewed_at，
+-- 不改 last_actor（核准後 last_actor 仍然是 'customer'，因為這筆綁定本身
+-- 還是客人自己填的，只是賣家確認過人沒有錯），所以要新增一個條件
+-- `reviewed_at is null`——核准過的綁定一定有 reviewed_at，永遠不會再被
+-- rescan 碰到。
+-- ---------------------------------------------------------------------------
+
+create or replace function public.rescan_community_line_identities_needs_review()
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_count integer;
+begin
+  with flagged as (
+    update public.community_line_identities i
+    set needs_review = true
+    where i.last_actor = 'customer'
+      and i.needs_review = false
+      and i.reviewed_at is null
+      and exists (
+        select 1 from public.community_orders o
+        where lower(regexp_replace(trim(o.nickname), '^@+', '')) = lower(regexp_replace(trim(i.binding_value), '^@+', ''))
+      )
+    returning i.line_user_id, i.line_display_name, i.binding_type, i.binding_value
+  ),
+  logged as (
+    insert into public.community_line_identity_logs (line_user_id, line_display_name, action, new_type, new_value)
+    select line_user_id, line_display_name, 'flagged', binding_type, binding_value from flagged
+    returning 1
+  )
+  select count(*) into v_count from flagged;
+
+  return coalesce(v_count, 0);
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 問題 2：find_line_user_id_by_nickname／find_line_user_ids_by_nicknames
+-- （只採用 needs_review=false 的查找函式，給記事本通知/找人用）原本在
+-- 「同一個正規化後的名字同時對應到不只一個 line_user_id」（例如一位客人
+-- 的暱稱跟另一位客人的 IG 正規化後剛好一樣——binding_type 本來就是分開
+-- 的命名空間，這種情況在設計上是允許發生的）時，單筆版本用 limit 1
+-- 任選一筆、批次版本會回傳多列（呼叫端等於拿到不確定是誰的結果）。改成
+-- 兩邊都判斷「這個名字目前符合的 line_user_id 是否剛好只有 1 個相異值」，
+-- 不是的話（0 個或 >1 個都一樣）視為「找不到」，回傳空——歧義的情況
+-- 不要任選一個，記事本通知/後台找人都不該送給一個可能選錯的人。
+-- find_line_identities_by_nicknames（後台顯示用，不過濾 needs_review）
+-- 保持不變，繼續回傳全部符合的列——是否歧義交給呼叫端（TS 那層）判斷
+-- 並顯示「對應到多位 LINE 客人，請確認」，不在資料庫這層就濾掉，顯示
+-- 畫面需要看到完整清單才能讓賣家自己判斷。
+-- ---------------------------------------------------------------------------
+
+create or replace function public.find_line_user_id_by_nickname(p_value text)
+returns text
+language sql
+stable
+set search_path = public
+as $$
+  select case when count(*) = 1 then min(i.line_user_id) else null end
+  from public.community_line_identities i
+  where i.needs_review = false
+    and lower(regexp_replace(trim(i.binding_value), '^@+', '')) = lower(regexp_replace(trim(p_value), '^@+', ''))
+$$;
+
+create or replace function public.find_line_user_ids_by_nicknames(p_values text[])
+returns table(input_value text, line_user_id text)
+language sql
+stable
+set search_path = public
+as $$
+  select v.input_value, min(i.line_user_id) as line_user_id
+  from unnest(p_values) as v(input_value)
+  join public.community_line_identities i
+    on i.needs_review = false
+   and lower(regexp_replace(trim(i.binding_value), '^@+', '')) = lower(regexp_replace(trim(v.input_value), '^@+', ''))
+  group by v.input_value
+  having count(distinct i.line_user_id) = 1
+$$;
+```
 
 ### ⚠️ Rich Menu — 不要對全部好友發布
 
