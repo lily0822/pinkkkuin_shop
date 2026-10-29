@@ -129,16 +129,48 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
   try {
     const supabase = createSupabaseServiceClient();
-    // community_livestream_orders.remittance_id 有外鍵指向這張表（預設
-    // NO ACTION，不是 ON DELETE SET NULL）——第三階段起這個欄位開始真的
-    // 被寫入，直接刪除匯款紀錄會因為外鍵限制失敗。要先把關聯訂單的
-    // remittance_id 清回 null、payment_status 退回 unpaid，讓那些訂單
-    // 重新變成「還沒匯款」，才能刪除這筆紀錄本身。
-    const { error: unlinkError } = await supabase
-      .from("community_livestream_orders")
-      .update({ remittance_id: null, payment_status: "unpaid" })
-      .eq("remittance_id", remittanceId);
-    if (unlinkError) throw unlinkError;
+
+    // 階段二（結算模型）：remittance_id 現在只代表「這筆訂單第一次被
+    // 匯款連到的那筆紀錄」，之後的補差額不會改寫它——所以這支路由只能
+    // 安全刪除「這批訂單的 remittance_id 全部都等於這一筆」的紀錄（也
+    // 就是這些訂單還沒有被補過差額），這種情況下直接把 paid_amount 歸
+    // 零、remittance_id 清空、payment_status 退回 unpaid 是正確的（這筆
+    // 本來就是這些訂單唯一的一次付款）。如果其中有任何一筆訂單的
+    // remittance_id 不等於這一筆（代表那筆訂單後來又被補過差額，這筆
+    // 紀錄只是其中一次付款，不是全部），貿然歸零 paid_amount 會把之後
+    // 其他筆匯款累加上去的金額也一起清掉，造成金額對不起來——這種情況
+    // 改請賣家用「標記已退款」處理（那條路徑用 shouldPay 重新結算，不
+    // 是盲目清零，才不會算錯）。
+    const { data: remittanceRow, error: fetchError } = await supabase
+      .from("community_livestream_remittances")
+      .select("order_ids")
+      .eq("id", remittanceId)
+      .maybeSingle();
+    if (fetchError) throw fetchError;
+    if (!remittanceRow) return NextResponse.json({ ok: false, error: "找不到這筆匯款紀錄。" }, { status: 404 });
+
+    const orderIds = Array.isArray(remittanceRow.order_ids) ? remittanceRow.order_ids : [];
+    if (orderIds.length) {
+      const { data: relatedOrders, error: ordersError } = await supabase
+        .from("community_livestream_orders")
+        .select("id, remittance_id")
+        .in("id", orderIds);
+      if (ordersError) throw ordersError;
+
+      const hasTopup = (relatedOrders || []).some((order) => String(order.remittance_id) !== remittanceId);
+      if (hasTopup) {
+        return NextResponse.json(
+          { ok: false, error: "此筆匯款包含補款項目，無法直接刪除，請改用「標記已退款」處理。" },
+          { status: 409 },
+        );
+      }
+
+      const { error: unlinkError } = await supabase
+        .from("community_livestream_orders")
+        .update({ remittance_id: null, payment_status: "unpaid", paid_amount: 0 })
+        .eq("remittance_id", remittanceId);
+      if (unlinkError) throw unlinkError;
+    }
 
     const { error } = await supabase.from("community_livestream_remittances").delete().eq("id", remittanceId);
     if (error) throw error;

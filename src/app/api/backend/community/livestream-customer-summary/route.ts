@@ -7,7 +7,7 @@ import {
   shouldRequireBackendAuth,
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
-import { effectiveLivestreamUnitPrice } from "@/lib/line/livestream-pricing";
+import { effectiveLivestreamUnitPrice, computeLivestreamSettlement } from "@/lib/line/livestream-pricing";
 import { getLineUserBindingLabelsBatch } from "@/lib/line/live-bindings";
 
 export const dynamic = "force-dynamic";
@@ -48,7 +48,9 @@ export async function GET(request: NextRequest) {
     const [{ data: orderRows, error: orderError }, { data: remittanceRows, error: remittanceError }] = await Promise.all([
       supabase
         .from("community_livestream_orders")
-        .select("line_user_id, line_display_name, unit_price, customer_unit_price, seller_unit_price, quantity, created_at")
+        .select(
+          "line_user_id, line_display_name, unit_price, customer_unit_price, seller_unit_price, quantity, purchased_quantity, paid_amount, refunded_at, refunded_amount, created_at",
+        )
         // 連線代購下單改版 第二階段：排除 staged（客人還沒送出的暫存
         // 照片）跟 cancelled（客人自助取消的軟刪除訂單），這兩種都不該
         // 算進「訂單總額」。
@@ -72,13 +74,23 @@ export async function GET(request: NextRequest) {
       totalAmount: number;
       confirmedRemittanceAmount: number;
       pendingRemittanceAmount: number;
+      owedTotal: number;
+      refundDueTotal: number;
     };
     const byUserId = new Map<string, CustomerAccumulator>();
 
     function getAccumulator(userId: string): CustomerAccumulator {
       let accumulator = byUserId.get(userId);
       if (!accumulator) {
-        accumulator = { lineUserId: userId, lineDisplayName: "", totalAmount: 0, confirmedRemittanceAmount: 0, pendingRemittanceAmount: 0 };
+        accumulator = {
+          lineUserId: userId,
+          lineDisplayName: "",
+          totalAmount: 0,
+          confirmedRemittanceAmount: 0,
+          pendingRemittanceAmount: 0,
+          owedTotal: 0,
+          refundDueTotal: 0,
+        };
         byUserId.set(userId, accumulator);
       }
       return accumulator;
@@ -93,8 +105,22 @@ export async function GET(request: NextRequest) {
       if (!accumulator.lineDisplayName) accumulator.lineDisplayName = String(row.line_display_name || "LINE 使用者");
       // 有效單價＝賣家單價 ?? 客人單價 ?? 舊欄位——跟後台訂單列表/會員
       // 連線下單紀錄/匯款流程同一套算法。
-      const unitPrice = effectiveLivestreamUnitPrice(row.seller_unit_price, row.customer_unit_price, row.unit_price) ?? 0;
-      accumulator.totalAmount += unitPrice * Number(row.quantity || 1);
+      const unitPrice = effectiveLivestreamUnitPrice(row.seller_unit_price, row.customer_unit_price, row.unit_price);
+      accumulator.totalAmount += (unitPrice ?? 0) * Number(row.quantity || 1);
+      // 階段二（結算模型）：「待收」「應退」兩個新統計，跟上面三個既有
+      // 統計（訂單總額/已核對/未確認，依客人回報金額加總）是兩套獨立的
+      // 數字——這兩個是用 paid_amount/purchased_quantity 算出來的「目前
+      // 實際欠多少／該退多少」，不是看匯款紀錄的回報金額。
+      const settlement = computeLivestreamSettlement({
+        effectiveUnitPrice: unitPrice,
+        quantity: Number(row.quantity || 1),
+        purchasedQuantity: row.purchased_quantity,
+        paidAmount: Number(row.paid_amount || 0),
+        refundedAt: row.refunded_at,
+        refundedAmount: row.refunded_amount,
+      });
+      accumulator.owedTotal += settlement.owed;
+      accumulator.refundDueTotal += settlement.refundDue;
     });
 
     remittances.forEach((row) => {
@@ -118,6 +144,8 @@ export async function GET(request: NextRequest) {
         confirmedRemittanceAmount: c.confirmedRemittanceAmount,
         pendingRemittanceAmount: c.pendingRemittanceAmount,
         diffAmount: c.totalAmount - c.confirmedRemittanceAmount,
+        owedTotal: c.owedTotal,
+        refundDueTotal: c.refundDueTotal,
       })),
     });
   } catch {

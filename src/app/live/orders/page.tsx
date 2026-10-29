@@ -3,10 +3,14 @@ import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { createSignedUrl } from "@/lib/supabase/storage";
 import { verifyLivestreamMagicLink } from "@/lib/line/livestream-magic-link";
 import { getCurrentOrMostRecentSession } from "@/lib/line/livestream-sessions";
-import { effectiveLivestreamUnitPrice } from "@/lib/line/livestream-pricing";
+import {
+  effectiveLivestreamUnitPrice,
+  computeLivestreamPurchaseChip,
+  computeLivestreamSettlement,
+} from "@/lib/line/livestream-pricing";
 import { getLivestreamKeywordSettings } from "@/lib/line/livestream-keywords";
 import { getLiveCustomerIdentity } from "@/lib/line/live-customer-identity";
-import { LiveOrdersView, type LiveOrderItem, type LiveOrderStatusChip } from "@/components/live-orders-view";
+import { LiveOrdersView, type LiveOrderItem } from "@/components/live-orders-view";
 import { LiveErrorScreen } from "@/components/live-error-screen";
 
 export const dynamic = "force-dynamic";
@@ -25,26 +29,10 @@ type OrderRow = {
   seller_unit_price: number | null;
   unit_price: number | null;
   purchased_quantity: number | null;
-  remittance_id: string | null;
-  purchase_status: string | null;
-  payment_status: string | null;
+  paid_amount: number;
+  refunded_at: string | null;
+  refunded_amount: number | null;
 };
-
-// 客人專用頁面改成單一狀態標籤（取代原本「採買狀態」+「付款狀態」兩個
-// 分開的小標籤）：已匯款優先於其他任何狀態（進了匯款流程就鎖定，不管
-// 採買結果如何）；其餘依 purchased_quantity 判斷——null 是還沒採買、
-// 0 是缺貨、等於訂購數量是已買到、其餘是買到一部分。
-function computeStatusChip(
-  remittanceId: string | null,
-  purchasedQuantity: number | null,
-  quantity: number,
-): LiveOrderStatusChip {
-  if (remittanceId !== null) return { label: "已匯款", tone: "paid" };
-  if (purchasedQuantity === null) return { label: "待採買", tone: "pending" };
-  if (purchasedQuantity === 0) return { label: "缺貨", tone: "out" };
-  if (purchasedQuantity >= quantity) return { label: "已買到", tone: "done" };
-  return { label: `買到 ${purchasedQuantity}・缺 ${quantity - purchasedQuantity}`, tone: "partial" };
-}
 
 export default async function LiveOrdersPage({
   searchParams,
@@ -69,7 +57,7 @@ export default async function LiveOrdersPage({
   let query = supabase
     .from("community_livestream_orders")
     .select(
-      "id, product_name, photo_storage_path, quantity, customer_unit_price, seller_unit_price, unit_price, purchased_quantity, remittance_id, purchase_status, payment_status",
+      "id, product_name, photo_storage_path, quantity, customer_unit_price, seller_unit_price, unit_price, purchased_quantity, paid_amount, refunded_at, refunded_amount",
     )
     .eq("line_user_id", payload.lineUserId)
     .eq("order_status", "submitted")
@@ -79,26 +67,26 @@ export default async function LiveOrdersPage({
   const { data } = await query;
   const rows = (data as OrderRow[] | null) || [];
 
-  // 未匯款金額：跟第三階段「連線」匯款清單同一套規則——還沒匯款
-  // （remittance_id 是 null）的項目裡，缺貨（purchased_quantity===0）
-  // 不計入，其餘用「買到幾個（還沒採買就用訂購數量）× 有效單價」加總，
-  // 讓這個頁面看到的金額跟實際跑一次匯款流程算出來的金額一致。用獨立
-  // 的 reduce 算，不跟下面抓 signed URL 的 async map 混在一起，避免在
-  // async 函式裡 reassign 閉包變數。
-  const unpaidTotal = rows.reduce((sum, row) => {
-    if (row.remittance_id !== null) return sum;
-    if (row.purchased_quantity === 0) return sum; // 缺貨，不計入
-    const effectiveUnitPrice = effectiveLivestreamUnitPrice(row.seller_unit_price, row.customer_unit_price, row.unit_price);
-    if (effectiveUnitPrice === null) return sum;
-    const effectiveQty = row.purchased_quantity ?? row.quantity;
-    return sum + effectiveQty * effectiveUnitPrice;
-  }, 0);
-
+  // 階段二（結算模型）：每個項目同時算出採買狀態標籤、付款狀態標籤、
+  // 分組（還沒匯款／已匯款）——跟聊天室查詢訂單（livestream-orders.ts
+  // 的 handleOrderManageTrigger）同一套共用函式，兩邊的分組/標籤/金額
+  // 一定一致。鎖定規則改成「purchased_quantity 不為空，或 paid_amount>0」
+  // （取代原本以 remittance_id 判斷——新模型下 remittance_id 只代表
+  // 「曾經匯過款」，同一筆訂單之後還可能被補款，不能再拿它當唯一的鎖定
+  // 依據）。
   const items: LiveOrderItem[] = await Promise.all(
     rows.map(async (row) => {
       const effectiveUnitPrice = effectiveLivestreamUnitPrice(row.seller_unit_price, row.customer_unit_price, row.unit_price);
+      const settlement = computeLivestreamSettlement({
+        effectiveUnitPrice,
+        quantity: row.quantity,
+        purchasedQuantity: row.purchased_quantity,
+        paidAmount: row.paid_amount,
+        refundedAt: row.refunded_at,
+        refundedAmount: row.refunded_amount,
+      });
       const lockReason: "remitted" | "purchased" | null =
-        row.remittance_id !== null ? "remitted" : row.purchased_quantity !== null ? "purchased" : null;
+        row.purchased_quantity !== null ? "purchased" : row.paid_amount > 0 ? "remitted" : null;
       return {
         id: row.id,
         productName: row.product_name,
@@ -109,10 +97,21 @@ export default async function LiveOrdersPage({
         unitPrice: effectiveUnitPrice,
         purchasedQuantity: row.purchased_quantity,
         lockReason,
-        statusChip: computeStatusChip(row.remittance_id, row.purchased_quantity, row.quantity),
+        purchaseChip: computeLivestreamPurchaseChip(row.purchased_quantity, row.quantity),
+        paymentChip: settlement.paymentChip,
+        group: settlement.group,
+        owed: settlement.owed,
+        refundDue: settlement.refundDue,
+        paidAmount: row.paid_amount,
       };
     }),
   );
+
+  const unpaidItems = items.filter((item) => item.group === "unpaid");
+  const paidItems = items.filter((item) => item.group === "paid");
+  const unpaidTotal = unpaidItems.reduce((sum, item) => sum + item.owed, 0);
+  const paidTotal = paidItems.reduce((sum, item) => sum + item.paidAmount, 0);
+  const refundDueTotal = paidItems.reduce((sum, item) => sum + item.refundDue, 0);
 
   const { keywords } = await getLivestreamKeywordSettings();
   const orderQueryKeyword = keywords.order_query[0];
@@ -124,7 +123,10 @@ export default async function LiveOrdersPage({
       token={token}
       sessionName={session?.name || null}
       unpaidTotal={unpaidTotal}
-      initialItems={items}
+      paidTotal={paidTotal}
+      refundDueTotal={refundDueTotal}
+      unpaidItems={unpaidItems}
+      paidItems={paidItems}
       orderQueryKeyword={orderQueryKeyword}
       identity={identity}
     />

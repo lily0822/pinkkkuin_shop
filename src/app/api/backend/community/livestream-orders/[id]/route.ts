@@ -111,6 +111,24 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   try {
     const supabase = createSupabaseServiceClient();
+
+    // 階段二（結算模型）：被標記已退款的項目，改動「買到幾個」或單價
+    // 會讓 shouldPay 跟著變，但 refunded_amount 是標記當下的快照，不會
+    // 自動跟著重算——為了不讓資料不一致，這兩種欄位的修改在退款標記還
+    // 存在時一律擋下，請賣家先按「取消標記」。只有真的要改這兩種欄位時
+    // 才多查一次 refunded_at，不影響其他欄位（商品名稱/數量/備註/狀態）
+    // 的既有修改路徑。
+    if (patch.purchased_quantity !== undefined || "seller_unit_price" in patch) {
+      const { data: currentRow } = await supabase
+        .from("community_livestream_orders")
+        .select("refunded_at")
+        .eq("id", orderId)
+        .maybeSingle();
+      if (currentRow?.refunded_at) {
+        return NextResponse.json({ ok: false, error: "此項目已標記退款，請先取消退款標記再修改。" }, { status: 409 });
+      }
+    }
+
     // 已移除訂單確認 LINE push 通知（原本是本功能唯一計入月費額度的動作，
     // 使用者決定不需要）。標記已購買現在單純是狀態更新，不對客人發任何
     // 訊息。confirmed_notified_at 欄位仍留在資料表裡，只是不再讀寫。

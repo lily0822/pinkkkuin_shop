@@ -11,7 +11,11 @@ import {
 import { backendRateLimit } from "@/lib/backend-security";
 import { LIVESTREAM_BANK_ACCOUNT_KEYS, LIVESTREAM_BANK_ACCOUNT_LABELS } from "@/lib/line/livestream-bank-info";
 import { isLivestreamBankNameAnomaly, LIVESTREAM_STANDARD_BANK_NAMES } from "@/lib/line/livestream-bank-aliases";
-import { effectiveLivestreamUnitPrice, effectiveLivestreamQuantity } from "@/lib/line/livestream-pricing";
+import {
+  effectiveLivestreamUnitPrice,
+  effectiveLivestreamQuantity,
+  computeLivestreamSettlement,
+} from "@/lib/line/livestream-pricing";
 import { getLineUserBindingLabelsBatch } from "@/lib/line/live-bindings";
 
 export const dynamic = "force-dynamic";
@@ -47,8 +51,23 @@ type OrderRow = {
   purchased_quantity: number | null;
   payment_status: string | null;
   photo_storage_path: string | null;
+  paid_amount: number | null;
+  refunded_at: string | null;
+  refunded_amount: number | null;
   created_at: string | null;
 };
+
+function orderSettlement(order: OrderRow) {
+  const unitPrice = effectiveLivestreamUnitPrice(order.seller_unit_price, order.customer_unit_price, order.unit_price);
+  return computeLivestreamSettlement({
+    effectiveUnitPrice: unitPrice,
+    quantity: Number(order.quantity || 1),
+    purchasedQuantity: order.purchased_quantity,
+    paidAmount: Number(order.paid_amount || 0),
+    refundedAt: order.refunded_at,
+    refundedAmount: order.refunded_amount,
+  });
+}
 
 type RemittanceRow = {
   id: string;
@@ -105,7 +124,7 @@ export async function GET(request: NextRequest) {
       supabase
         .from("community_livestream_orders")
         .select(
-          "id, line_user_id, line_display_name, product_name, unit_price, customer_unit_price, seller_unit_price, quantity, purchased_quantity, payment_status, photo_storage_path, created_at",
+          "id, line_user_id, line_display_name, product_name, unit_price, customer_unit_price, seller_unit_price, quantity, purchased_quantity, payment_status, photo_storage_path, paid_amount, refunded_at, refunded_amount, created_at",
         )
         // 連線代購下單改版 第三階段：排除 staged（客人還沒送出的暫存
         // 照片）跟 cancelled（客人自助取消的軟刪除訂單）——這條之前完全
@@ -173,6 +192,13 @@ export async function GET(request: NextRequest) {
       }, 0);
     }
 
+    // 「未匯款」這組要顯示的是「目前還欠多少」，不是「這批商品的應付
+    // 總額」——有些項目可能已經部分付款（補差額情境），sumOrders 會
+    // 把已經付過的部分也算進去，造成金額偏高。
+    function sumOwed(relatedOrders: OrderRow[]): number {
+      return relatedOrders.reduce((sum, order) => sum + orderSettlement(order).owed, 0);
+    }
+
     const ordersByUser = new Map<string, OrderRow[]>();
     orders.forEach((order) => {
       const userId = String(order.line_user_id || "");
@@ -221,20 +247,27 @@ export async function GET(request: NextRequest) {
             ? null
             : Number(remittance.expected_amount_at_submit);
         const bankName = remittance.bank_name ? String(remittance.bank_name) : null;
+        // 階段二（結算模型）審查修正：「金額不符」比對改成客人回報金額
+        // vs 這筆匯款送出當下的快照（expectedAmountAtSubmit），不再即時
+        // 重算——新模型下同一批訂單可能有多筆匯款（補差額），即時重算
+        // 出來的 systemCalculatedTotal 是「這批訂單全部欠款的目前總額」，
+        // 跟「這一筆匯款當時應該付多少」已經是兩個不同的數字，拿來比對
+        // 會算錯。systemCalculatedTotal 繼續保留在回應裡，純供參考顯示
+        // 用（目前這批商品現在的應付總額），不再是 mismatch 的比較基準。
+        const needsAdjustment = relatedOrders.some((order) => {
+          const settlement = orderSettlement(order);
+          return settlement.owed > 0 || settlement.refundDue > 0;
+        });
         return {
           id: String(remittance.id),
           bankName,
           isBankAnomaly: isLivestreamBankNameAnomaly(bankName),
           accountLast5: String(remittance.account_last5 || ""),
           amount,
-          // 送出當下系統即時重算出來的應收金額，純供參考對照（賣家事後
-          // 改價格/採買結果不會跟著變）——跟 systemCalculatedTotal（這裡、
-          // 當下用最新資料即時重算）是兩個不同的數字，後台比對一律用
-          // systemCalculatedTotal/mismatch，這個欄位只是給後台多一個
-          // 「客人送出當時系統算的是多少」的參考數字。
           expectedAmountAtSubmit,
           systemCalculatedTotal,
-          mismatch: amount !== null && amount !== systemCalculatedTotal,
+          mismatch: amount !== null && expectedAmountAtSubmit !== null && amount !== expectedAmountAtSubmit,
+          needsAdjustment,
           sessionId: remittance.session_id ? String(remittance.session_id) : null,
           submittedAt: String(remittance.submitted_at || ""),
           reviewedAt: remittance.reviewed_at ? String(remittance.reviewed_at) : null,
@@ -242,9 +275,13 @@ export async function GET(request: NextRequest) {
         };
       });
 
-      const unpaidOrders = userOrders.filter((order) => order.payment_status === "unpaid");
+      // 階段二（結算模型）：「未匯款」改用 owed>0 判斷，取代原本的
+      // payment_status==='unpaid'——新模型下 payment_status==='confirming'
+      // 的訂單（已經匯過一次）如果賣家事後調高單價，owed 可能又變成
+      // 正數（需要補差額），這種訂單也該出現在這裡，手動補登才能選到它。
+      const unpaidOrders = userOrders.filter((order) => orderSettlement(order).owed > 0);
       const unpaid = unpaidOrders.length
-        ? { systemCalculatedTotal: sumOrders(unpaidOrders), orders: unpaidOrders.map(buildOrderSummary) }
+        ? { systemCalculatedTotal: sumOwed(unpaidOrders), orders: unpaidOrders.map(buildOrderSummary) }
         : null;
 
       return { lineUserId: userId, lineDisplayName, binding, remittances: remittanceList, unpaid };
@@ -308,11 +345,13 @@ type ManualRemittanceBody = {
 };
 
 // 後台手動新增匯款紀錄——給客人一直沒辦法透過 LINE 自助完成匯款流程
-// 的情況補登。跟 LINE 那條路徑（livestream-orders.ts 的
-// handleRemitLast5Submission）的欄位語意保持一致：nickname 存這個客人
-// 目前的 line_display_name 快照、寫完紀錄後把涵蓋的訂單都改成
-// confirming 並連上 remittance_id，不然這筆手動補登的紀錄會跟訂單
-// 實際狀態對不起來。
+// 的情況補登。階段二（結算模型）起改成直接呼叫跟 LINE 自助流程同一支
+// submit_livestream_remittance RPC（202610290003 migration 改寫過），
+// 不再自己手刻 insert+update 兩步——這支 RPC 本來就會鎖定、重新計算
+// owed、只處理 owed>0 的項目、累加 paid_amount、決定 session_id、算
+// expected_amount_at_submit，手動補登跟 LINE 自助走同一套邏輯跟同一層
+// 保護（例如選到的訂單剛好已經被處理過，RPC 會回 already_remitted），
+// 不用重複維護兩份幾乎一樣的邏輯。
 export async function POST(request: NextRequest) {
   const guard = await guardBackendRequest(request, true);
   if (guard) return guard;
@@ -361,81 +400,44 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = createSupabaseServiceClient();
 
-    // 驗證每筆 orderId 都真的屬於這個客人、而且目前還是 unpaid 且還沒
-    // 連到任何一筆匯款紀錄——避免前端被竄改或資料過期而選到不相干、或
-    // 已經處理過的訂單。用「符合條件的筆數剛好等於請求的筆數」確認
-    // 全部都通過，不是只檢查第一筆。
-    const { data: matchedOrders, error: orderError } = await supabase
+    // RPC 本身不驗證「這批 id 真的屬於這個客人」以外的事，所以這裡先
+    // 查一次 line_display_name 當 nickname 快照用（手動補登沒有 LINE
+    // profile 可以查，用訂單上已經存的 LINE 名稱）；真正的資格檢查（還
+    // 欠多少、是否已經處理過）交給 RPC 自己鎖定+重新計算。
+    const { data: sampleOrder } = await supabase
       .from("community_livestream_orders")
-      .select(
-        "id, line_display_name, session_id, quantity, purchased_quantity, unit_price, customer_unit_price, seller_unit_price",
-      )
+      .select("line_display_name")
       .eq("line_user_id", lineUserId)
-      .eq("order_status", "submitted")
-      .eq("payment_status", "unpaid")
-      .is("remittance_id", null)
-      .in("id", orderIds);
-    if (orderError) throw orderError;
+      .in("id", orderIds)
+      .limit(1)
+      .maybeSingle();
+    const lineDisplayName = String(sampleOrder?.line_display_name || "客人");
 
-    const matchedRows = Array.isArray(matchedOrders) ? matchedOrders : [];
-    if (matchedRows.length !== orderIds.length) {
-      return NextResponse.json(
-        { ok: false, error: "選取的訂單有變化（可能已被處理），請重新整理後再試。" },
-        { status: 409 },
-      );
-    }
-
-    const lineDisplayName = String(matchedRows[0]?.line_display_name || "客人");
-
-    // 第三階段審查修正：手動補登也要填 session_id/expected_amount_at_submit，
-    // 跟 LINE 自助流程（submit_livestream_remittance RPC）同一套邏輯——
-    // 橫跨多場時取 starts_at 最晚（最近）的一場；即時重算的應收金額存成
-    // 參考紀錄，後台比對仍然用 GET 這支路由當下的即時重算（systemCalculatedTotal），
-    // 不是這裡存的快照。
-    const sessionIds = [...new Set(matchedRows.map((row) => row.session_id).filter((id): id is string => Boolean(id)))];
-    let sessionId: string | null = null;
-    if (sessionIds.length) {
-      const { data: sessionRows } = await supabase
-        .from("community_livestream_sessions")
-        .select("id")
-        .in("id", sessionIds)
-        .order("starts_at", { ascending: false })
-        .limit(1);
-      sessionId = sessionRows?.[0]?.id ? String(sessionRows[0].id) : null;
-    }
-
-    const expectedAmountAtSubmit = matchedRows.reduce((sum, row) => {
-      const unitPrice = effectiveLivestreamUnitPrice(row.seller_unit_price, row.customer_unit_price, row.unit_price) ?? 0;
-      const quantity = effectiveLivestreamQuantity(row.purchased_quantity, row.quantity);
-      return sum + unitPrice * quantity;
-    }, 0);
-
-    const { data: inserted, error: insertError } = await supabase
-      .from("community_livestream_remittances")
-      .insert({
-        line_user_id: lineUserId,
-        nickname: lineDisplayName,
-        order_ids: orderIds,
-        bank_name: bankName,
-        account_last5: accountLast5,
-        amount,
-        expected_amount_at_submit: expectedAmountAtSubmit,
-        session_id: sessionId,
+    const { data: remittanceData, error: rpcError } = await supabase
+      .rpc("submit_livestream_remittance", {
+        p_line_user_id: lineUserId,
+        p_nickname: lineDisplayName,
+        p_order_ids: orderIds,
+        p_bank_name: bankName,
+        p_account_last5: accountLast5,
+        p_reported_amount: amount,
       })
-      .select("id")
       .single();
-    if (insertError) throw insertError;
+    // 同上（livestream-orders.ts handleRemitLast5Submission）：這支 RPC
+    // 沒有在 Supabase 產生的型別清單裡登記回傳形狀。
+    const remittance = remittanceData as { id: string } | null;
 
-    // 把涵蓋的訂單連到這筆新匯款紀錄——第三階段起 remittance_id 開始
-    // 真正被寫入，/live/orders 等地方的鎖定判斷都靠這個欄位，手動補登
-    // 這條路徑也要跟 LINE 自動流程一樣寫，不然會被誤判成還沒匯款。
-    const { error: updateError } = await supabase
-      .from("community_livestream_orders")
-      .update({ payment_status: "confirming", remittance_id: inserted.id })
-      .in("id", orderIds);
-    if (updateError) throw updateError;
+    if (rpcError || !remittance) {
+      if (rpcError?.message?.includes("already_remitted")) {
+        return NextResponse.json(
+          { ok: false, error: "選取的訂單目前沒有欠款（可能已被處理），請重新整理後再試。" },
+          { status: 409 },
+        );
+      }
+      throw rpcError || new Error("submit_livestream_remittance returned no row");
+    }
 
-    return NextResponse.json({ ok: true, id: String(inserted.id) });
+    return NextResponse.json({ ok: true, id: String(remittance.id) });
   } catch {
     return NextResponse.json({ ok: false, error: "新增匯款紀錄失敗，請稍後再試。" }, { status: 500 });
   }

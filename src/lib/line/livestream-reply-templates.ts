@@ -33,6 +33,7 @@ export type LivestreamReplyTemplateKey =
   | "remittance_last5_invalid"
   | "remittance_cancelled"
   | "remittance_done"
+  | "remittance_done_topup"
   | "photo_confirm_empty"
   | "order_query_empty"
   | "order_manage_card"
@@ -66,6 +67,7 @@ export const LIVESTREAM_REPLY_TEMPLATE_KEYS: LivestreamReplyTemplateKey[] = [
   "remittance_last5_invalid",
   "remittance_cancelled",
   "remittance_done",
+  "remittance_done_topup",
   "photo_confirm_empty",
   "order_query_empty",
   "order_manage_card",
@@ -105,6 +107,7 @@ export const DEFAULT_LIVESTREAM_REPLY_TEMPLATES: LivestreamReplyTemplates = {
   remittance_last5_invalid: "末五碼需為 5 碼數字，請重新輸入。如需取消匯款請輸入「取消匯款」。",
   remittance_cancelled: "已取消匯款申報，如需使用請重新輸入「我要匯款」。",
   remittance_done: "已收到您的匯款資訊（總金額 NT${{金額}}），我們將盡快為您核對，感謝您！",
+  remittance_done_topup: "已記錄您的補款資訊（補款金額 NT${{金額}}），我們將盡快為您核對，感謝您！",
   photo_confirm_empty: "還沒收到照片喔，請先按「我要下單」再傳商品照片。",
   order_query_empty: "目前沒有查到您的下單紀錄喔。",
   order_manage_card: "點下方按鈕查看與管理您目前的訂單。",

@@ -5,8 +5,9 @@ import { useLiff } from "@/lib/line/use-liff";
 import { LiveIdentityRow } from "@/components/live-identity-row";
 import type { LiveCustomerIdentity } from "@/lib/line/live-customer-identity";
 
-export type LiveOrderStatusChipTone = "pending" | "done" | "out" | "partial" | "paid";
-export type LiveOrderStatusChip = { label: string; tone: LiveOrderStatusChipTone };
+export type LiveOrderPurchaseChipTone = "pending" | "done" | "out" | "partial";
+export type LiveOrderPaymentChipTone = "pending" | "paid" | "attention";
+export type LiveOrderStatusChip = { label: string; tone: LiveOrderPurchaseChipTone | LiveOrderPaymentChipTone };
 
 export type LiveOrderItem = {
   id: string;
@@ -16,7 +17,12 @@ export type LiveOrderItem = {
   unitPrice: number | null;
   purchasedQuantity: number | null;
   lockReason: "remitted" | "purchased" | null;
-  statusChip: LiveOrderStatusChip;
+  purchaseChip: { label: string; tone: LiveOrderPurchaseChipTone };
+  paymentChip: { label: string; tone: LiveOrderPaymentChipTone };
+  group: "unpaid" | "paid";
+  owed: number;
+  refundDue: number;
+  paidAmount: number;
 };
 
 type DraftItem = LiveOrderItem & {
@@ -29,17 +35,24 @@ type LiveOrdersViewProps = {
   token: string;
   sessionName: string | null;
   unpaidTotal: number;
-  initialItems: LiveOrderItem[];
+  paidTotal: number;
+  refundDueTotal: number;
+  unpaidItems: LiveOrderItem[];
+  paidItems: LiveOrderItem[];
   orderQueryKeyword: string;
   identity: LiveCustomerIdentity;
 };
 
-const CHIP_TONE_STYLE: Record<LiveOrderStatusChipTone, { background: string; borderColor: string; color: string }> = {
+const CHIP_TONE_STYLE: Record<
+  LiveOrderPurchaseChipTone | LiveOrderPaymentChipTone,
+  { background: string; borderColor: string; color: string }
+> = {
   pending: { background: "#eef0f4", borderColor: "#d7dbe3", color: "#6b7280" },
   done: { background: "#e9f8ef", borderColor: "#8fd3ae", color: "#2f6b48" },
   out: { background: "#ffe9e9", borderColor: "#f0a5a5", color: "#b3443f" },
   partial: { background: "#fff9df", borderColor: "#f0dc8f", color: "#8a6d1f" },
   paid: { background: "#ffebf1", borderColor: "#ff8fb3", color: "#a84b6c" },
+  attention: { background: "#fff4e6", borderColor: "#f3c08a", color: "#9a5b1f" },
 };
 
 function StatusChipBadge({ chip }: { chip: LiveOrderStatusChip }) {
@@ -56,7 +69,21 @@ function StatusChipBadge({ chip }: { chip: LiveOrderStatusChip }) {
 
 // 純 React 局部 state 處理調數量/取消（跟 live-confirm-form.tsx 同一套
 // 寫法），只有按「儲存修改」才打一次 API；已採買/已匯款的項目一律唯讀。
-export function LiveOrdersView({ token, sessionName, unpaidTotal, initialItems, orderQueryKeyword, identity }: LiveOrdersViewProps) {
+// 階段二（結算模型）起畫面分成「還沒匯款」「已匯款」兩個區塊，各自顯示
+// 金額摘要，每個商品同時顯示採買狀態跟付款狀態兩個標籤（取代原本單一
+// 標籤）。
+export function LiveOrdersView({
+  token,
+  sessionName,
+  unpaidTotal,
+  paidTotal,
+  refundDueTotal,
+  unpaidItems,
+  paidItems,
+  orderQueryKeyword,
+  identity,
+}: LiveOrdersViewProps) {
+  const initialItems = [...unpaidItems, ...paidItems];
   const [items, setItems] = useState<DraftItem[]>(
     initialItems.map((item) => ({ ...item, originalQuantity: item.quantity, removed: false, cancelled: false })),
   );
@@ -66,6 +93,8 @@ export function LiveOrdersView({ token, sessionName, unpaidTotal, initialItems, 
   const { trySendMessageAndClose } = useLiff();
 
   const visibleItems = useMemo(() => items.filter((item) => !item.cancelled), [items]);
+  const visibleUnpaidItems = useMemo(() => visibleItems.filter((item) => item.group === "unpaid"), [visibleItems]);
+  const visiblePaidItems = useMemo(() => visibleItems.filter((item) => item.group === "paid"), [visibleItems]);
   const dirtyItems = useMemo(
     () => visibleItems.filter((item) => !item.lockReason && (item.removed || item.quantity !== item.originalQuantity)),
     [visibleItems],
@@ -142,6 +171,69 @@ export function LiveOrdersView({ token, sessionName, unpaidTotal, initialItems, 
     }
   }
 
+  // 「還沒匯款」「已匯款」兩個區塊共用的單筆商品列——需要直接存取
+  // updateQuantity/toggleRemoved 這兩個閉包，定義成元件內部函式而不是
+  // 獨立 component，避免多一層 props 傳遞。
+  function renderItemRow(item: DraftItem) {
+    return (
+      <div key={item.id} className="flex items-center gap-2.5 border-t border-[#f0f0f3] py-2.5 first:border-t-0">
+        <div className="grid h-[62px] w-[62px] shrink-0 place-items-center overflow-hidden rounded-[10px] bg-penguin-cream text-xl text-penguin-gray">
+          {item.photoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={item.photoUrl} alt={item.productName || "商品"} className="h-full w-full object-cover" />
+          ) : (
+            "P"
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-black text-penguin-gray">{item.productName || "商品"}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            <StatusChipBadge chip={item.purchaseChip} />
+            <StatusChipBadge chip={item.paymentChip} />
+            {item.unitPrice !== null ? (
+              <span className="text-xs text-penguin-gray">單價 NT${item.unitPrice.toLocaleString("zh-TW")}</span>
+            ) : null}
+          </div>
+
+          {item.lockReason ? (
+            <p className="mt-1 text-xs font-bold text-gray-400">訂購數量 {item.quantity}</p>
+          ) : (
+            <div className="mt-1.5 flex items-center gap-2">
+              <div className="inline-flex h-[30px] items-center overflow-hidden rounded-full border-[1.5px] border-penguin-pink-dark bg-white">
+                <button
+                  type="button"
+                  aria-label="減少數量"
+                  disabled={item.quantity <= 1 || item.removed}
+                  onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1))}
+                  className="grid h-full w-[30px] place-items-center bg-penguin-pink-light font-black text-penguin-gray disabled:cursor-not-allowed disabled:text-gray-300"
+                >
+                  −
+                </button>
+                <span className="min-w-[30px] text-center text-sm font-black text-penguin-gray">{item.quantity}</span>
+                <button
+                  type="button"
+                  aria-label="增加數量"
+                  disabled={item.quantity >= 99 || item.removed}
+                  onClick={() => updateQuantity(item.id, Math.min(99, item.quantity + 1))}
+                  className="grid h-full w-[30px] place-items-center bg-penguin-pink-light font-black text-penguin-gray disabled:cursor-not-allowed disabled:text-gray-300"
+                >
+                  ＋
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => toggleRemoved(item.id)}
+                className={`text-xs font-bold ${item.removed ? "text-red-500" : "text-gray-400 hover:text-red-500"}`}
+              >
+                {item.removed ? "已標記取消（再按一次還原）" : "取消這項"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <main className="bg-white pb-28">
       <div className="mx-auto max-w-md px-4">
@@ -155,6 +247,15 @@ export function LiveOrdersView({ token, sessionName, unpaidTotal, initialItems, 
             style={{ backgroundColor: "#fff9df", borderColor: "#f0dc8f" }}
           >
             尚未匯款金額：NT${unpaidTotal.toLocaleString("zh-TW")}
+          </div>
+        ) : null}
+        {paidTotal > 0 ? (
+          <div
+            className="mt-2 rounded-xl border px-3 py-2 text-xs leading-6 text-penguin-gray"
+            style={{ backgroundColor: "#ffebf1", borderColor: "#ff8fb3" }}
+          >
+            已匯款金額：NT${paidTotal.toLocaleString("zh-TW")}
+            {refundDueTotal > 0 ? `・預計退款 NT$${refundDueTotal.toLocaleString("zh-TW")}` : ""}
           </div>
         ) : null}
 
@@ -171,62 +272,20 @@ export function LiveOrdersView({ token, sessionName, unpaidTotal, initialItems, 
 
         <div className="mt-1">
           {visibleItems.length ? (
-            visibleItems.map((item) => (
-              <div key={item.id} className="flex items-center gap-2.5 border-t border-[#f0f0f3] py-2.5 first:border-t-0">
-                <div className="grid h-[62px] w-[62px] shrink-0 place-items-center overflow-hidden rounded-[10px] bg-penguin-cream text-xl text-penguin-gray">
-                  {item.photoUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={item.photoUrl} alt={item.productName || "商品"} className="h-full w-full object-cover" />
-                  ) : (
-                    "P"
-                  )}
+            <>
+              {visibleUnpaidItems.length ? (
+                <div>
+                  <p className="mt-3 text-xs font-black text-penguin-gray">還沒匯款</p>
+                  {visibleUnpaidItems.map((item) => renderItemRow(item))}
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-black text-penguin-gray">{item.productName || "商品"}</p>
-                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                    <StatusChipBadge chip={item.statusChip} />
-                    {item.unitPrice !== null ? (
-                      <span className="text-xs text-penguin-gray">單價 NT${item.unitPrice.toLocaleString("zh-TW")}</span>
-                    ) : null}
-                  </div>
-
-                  {item.lockReason ? (
-                    <p className="mt-1 text-xs font-bold text-gray-400">訂購數量 {item.quantity}</p>
-                  ) : (
-                    <div className="mt-1.5 flex items-center gap-2">
-                      <div className="inline-flex h-[30px] items-center overflow-hidden rounded-full border-[1.5px] border-penguin-pink-dark bg-white">
-                        <button
-                          type="button"
-                          aria-label="減少數量"
-                          disabled={item.quantity <= 1 || item.removed}
-                          onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1))}
-                          className="grid h-full w-[30px] place-items-center bg-penguin-pink-light font-black text-penguin-gray disabled:cursor-not-allowed disabled:text-gray-300"
-                        >
-                          −
-                        </button>
-                        <span className="min-w-[30px] text-center text-sm font-black text-penguin-gray">{item.quantity}</span>
-                        <button
-                          type="button"
-                          aria-label="增加數量"
-                          disabled={item.quantity >= 99 || item.removed}
-                          onClick={() => updateQuantity(item.id, Math.min(99, item.quantity + 1))}
-                          className="grid h-full w-[30px] place-items-center bg-penguin-pink-light font-black text-penguin-gray disabled:cursor-not-allowed disabled:text-gray-300"
-                        >
-                          ＋
-                        </button>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => toggleRemoved(item.id)}
-                        className={`text-xs font-bold ${item.removed ? "text-red-500" : "text-gray-400 hover:text-red-500"}`}
-                      >
-                        {item.removed ? "已標記取消（再按一次還原）" : "取消這項"}
-                      </button>
-                    </div>
-                  )}
+              ) : null}
+              {visiblePaidItems.length ? (
+                <div>
+                  <p className="mt-3 text-xs font-black text-penguin-gray">已匯款</p>
+                  {visiblePaidItems.map((item) => renderItemRow(item))}
                 </div>
-              </div>
-            ))
+              ) : null}
+            </>
           ) : (
             <div className="rounded-xl border border-dashed border-penguin-peach bg-penguin-cream/40 px-4 py-10 text-center text-sm text-penguin-gray">
               目前沒有訂單。

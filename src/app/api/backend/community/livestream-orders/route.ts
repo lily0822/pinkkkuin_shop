@@ -9,7 +9,11 @@ import {
 } from "@/lib/backend-auth";
 import { backendRateLimit } from "@/lib/backend-security";
 import { getCurrentOrMostRecentSession } from "@/lib/line/livestream-sessions";
-import { effectiveLivestreamUnitPrice, effectiveLivestreamQuantity } from "@/lib/line/livestream-pricing";
+import {
+  effectiveLivestreamUnitPrice,
+  effectiveLivestreamQuantity,
+  computeLivestreamSettlement,
+} from "@/lib/line/livestream-pricing";
 import { getLineUserBindingLabelsBatch } from "@/lib/line/live-bindings";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +54,11 @@ export async function GET(request: NextRequest) {
   const paymentStatus = (incoming.searchParams.get("paymentStatus") || "").trim();
   const unrecognizedOnly = incoming.searchParams.get("unrecognizedOnly") === "1";
   const priceDisputedOnly = incoming.searchParams.get("priceDisputedOnly") === "1";
+  // 階段二（結算模型）新增的兩個快篩，跟 unrecognizedOnly 一樣在記憶體裡
+  // 篩（owed/refundDue 是算出來的，不是資料庫欄位，沒辦法直接下在
+  // Supabase query builder 上）。
+  const needsTopupOnly = incoming.searchParams.get("needsTopupOnly") === "1";
+  const hasRefundDueOnly = incoming.searchParams.get("hasRefundDueOnly") === "1";
   // 連線代購下單改版：場次篩選——"unassigned" 對應舊資料（session_id is
   // null）；沒帶這個參數時，用「當下連線／最近一場」當預設值（見
   // getCurrentOrMostRecentSession），維持跟後台「連線場次」下拉選單的
@@ -74,7 +83,7 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from("community_livestream_orders")
       .select(
-        "id, line_user_id, line_display_name, nickname, product_name, unit_price, customer_unit_price, seller_unit_price, purchased_quantity, remittance_id, total_price, quantity, recognized_confidence, purchase_status, payment_status, notes, photo_storage_path, price_disputed_at, price_dispute_suggested_price, created_at, updated_at",
+        "id, line_user_id, line_display_name, nickname, product_name, unit_price, customer_unit_price, seller_unit_price, purchased_quantity, remittance_id, total_price, quantity, recognized_confidence, purchase_status, payment_status, notes, photo_storage_path, price_disputed_at, price_dispute_suggested_price, paid_amount, refunded_at, refunded_amount, created_at, updated_at",
       )
       // staged（客人還沒送出的暫存照片）跟 cancelled 永遠不出現在任何
       // 後台列表——這次改版新增的中間狀態，既有的訂單管理畫面本來就不
@@ -115,13 +124,35 @@ export async function GET(request: NextRequest) {
     const bindingsByUser = await getLineUserBindingLabelsBatch(
       allRows.map((row) => String(row.line_user_id || "")).filter(Boolean),
     );
-    const rows = q
-      ? allRows.filter((row) => {
-          const binding = bindingsByUser.get(String(row.line_user_id || ""));
-          const haystack = `${row.nickname || ""} ${row.line_display_name || ""} ${row.product_name || ""} ${binding?.value || ""}`.toLocaleLowerCase();
-          return haystack.includes(q);
-        })
-      : allRows;
+
+    // 階段二（結算模型）：每一列先算好 owed/refundDue，給下面的快篩跟
+    // 最終回應共用，不要算兩次。
+    const settlementById = new Map(
+      allRows.map((row) => {
+        const effectiveUnitPrice = effectiveLivestreamUnitPrice(row.seller_unit_price, row.customer_unit_price, row.unit_price);
+        const settlement = computeLivestreamSettlement({
+          effectiveUnitPrice,
+          quantity: Number(row.quantity || 1),
+          purchasedQuantity: row.purchased_quantity,
+          paidAmount: Number(row.paid_amount || 0),
+          refundedAt: row.refunded_at,
+          refundedAmount: row.refunded_amount,
+        });
+        return [String(row.id), settlement] as const;
+      }),
+    );
+
+    const rows = allRows.filter((row) => {
+      if (q) {
+        const binding = bindingsByUser.get(String(row.line_user_id || ""));
+        const haystack = `${row.nickname || ""} ${row.line_display_name || ""} ${row.product_name || ""} ${binding?.value || ""}`.toLocaleLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      const settlement = settlementById.get(String(row.id));
+      if (needsTopupOnly && !(settlement && settlement.owed > 0 && Number(row.paid_amount || 0) > 0)) return false;
+      if (hasRefundDueOnly && !(settlement && settlement.refundDue > 0)) return false;
+      return true;
+    });
 
     const photoUrls = await Promise.all(
       rows.map((row) =>
@@ -172,6 +203,7 @@ export async function GET(request: NextRequest) {
           row.purchased_quantity === null || row.purchased_quantity === undefined ? null : Number(row.purchased_quantity);
         const quantity = Number(row.quantity || 1);
         const effectiveQuantity = effectiveLivestreamQuantity(purchasedQuantity, quantity);
+        const settlement = settlementById.get(String(row.id)) as ReturnType<typeof computeLivestreamSettlement>;
         return {
           id: String(row.id || ""),
           lineUserId: String(row.line_user_id || ""),
@@ -200,6 +232,12 @@ export async function GET(request: NextRequest) {
             row.price_dispute_suggested_price === null || row.price_dispute_suggested_price === undefined
               ? null
               : Number(row.price_dispute_suggested_price),
+          paidAmount: Number(row.paid_amount || 0),
+          owed: settlement.owed,
+          refundDue: settlement.refundDue,
+          paymentChip: settlement.paymentChip,
+          refundedAt: row.refunded_at ? String(row.refunded_at) : null,
+          refundedAmount: row.refunded_amount === null || row.refunded_amount === undefined ? null : Number(row.refunded_amount),
           createdAt: String(row.created_at || ""),
           updatedAt: String(row.updated_at || ""),
         };

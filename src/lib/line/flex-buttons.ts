@@ -20,6 +20,7 @@ export const BUTTON_ICONS: Record<string, string> = {
   adjust_orders: "",
   remit_live: "",
   remit_preorder: "",
+  remit_quickstart: "",
   copy_bank_account: "",
   transfer_done: "",
   amount_correct: "",
