@@ -1170,30 +1170,27 @@ async function handleOrderManageTrigger(
 // 系統，跟這裡完全是兩回事）。
 // ---------------------------------------------------------------------------
 
-// 複製出去的文字補上銀行代號（代號 空格 帳號），方便客人轉帳時直接貼；
-// 帳號本來就以代號開頭時不重複加一次。
-function withBankCode(key: LivestreamBankAccountKey, account: string): string {
-  const code = LIVESTREAM_BANK_ACCOUNT_CODES[key];
-  if (!code || account.startsWith(code)) return account;
-  return `${code} ${account}`;
-}
-
 // 收款帳號複製按鈕——LINE Flex 原生 clipboard 按鈕，點了直接把帳號文字
-// 複製到客人剪貼簿。onlyKey 給定時只顯示那一家（客人選完銀行之後），
-// 不給時列出全部已填帳號的銀行。
+// 複製到客人剪貼簿（只放帳號本身，不加銀行代號，避免複製出去的字串
+// 跟客人網銀/ATM 要貼的帳號不一致）；按鈕上的文字加銀行代號方便客人
+// 核對是哪一家。onlyKey 給定時只顯示那一家（客人選完銀行之後），不給
+// 時列出全部已填帳號的銀行。
 function buildBankAccountButtonsBubble(accounts: LivestreamBankAccounts, onlyKey?: LivestreamBankAccountKey) {
   const keys = onlyKey ? [onlyKey] : LIVESTREAM_BANK_ACCOUNT_KEYS;
   const buttons: CuteButtonSpec[] = keys
     .filter((key) => accounts[key])
-    .map((key) => ({
-      key: "copy_bank_account",
-      label: `複製${LIVESTREAM_BANK_ACCOUNT_LABELS[key]}帳號`,
-      action: {
-        type: "clipboard",
-        label: `複製${LIVESTREAM_BANK_ACCOUNT_LABELS[key]}帳號`,
-        clipboardText: withBankCode(key, accounts[key]),
-      },
-    }));
+    .map((key) => {
+      const label = `複製${LIVESTREAM_BANK_ACCOUNT_LABELS[key]} ${LIVESTREAM_BANK_ACCOUNT_CODES[key]}帳號`;
+      return {
+        key: "copy_bank_account",
+        label,
+        action: {
+          type: "clipboard",
+          label,
+          clipboardText: accounts[key],
+        },
+      };
+    });
   if (!buttons.length) return null;
 
   return {
@@ -1349,7 +1346,7 @@ async function handleRemitStartLive(
 
   const bankButtons: CuteButtonSpec[] = availableBankKeys.map((key) => ({
     key: "select_bank",
-    label: LIVESTREAM_BANK_ACCOUNT_LABELS[key],
+    label: `${LIVESTREAM_BANK_ACCOUNT_LABELS[key]} ${LIVESTREAM_BANK_ACCOUNT_CODES[key]}`,
     action: {
       type: "postback",
       label: LIVESTREAM_BANK_ACCOUNT_LABELS[key],
@@ -1373,7 +1370,7 @@ async function handleRemitStartLive(
       contents: {
         type: "bubble",
         body: { type: "box", layout: "vertical", spacing: "md", contents: [{ type: "text", text: introText, wrap: true, size: "sm" }] },
-        footer: buildCuteButtonFooter(bankButtons),
+        footer: buildCuteButtonFooter(bankButtons, 3),
       },
     },
   ];

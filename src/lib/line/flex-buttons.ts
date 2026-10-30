@@ -35,7 +35,7 @@ export const BUTTON_ICONS: Record<string, string> = {
 
 export type CuteButtonSpec = { key: string; label: string; action: Record<string, unknown> };
 
-export function buildCuteButton(spec: CuteButtonSpec, flex?: number): object {
+export function buildCuteButton(spec: CuteButtonSpec, flex?: number, fontSize?: string): object {
   const icon = BUTTON_ICONS[spec.key] || "";
   const text = icon ? `${icon} ${spec.label}` : spec.label;
   const box: Record<string, unknown> = {
@@ -52,22 +52,26 @@ export function buildCuteButton(spec: CuteButtonSpec, flex?: number): object {
     justifyContent: "center",
     alignItems: "center",
     action: spec.action,
-    contents: [{ type: "text", text, color: "#111111", weight: "bold", size: "sm", align: "center", wrap: false }],
+    contents: [{ type: "text", text, color: "#111111", weight: "bold", size: fontSize || "sm", align: "center", wrap: false }],
   };
   if (flex !== undefined) box.flex = flex;
   return box;
 }
 
 // 卡片 footer 的共用容器——1 顆按鈕置中滿版；2 顆（含）以上同一行排
-// 列、各自 flex:1 平分寬度，超過 2 顆才換行（每行最多 2 顆），符合
-// 「多個按鈕排在同一行」的要求。
-export function buildCuteButtonFooter(buttons: CuteButtonSpec[]): object {
+// 列、各自 flex:1 平分寬度，超過 perRow 顆才換行（預設每行最多 2
+// 顆，維持舊有行為）。呼叫端可以傳 perRow 提高單行顆數（例如選銀行
+// 一次塞 3 顆）；一行真的湊到 3 顆以上時字級自動從 sm 縮成 xs，避免
+// 文字被截斷或換行，只有 1～2 顆時字級不受影響。
+export function buildCuteButtonFooter(buttons: CuteButtonSpec[], perRow: number = 2): object {
   if (buttons.length === 1) {
     return { type: "box", layout: "vertical", contents: [buildCuteButton(buttons[0])] };
   }
   const rows: object[] = [];
-  for (let i = 0; i < buttons.length; i += 2) {
-    const rowButtons = buttons.slice(i, i + 2).map((spec) => buildCuteButton(spec, 1));
+  for (let i = 0; i < buttons.length; i += perRow) {
+    const rowSpecs = buttons.slice(i, i + perRow);
+    const fontSize = rowSpecs.length >= 3 ? "xs" : undefined;
+    const rowButtons = rowSpecs.map((spec) => buildCuteButton(spec, 1, fontSize));
     rows.push({ type: "box", layout: "horizontal", spacing: "sm", contents: rowButtons });
   }
   return { type: "box", layout: "vertical", spacing: "sm", contents: rows };
