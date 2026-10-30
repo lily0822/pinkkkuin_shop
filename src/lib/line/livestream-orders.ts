@@ -1587,11 +1587,22 @@ async function handleRemitLast5Submission(
   // 那筆訂單原本就連著更早的一筆匯款紀錄），就是補差額。
   const { data: doneRows } = await supabase
     .from("community_livestream_orders")
-    .select("id, product_name, photo_storage_path, remittance_id")
+    .select(
+      "id, product_name, photo_storage_path, quantity, purchased_quantity, customer_unit_price, seller_unit_price, unit_price, paid_amount, remittance_id",
+    )
     .in("id", orderIds);
-  const doneRowsTyped = (doneRows as (PhotoNameOrderRow & { remittance_id: string | null })[] | null) || [];
+  const doneRowsTyped = (doneRows as (RemitEligibleRow & { remittance_id: string | null })[] | null) || [];
   const hasTopup = doneRowsTyped.some((row) => row.remittance_id !== remittance.id);
-  const doneItemBlocks = await Promise.all(doneRowsTyped.map((row) => buildPhotoNameItemBlock(row)));
+  // 完成清單這裡 owed 固定傳 0——paid_amount 在 RPC 執行完已經是這次
+  // 匯款後的新值，用它判斷「補差額」只會永遠誤判成補差額（isTopup 要求
+  // owed>0），傳 0 讓 buildRemitItemBlock 單純顯示「單價 × 數量 = 小計」，
+  // 不要再多顯示「補差額」那行（這筆款項已經匯完，不是還欠的金額）。
+  const doneItemBlocks = await Promise.all(
+    doneRowsTyped.map((row) => {
+      const effectiveUnitPrice = effectiveLivestreamUnitPrice(row.seller_unit_price, row.customer_unit_price, row.unit_price);
+      return buildRemitItemBlock(row, effectiveUnitPrice, 0);
+    }),
+  );
 
   const doneTemplateKey = hasTopup ? "remittance_done_topup" : "remittance_done";
   const messages: LineReplyMessage[] = [
